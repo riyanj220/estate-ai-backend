@@ -61,7 +61,9 @@ def test_append_only_exclusion(runtime_conn, django_db_blocker):
                 "INSERT INTO django_content_type (app_label, model) VALUES ('ao', 'p')"
             )
         finally:
-            grant_runtime_privileges(connection, settings.RUNTIME_DB_USER)
+            grant_runtime_privileges(
+                connection, settings.RUNTIME_DB_USER, settings.RUNTIME_APPEND_ONLY_TABLES
+            )
             runtime_conn.execute("DELETE FROM django_content_type WHERE app_label = 'ao'")
 
 
@@ -85,7 +87,9 @@ def test_post_migrate_hook_honours_append_only_setting(runtime_conn, django_db_b
             with pytest.raises(errors.InsufficientPrivilege):
                 runtime_conn.execute("DELETE FROM django_content_type WHERE app_label = 'hook'")
         finally:
-            grant_runtime_privileges(connection, settings.RUNTIME_DB_USER)
+            grant_runtime_privileges(
+                connection, settings.RUNTIME_DB_USER, settings.RUNTIME_APPEND_ONLY_TABLES
+            )
             runtime_conn.execute("DELETE FROM django_content_type WHERE app_label = 'hook'")
 
 
@@ -151,3 +155,29 @@ def test_runtime_can_use_flags_ai_log_and_purges_but_not_ddl(runtime_conn):
     for table in ("kernel_featureflag", "kernel_airequestlog"):
         with pytest.raises(errors.InsufficientPrivilege):
             runtime_conn.execute(f"ALTER TABLE {table} ADD COLUMN nope int")
+
+
+def test_runtime_audit_table_is_append_only(runtime_conn, django_db_blocker):
+    try:
+        _audit_probe(runtime_conn)
+    finally:
+        with django_db_blocker.unblock(), connection.cursor() as cursor:
+            cursor.execute("DELETE FROM kernel_auditrecord WHERE action = 'role.probed'")
+
+
+def _audit_probe(runtime_conn):
+    runtime_conn.execute(
+        "INSERT INTO kernel_auditrecord (id, actor_kind, action, target_type, target_id, "
+        "reason, request_id, metadata, created_at) VALUES (gen_random_uuid(), 'system', "
+        "'role.probed', 'probe', gen_random_uuid(), '', '', '{}', now())"
+    )
+    assert runtime_conn.execute(
+        "SELECT count(*) FROM kernel_auditrecord WHERE action = 'role.probed'"
+    ).fetchone() == (1,)
+    for sql in (
+        "UPDATE kernel_auditrecord SET reason = 'x'",
+        "DELETE FROM kernel_auditrecord",
+        "TRUNCATE kernel_auditrecord",
+    ):
+        with pytest.raises(errors.InsufficientPrivilege):
+            runtime_conn.execute(sql)
