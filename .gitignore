@@ -29,3 +29,7 @@ media/
 
 # BMAD generated render output
 _bmad/render/
+
+# BMAD tooling (reinstallable; project documents live in _bmad-output and docs)
+.claude/skills/
+_bmad/
