@@ -2,7 +2,7 @@
 title: 'Story 1.15: Individual registration (backend half)'
 type: 'feature'
 created: '2026-11-19'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: 'e7d821e2bb67ab41ebcc70c23b347d8a2d15b0db'

@@ -2,7 +2,7 @@
 title: 'Story 1.15: Individual registration (frontend half)'
 type: 'feature'
 created: '2026-11-19'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
 baseline_commit: 'af8440727e722f751b1e2821ad9815f5cd59730e (frontend repository)'
@@ -60,10 +60,10 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] run `npm run api:sync` and commit the regenerated client
-- [ ] form component, page, home link, CSS tokens
-- [ ] stub backend routes and Playwright tests (including axe and mobile) for every matrix row
-- [ ] lint, type check, build, `api:check`, CI; README
+- [x] run `npm run api:sync` and commit the regenerated client
+- [x] form component, page, home link, CSS tokens
+- [x] stub backend routes and Playwright tests (including axe and mobile) for every matrix row
+- [x] lint, type check, build, `api:check`, CI; README
 
 **Acceptance Criteria:**
 - Given the registration form, when I submit it with a missing or invalid field, then the page lists field-level errors from the backend, moves focus to an error summary and never re-validates rules itself.
@@ -76,6 +76,22 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, frontend half (Blind Hunter, Edge Case Hunter, Verification Gap).
+
+| # | Finding (source) | Verdict | Route | Evidence |
+|---|---|---|---|---|
+| 1 | A hung request never recovers (BH) | high | patch | No client timeout; 20 s abort added with a clock-controlled test. |
+| 2 | Native browser validation bypasses the server error UX (BH, EC, VG) | medium | patch | `noValidate` added; empty submit tested. |
+| 3 | Any other 2xx, 4xx and proxy errors mislabelled; network failure blamed on the server (BH, EC) | medium | patch | Status-class messages and tests. |
+| 4 | Focus lost after 429 or 5xx; live region does not re-announce; summary role; toggle label (BH, EC) | medium | patch | Fixed with tests. |
+| 5 | The double-submit test never exercised the guard (BH, EC, VG) | medium | patch | `requestSubmit()` twice with polling. |
+| 6 | Wait-time wording and 400 fallbacks tested only for one case (VG) | medium | patch | Stub modes added. |
+| 7 | Success state is a dead end (BH) | low | patch | "Use a different email address" button (clears the phone too, per the frozen spec). |
+| 8 | Stub leaks hung sockets; shared state across tests (EC, VG, BH) | low | patch | Cleanup and serial mode. |
+| 9 | Global background change reaches other pages; Tailwind body classes removed (BH, EC) | low | reject | Intentional token change; existing page tests including axe still pass. |
+| 10 | openapi.yaml includes cities; schema.ts absent from the diff (BH, EC) | false | reject | Current backend contract; schema.ts excluded from the review diff only. |
+| 11 | Phone hint hard-codes a format; HTTP-date Retry-After; terms and sign-in link; success clearing unobservable (BH, VG) | low | reject | Hint is UX copy; other items belong to later stories. |
 
 ## Design Notes
 
