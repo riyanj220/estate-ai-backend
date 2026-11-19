@@ -109,3 +109,7 @@ Events dispatch after commit, one callback per subscriber registered in `AppConf
 ## Runtime executor, flags, AI log and retention
 
 A bounded executor keeps capacity free for chat and sign-in (`RUNTIME_EXECUTOR_MAX_WORKERS`, default 4, and `RUNTIME_EXECUTOR_RESERVED_WORKERS`, default 1), feature flags are declared in code, the AI request log holds no content, and `run_retention [--dry-run]` runs every app-registered purge job. See `docs/runtime-and-retention.md` for usage, how an app registers a flag or a retention job, and the deployment schedule note.
+
+## Audit trail
+
+Security-sensitive actions are recorded in an append-only table through `kernel.audit`, in the caller's transaction, with allow-listed metadata; administrator reads of private data call `record_private_read` first with a per-read reason. See `docs/audit.md`. Stories 1.12 and 1.18 write the account-state and password-change records through this writer.

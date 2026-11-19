@@ -42,7 +42,7 @@ flags.set_flag(actor, "assistant_voice", True)   # admin or system only
 ```
 
 `set_flag` takes the actor first: a visitor gets `unauthenticated`, a signed-in non-admin `not_found`. The row records
-the state, the account id (null for the system) and the time. There is no history until the audit trail (Story 1.10).
+the state, the account id (null for the system) and the time. Flag changes are not yet audited.
 If the database cannot be read, `is_enabled` logs the exception class and returns the declared default.
 The kernel declares `ai_gateway`, default on, which the AI gateway will read.
 

@@ -30,3 +30,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-9-runtime-executor-flags-ai-log-and-retention.md`
   summary: Add an overlap guard (advisory lock), bounded-batch deletes, a `--job NAME` option and a summary line to `run_retention` when the schedule is decided at deployment.
   evidence: Each purge is one unbounded DELETE and overlapping scheduled runs are not prevented; documented as single-instance for now.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-10-audit-trail-and-reasoned-private-reads.md`
+  summary: Write an audit record for feature-flag changes (register a `flag.changed` action with a token schema) and apply the Story 1.14 contact-pattern check to read reasons.
+  evidence: `set_flag` is an administrator action recorded only by its changed-by and changed-at columns; read reasons currently use a crude `@` and digit-run rule.
