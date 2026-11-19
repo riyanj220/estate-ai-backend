@@ -217,3 +217,30 @@ def test_runtime_can_read_and_write_accounts_but_not_ddl(runtime_conn, django_db
     finally:
         with django_db_blocker.unblock(), connection.cursor() as cursor:
             cursor.execute("DELETE FROM identity_account WHERE email = 'role.probe@example.com'")
+
+
+def test_runtime_can_write_individual_profiles_but_not_ddl(runtime_conn, django_db_blocker):
+    try:
+        runtime_conn.execute(
+            "INSERT INTO identity_account (id, email, password, account_type, suspension_reason, "
+            "created_at, updated_at) VALUES (gen_random_uuid(), 'profile.probe@example.com', 'x', "
+            "'individual', '', now(), now())"
+        )
+        runtime_conn.execute(
+            "INSERT INTO identity_individualprofile (id, account_id, full_name, phone, "
+            "created_at, updated_at) SELECT gen_random_uuid(), id, 'Probe', '+923001234567', "
+            "now(), now() FROM identity_account WHERE email = 'profile.probe@example.com'"
+        )
+        runtime_conn.execute(
+            "UPDATE identity_individualprofile SET full_name = 'Probe Two' WHERE account_id = "
+            "(SELECT id FROM identity_account WHERE email = 'profile.probe@example.com')"
+        )
+        with pytest.raises(errors.InsufficientPrivilege):
+            runtime_conn.execute("ALTER TABLE identity_individualprofile ADD COLUMN nope int")
+    finally:
+        with django_db_blocker.unblock(), connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM identity_individualprofile WHERE account_id = "
+                "(SELECT id FROM identity_account WHERE email = 'profile.probe@example.com')"
+            )
+            cursor.execute("DELETE FROM identity_account WHERE email = 'profile.probe@example.com'")

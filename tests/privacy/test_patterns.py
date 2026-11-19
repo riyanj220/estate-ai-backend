@@ -299,3 +299,94 @@ def test_spans_can_redact_the_original_without_leaving_digits():
         redacted = redacted[: finding.start] + "[removed]" + redacted[finding.end :]
     assert redacted == "call [removed] or [removed] now"
     assert not any(ch.isdigit() for ch in redacted)
+
+
+# --- phone validation (registration) ----------------------------------------------------------
+
+ACCEPTED_PHONES = [
+    ("0300-1234567", "+923001234567"),
+    ("0300 1234567", "+923001234567"),
+    ("03001234567", "+923001234567"),
+    ("(0300) 123-4567", "+923001234567"),
+    ("0300.1234567", "+923001234567"),
+    ("+92 300 1234567", "+923001234567"),
+    ("+92-300-1234567", "+923001234567"),
+    ("+923001234567", "+923001234567"),
+    ("0092 300 1234567", "+923001234567"),
+    ("00923001234567", "+923001234567"),
+    ("  0345 1234567  ", "+923451234567"),
+    ("+44 20 7946 0958", "+442079460958"),
+    ("+1 (415) 555-2671", "+14155552671"),
+    ("+12345678", "+12345678"),  # eight digits: the shortest accepted
+    ("+123456789012345", "+123456789012345"),  # fifteen digits: the longest accepted
+]
+
+REFUSED_PHONES = [
+    "",
+    "   ",
+    "021-3456789",  # landline
+    "0213456789",
+    "+92 21 34567890",  # Pakistani landline in international form
+    "0092 21 3456789",
+    "0300123456",  # too short
+    "030012345678",  # too long
+    "0400-1234567",
+    "923001234567",  # no plus and no leading zero
+    "+1234567",  # seven digits
+    "+",
+    "+0300123456789",  # country code cannot start with zero
+    "+1234567890123456",  # sixteen digits
+    "0300-ABC4567",
+    "call me on 0300 1234567",
+    "0300 1234567 ext 5",
+    "+92 300 12345+67",
+    "03001234567\u0000",
+    "x" * 500,
+    "0" * 500,
+]
+
+
+@pytest.mark.parametrize(("raw", "want"), ACCEPTED_PHONES)
+def test_normalise_phone_accepts_and_returns_e164(raw, want):
+    assert privacy.normalise_phone(raw) == want
+
+
+@pytest.mark.parametrize("raw", REFUSED_PHONES)
+def test_normalise_phone_refuses(raw):
+    assert privacy.normalise_phone(raw) is None
+
+
+def test_normalise_phone_maps_unicode_digits_and_drops_invisible_characters():
+    arabic_indic = "".join(chr(0x0660 + int(d)) for d in "03001234567")
+    assert privacy.normalise_phone(arabic_indic) == "+923001234567"
+    fullwidth = "".join(chr(0xFF10 + int(d)) for d in "03001234567")
+    assert privacy.normalise_phone(fullwidth) == "+923001234567"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["0300" + ZW + "1234567", "0300\u03011234567", "0300\u20601234567", "0300\u31641234567",
+     "0300\u28001234567", "+92\u00ad3001234567", "\u200e0300 1234567"],
+)  # fmt: skip
+def test_normalise_phone_refuses_invisible_and_combining_characters(raw):
+    assert privacy.normalise_phone(raw) is None
+
+
+def test_normalise_phone_treats_00_as_plus():
+    assert privacy.normalise_phone("0044 20 7946 0958") == "+442079460958"
+    assert privacy.normalise_phone("001 415 555 2671") == "+14155552671"
+    assert privacy.normalise_phone("00") is None
+    assert privacy.normalise_phone("00 1234567") is None  # seven digits
+    assert privacy.normalise_phone("0092 21 3456789") is None
+
+
+def test_normalise_phone_rejects_non_strings():
+    for value in (None, 3001234567, b"03001234567", ["0300"]):
+        with pytest.raises(TypeError):
+            privacy.normalise_phone(value)
+
+
+def test_normalise_phone_is_exported_from_the_patterns_module():
+    from apps.kernel.privacy import patterns
+
+    assert privacy.normalise_phone is patterns.normalise_phone

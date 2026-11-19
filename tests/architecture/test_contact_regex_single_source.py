@@ -153,3 +153,18 @@ def test_string_methods_are_not_regex_calls(tmp_path):
 def test_existing_token_and_hash_patterns_are_not_contact_regexes():
     for pattern in (r"^[0-9a-f]{64}$", r"^[a-z][a-z0-9_]{0,47}$", r"%(2f|5c)", r"\d{1,2}"):
         assert not looks_like_contact_regex(pattern)
+
+
+def test_fixture_with_phone_validation_regex_is_caught(tmp_path):
+    bad = fixture(
+        tmp_path,
+        "import re\n"
+        "PK = re.compile(r'^(\\+92|0)3[0-9]{9}$')\n"
+        "ok = re.fullmatch(r'\\+\\d{8,15}', x)\n",
+    )
+    assert violations(bad) == [f"{bad}:2", f"{bad}:3"]
+
+
+def test_registration_phone_rules_come_from_the_patterns_module():
+    source = (ROOT / "apps" / "identity" / "validation.py").read_text()
+    assert "normalise_phone" in source and "import re" not in source
