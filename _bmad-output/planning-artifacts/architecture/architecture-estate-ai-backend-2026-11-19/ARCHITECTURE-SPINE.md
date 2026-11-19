@@ -134,7 +134,7 @@ flowchart TB
 
 - **Binds:** NFR-1, SM-7; A7
 - **Prevents:** slow AI or image work starving chat and sign-in; hidden dependence on Redis or a queue
-- **Rule:** Daphne runs one process with one worker; the in-memory channel layer is used only in this shape and any second worker is forbidden. Under ASGI synchronous views share one thread [ASSUMPTION: confirm at scaffold], so message send, sign-in and session endpoints are async or DB-only, and no endpoint holds that thread for more than 200 ms of non-database work. AI calls, image re-encode and model inference run on a bounded executor owned by `kernel.runtime` (or async HTTP). Periodic work (cleanup, retention, anonymisation) is management commands, not a queue. Redis only if the SM-7 latency test under AI load fails.
+- **Rule:** Daphne runs one process with one worker; the in-memory channel layer is used only in this shape and any second worker is forbidden. Under ASGI synchronous views share one thread [ASSUMPTION refuted by the Story 1.2 spike, see `docs/architecture-notes.md`; amend before the messaging epic], so message send, sign-in and session endpoints are async or DB-only, and no endpoint holds that thread for more than 200 ms of non-database work. AI calls, image re-encode and model inference run on a bounded executor owned by `kernel.runtime` (or async HTTP). Periodic work (cleanup, retention, anonymisation) is management commands, not a queue. Redis only if the SM-7 latency test under AI load fails.
 
 ### AD-15 — Media [ADOPTED, revised]
 
