@@ -2,7 +2,7 @@
 title: 'Story 1.17: Sign-in and sign-out with session security (backend half)'
 type: 'feature'
 created: '2026-11-19'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -103,6 +103,23 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, backend half (blind, edge-case, verification-gap).
+
+| # | Finding | Verdict | Route |
+|---|---------|---------|-------|
+| 1 | Throttle check-then-act race let parallel guesses all pass the peek; failure count rolled back on the deactivated-race branch (all three) | high | patch: per-key advisory lock around peek, verify and count; raise after the block exits |
+| 2 | Session minted from a stale password after a concurrent password change (blind) | high | patch: recheck hash and email after the row lock |
+| 3 | No CSRF rotation on sign-in and sign-out (blind, edge) | medium | patch: `rotate_token`; frontend refetches the token |
+| 4 | Timing outliers: lazy dummy hash, unusable password hashes (blind, edge) | medium | patch: warm at start-up, unusable treated as unknown |
+| 5 | Unbounded sessions per account (blind, edge) | medium | patch: cap of 10, oldest ended `replaced` |
+| 6 | Cookie not cleared on sign-out 401; failed touch could 500 a read; refresh ignored expiry; unvalidated session settings; trailing-slash origins; end reasons defined in four places (edge, blind) | low | patch |
+| 7 | Tests did not prove network keying, trusted-origin derivation, concurrency count, cookie-clear attributes, public POST routes with a cookie, deactivated race, retention run (verification-gap) | medium | patch: added, 22 tests |
+| 8 | No audit records for sign-in or sign-out (blind) | low | reject: the spec forbids them (private data, no requirement) |
+| 9 | No global or per-account sign-in throttle; fixed-window burst; shared-key lockout when `TRUSTED_PROXIES` is unset (blind, edge) | medium | defer, documented in `docs/sessions.md` accepted risks |
+| 10 | `__Host-` cookie prefix, hash upgrade on sign-in, purge batching, email casefolding, `password_changed` emitter must end sessions in its own transaction (blind, edge) | low | defer to later stories, documented |
+
+Deviation recorded: the strengthened concurrency test asserts exactly 5 failures counted, since serialised attempts stop at the limit.
 
 ## Design Notes
 
