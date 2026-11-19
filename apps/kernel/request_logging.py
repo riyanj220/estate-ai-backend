@@ -25,6 +25,7 @@ ALLOWED_FIELDS = (
     "status",
     "duration_ms",
     "exception_class",
+    "handler",
 )
 
 _request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
