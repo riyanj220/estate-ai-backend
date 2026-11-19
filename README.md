@@ -17,7 +17,7 @@ scripts/dev_server.sh                   # Daphne on DJANGO_BIND_HOST:DJANGO_PORT
 curl -s 127.0.0.1:8000/api/v1/health    # {"status":"ok"}
 ```
 
-Mailpit UI: http://127.0.0.1:8025. Never commit `.env`; only `.env.example` (placeholders) is tracked.
+Mailpit UI: http://127.0.0.1:8025 shows every email the app sends locally (see `docs/mail.md`; `scripts/mail_check.py` sends one test message). Never commit `.env`; only `.env.example` (placeholders) is tracked.
 
 ## Database roles
 
@@ -121,3 +121,7 @@ Cities live in the `catalog` app (seeded with Karachi) and are served as plain s
 ## Accounts
 
 The `identity` app owns the account table. The account state (`email_unverified`, `active`, `suspended`, `deactivated`) is derived from separate conditions, `identity.policy.can(actor, capability)` implements the FR-74 capability matrix (capabilities that depend on later stories are pending), state changes are audited services, and `lock_account` and `is_active_owner` are the lock and eligibility primitives. See `docs/account-states.md`.
+
+## Mail
+
+Features send email only through `apps.kernel.mail.send(MailMessage(...))` inside their transaction; it is delivered after commit, off the request thread, never retried, and links come from `email_link` (`FRONTEND_BASE_URL`). Local mail goes to Mailpit only. See `docs/mail.md`.

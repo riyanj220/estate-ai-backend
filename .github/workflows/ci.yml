@@ -48,6 +48,8 @@ jobs:
       DJANGO_ALLOWED_HOSTS: testserver,127.0.0.1,localhost
       CSRF_TRUSTED_ORIGINS: http://localhost:3000
       FRONTEND_BASE_URL: http://localhost:3000
+      MAIL_HOST: smtp.ci.invalid
+      MAIL_FROM: ci@example.org
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
