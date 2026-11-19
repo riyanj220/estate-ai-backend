@@ -40,6 +40,15 @@ go in the `RUNTIME_APPEND_ONLY_TABLES` setting (the only route, so every migrate
 `DJANGO_SECRET_KEY` or `RUNTIME_PASSWORD` is missing, a placeholder, or under 32 characters. The serving process
 needs no DDL credentials: prod defines the `migrator` alias only when `MIGRATOR_PASSWORD` is set (validated the
 same way), which only the migration job should provide.
+Security baseline: `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `FRONTEND_BASE_URL` and `TRUSTED_PROXIES` come from
+the environment (see `.env.example`). Wildcards are refused; prod also refuses a missing host list or a
+`FRONTEND_BASE_URL` that is not an `https` origin without a path. Absolute links use `apps.kernel.links.frontend_url`
+(never the Host header); `apps.kernel.network.client_ip` trusts `X-Forwarded-For` only from `TRUSTED_PROXIES`
+(empty trusts none). Every response carries security headers and an API-only CSP; HSTS is prod-only. The Django
+admin is not installed.
+`CSRF_TRUSTED_ORIGINS` is separate from `FRONTEND_BASE_URL`: prod needs https origins only and it may be empty when the
+proxy is same-origin. `TRUSTED_PROXIES` must be the proxy's own address range, never `0.0.0.0/0` (ranges wider than
+/8 IPv4 or /16 IPv6 are refused).
 `DJANGO_SETTINGS_MODULE` must be set for ASGI (`scripts/dev_server.sh` defaults it to local).
 
 ## Checks

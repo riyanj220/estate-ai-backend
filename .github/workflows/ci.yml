@@ -45,6 +45,9 @@ jobs:
       RUNTIME_USER: runtime
       RUNTIME_PASSWORD: ci-runtime-password-not-a-secret-0123456789
       PGHOST: 127.0.0.1
+      DJANGO_ALLOWED_HOSTS: testserver,127.0.0.1,localhost
+      CSRF_TRUSTED_ORIGINS: http://localhost:3000
+      FRONTEND_BASE_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
