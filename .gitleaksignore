@@ -1,0 +1,2 @@
+# Test fixture password in an API test (not a real secret)
+0d8f880651881da2a25394205addb6e8976b8eda:tests/api/test_password_api.py:generic-api-key:404
