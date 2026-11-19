@@ -68,3 +68,22 @@ class IndividualProfile(models.Model):
     phone = models.CharField(max_length=16)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class EmailVerificationToken(models.Model):
+    """A single-use verification link. Only the SHA-256 hash of the token is ever stored."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="verification_tokens"
+    )
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)  # set on use or when superseded
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["expires_at"], name="identity_evt_expires_idx"),
+            models.Index(fields=["used_at"], name="identity_evt_used_idx"),
+        ]

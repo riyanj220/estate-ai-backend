@@ -7,8 +7,9 @@ class IdentityConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):
+        from apps.identity import subscribers, verification
         from apps.identity.models import AccountType
-        from apps.kernel import audit
+        from apps.kernel import audit, retention
 
         # Metadata holds enumerated values only: never email, phone, hash or the suspension reason.
         audit.register_action("account.created", {"account_type": [t.value for t in AccountType]})
@@ -19,3 +20,6 @@ class IdentityConfig(AppConfig):
             "account.deactivated",
         ):
             audit.register_action(action, {})
+
+        subscribers.register()
+        retention.register("identity.email_verification_tokens", verification.purge_expired)
