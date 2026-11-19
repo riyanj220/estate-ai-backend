@@ -97,6 +97,10 @@ def subscribe(event_type: type[DomainEvent], handler: Handler) -> None:
     handlers.append(handler)
 
 
+def is_subscribed(event_type: type[DomainEvent], handler: Handler) -> bool:
+    return handler in _registry.get(event_type, ())
+
+
 def emit(event: DomainEvent) -> None:
     if not isinstance(event, DomainEvent):
         raise TypeError("emit takes a DomainEvent")

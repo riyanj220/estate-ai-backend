@@ -18,12 +18,15 @@ def _catalogue(*entries: ErrorCode) -> dict[str, ErrorCode]:
 CATALOGUE: dict[str, ErrorCode] = _catalogue(
     ErrorCode("bad_request", 400, "The request could not be understood."),
     ErrorCode("validation_error", 400, "The request contains invalid values."),
+    ErrorCode("link_invalid", 400, "This link is not valid. Request a new one."),
     ErrorCode("unauthenticated", 401, "Authentication is required."),
     ErrorCode("forbidden", 403, "You do not have permission to perform this action."),
     ErrorCode("not_found", 404, "The requested resource was not found."),
     ErrorCode("method_not_allowed", 405, "This method is not allowed for this resource."),
     ErrorCode("not_acceptable", 406, "The requested response format is not available."),
     ErrorCode("stale_revision", 409, "The resource changed since it was loaded."),
+    ErrorCode("link_used", 409, "This link has already been used or replaced by a newer one."),
+    ErrorCode("link_expired", 410, "This link has expired. Request a new one."),
     ErrorCode("unsupported_media_type", 415, "The request content type is not supported."),
     ErrorCode(
         "idempotency_key_reused", 422, "This idempotency key was used for a different request."

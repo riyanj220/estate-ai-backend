@@ -25,3 +25,26 @@ def send_already_registered(email: str) -> None:
             body=_ALREADY_REGISTERED_BODY.format(link=mail.email_link(SIGN_IN_PATH)),
         )
     )
+
+
+VERIFY_PATH = "/verify-email"
+
+_VERIFY_SUBJECT = "Verify your EstateAI email address"
+_VERIFY_BODY = """\
+Welcome to EstateAI. Confirm your email address by opening this link:
+{link}
+
+This link works once and expires in 24 hours.
+If you did not create an account, you can ignore this message.
+"""
+
+
+def send_verification(email: str, token: str) -> None:
+    """Queue the verification link after commit. Call inside a transaction."""
+    mail.send(
+        mail.MailMessage(
+            to=email,
+            subject=_VERIFY_SUBJECT,
+            body=_VERIFY_BODY.format(link=mail.email_link(VERIFY_PATH, {"token": token})),
+        )
+    )

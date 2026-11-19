@@ -6,5 +6,5 @@ from apps.kernel.mail import MailRequested, deliver
 
 def ensure_subscribed() -> None:
     """Register the mail delivery handler unless present, so `events.clear()` cannot drop mail."""
-    if deliver not in events._registry.get(MailRequested, ()):
+    if not events.is_subscribed(MailRequested, deliver):
         events.subscribe(MailRequested, deliver)
