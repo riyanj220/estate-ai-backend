@@ -2,7 +2,7 @@ from django.urls import path
 from drf_spectacular.views import SpectacularAPIView
 
 from apps.presentation.api.handlers import bad_request, forbidden, not_found, server_error
-from config.health import health
+from apps.presentation.api.health import health
 
 handler400 = bad_request
 handler403 = forbidden
