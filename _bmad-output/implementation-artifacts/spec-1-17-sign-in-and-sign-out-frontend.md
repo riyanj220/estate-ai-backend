@@ -2,7 +2,7 @@
 title: 'Story 1.17: Sign-in and sign-out (frontend half)'
 type: 'feature'
 created: '2026-11-19'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -87,6 +87,21 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, frontend half (blind, edge-case, verification-gap).
+
+**Patched:**
+- Back after sign-out could redisplay the cached dashboard: sign-out now does a hard navigation.
+- Header went stale (expiry, other tab): the provider re-checks silently on focus and route change; a 401 flips to signed out.
+- CSRF fetch failures and sign-in 429 were mislabelled as network errors: mapped to server and rate-limit messages; a 200 with an unparsable body is still a success.
+- Sign-in form could stay disabled after a stalled navigation: pageshow reset and a safety timer; empty fields validated on the client; one announcement mechanism; show/hide label.
+- Guard hardening: every guarded page calls `requireAccount` itself, the proxy always overwrites `x-requested-path` for all page routes and drops `_rsc`, `next` rejects `/api` and `/_next`, a signed-in visit to `/sign-in` honours a valid `next` (deviation from the frozen text, a safe improvement).
+- `csrf.ts` is client-only; the `Account` type and state labels are defined once.
+- Tests added (21): exact network message, 429, CSRF fetch failure, empty-name fallback, sign-out failure kinds, shared CSRF fetch, query preserved through the guard, spoofed header, direct admin visit, register-success link, Back after sign-out, `next` boundaries, empty submit, focus revalidation.
+
+**Rejected:** retry on any 403 double-counting the sign-in throttle (the backend CSRF check rejects before the service, comment added).
+
+**Deferred:** `next` length boundary tests, extra Cache-Control matrix, axe for the remaining error states, fetching `/me` only on pages that need it, role check for the admin area (Story 1.19), email shown nowhere beyond the header (no finding).
 
 ## Design Notes
 
