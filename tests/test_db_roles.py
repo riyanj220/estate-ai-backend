@@ -181,3 +181,19 @@ def _audit_probe(runtime_conn):
     ):
         with pytest.raises(errors.InsufficientPrivilege):
             runtime_conn.execute(sql)
+
+
+def test_runtime_can_read_and_write_cities_but_not_ddl(runtime_conn, django_db_blocker):
+    try:
+        runtime_conn.execute("SELECT count(*) FROM catalog_city").fetchone()
+        runtime_conn.execute(
+            "INSERT INTO catalog_city (id, name, is_active, created_at) "
+            "VALUES (gen_random_uuid(), 'Role Probe', true, now())"
+        )
+        runtime_conn.execute("UPDATE catalog_city SET is_active = false WHERE name = 'Role Probe'")
+        runtime_conn.execute("DELETE FROM catalog_city WHERE name = 'Role Probe'")
+        with pytest.raises(errors.InsufficientPrivilege):
+            runtime_conn.execute("ALTER TABLE catalog_city ADD COLUMN nope int")
+    finally:
+        with django_db_blocker.unblock(), connection.cursor() as cursor:
+            cursor.execute("DELETE FROM catalog_city WHERE name = 'Role Probe'")
