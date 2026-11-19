@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 from apps.kernel.errors import DomainError
 from apps.presentation.api.handlers import bad_request, forbidden, not_found, server_error
 from apps.presentation.api.pagination import StandardCursorPagination
+from apps.presentation.api.permissions import AllowPublic
 
 handler400 = bad_request
 handler403 = forbidden
@@ -27,12 +28,15 @@ class ProbeSerializer(serializers.Serializer):
 
 
 class ValidationView(APIView):
+    permission_classes = [AllowPublic]
+
     def post(self, request):
         ProbeSerializer(data=request.data).is_valid(raise_exception=True)
         return Response()  # pragma: no cover
 
 
 class RaiseView(APIView):
+    permission_classes = [AllowPublic]
     exc: Exception = RuntimeError()
 
     def get(self, request, **kwargs):
@@ -56,6 +60,7 @@ class ContentTypePagination(StandardCursorPagination):
 
 
 class ContentTypeList(generics.ListAPIView):
+    permission_classes = [AllowPublic]
     queryset = ContentType.objects.all()
     serializer_class = ContentTypeSerializer
     pagination_class = ContentTypePagination
@@ -78,6 +83,8 @@ class MultiList(ContentTypeList):
 
 
 class HostileView(APIView):
+    permission_classes = [AllowPublic]
+
     def post(self, request):
         class S(serializers.Serializer):
             meta = serializers.DictField(child=serializers.IntegerField())
