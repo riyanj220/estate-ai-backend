@@ -11,6 +11,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "config.apps.ConfigAppConfig",
     "apps.kernel",
+    "apps.catalog",
 ]
 
 MIDDLEWARE = [
