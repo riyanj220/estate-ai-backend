@@ -122,6 +122,10 @@ Cities live in the `catalog` app (seeded with Karachi) and are served as plain s
 
 The `identity` app owns the account table. The account state (`email_unverified`, `active`, `suspended`, `deactivated`) is derived from separate conditions, `identity.policy.can(actor, capability)` implements the FR-74 capability matrix (capabilities that depend on later stories are pending), state changes are audited services, and `lock_account` and `is_active_owner` are the lock and eligibility primitives. See `docs/account-states.md`.
 
+## Contact-detail patterns
+
+`apps.kernel.privacy.patterns` is the only definition of phone, email and private-address patterns; features and AI redaction call `reject_contact_details(text)` or `find_contact_details(text)` and never write their own contact regex (a repository test enforces it). See `docs/privacy-patterns.md`.
+
 ## Mail
 
 Features send email only through `apps.kernel.mail.send(MailMessage(...))` inside their transaction; it is delivered after commit, off the request thread, never retried, and links come from `email_link` (`FRONTEND_BASE_URL`). Local mail goes to Mailpit only. See `docs/mail.md`.

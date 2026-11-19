@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 11-19-2026 08:06
-last_updated: 11-19-2026 14:59
+last_updated: 11-19-2026 15:17
 project: estate-ai-backend
 project_key: NOKEY
 tracking_system: file-system
@@ -49,7 +49,7 @@ development_status:
   1-11-city-reference-data: review
   1-12-account-model-states-and-capability-matrix: review
   1-13-mail-port-and-dev-mail-catcher: review
-  1-14-shared-contact-detail-patterns: backlog
+  1-14-shared-contact-detail-patterns: review
   1-15-individual-registration: backlog
   1-16-email-verification: backlog
   1-17-sign-in-and-sign-out-with-session-security: backlog
