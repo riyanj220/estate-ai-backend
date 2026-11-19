@@ -67,3 +67,36 @@ class IdempotencyRecord(models.Model):
                 fields=["scope", "account_id", "key"], name="idempotency_scope_account_key_uniq"
             )
         ]
+
+
+class FeatureFlag(models.Model):
+    """Database override of a flag declared in code (`kernel.flags.register_flag`)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=64, unique=True)
+    enabled = models.BooleanField()
+    changed_by = models.UUIDField(null=True, blank=True)  # account id; null for the system
+    changed_at = models.DateTimeField()
+
+
+AI_OUTCOMES = ("success", "error", "timeout", "fallback", "budget_exhausted", "blocked")
+
+
+class AiRequestLog(models.Model):
+    """One AI call. Never holds content, account ids, prompts, responses or free text."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    feature = models.CharField(max_length=48)
+    provider = models.CharField(max_length=48)
+    model = models.CharField(max_length=48)
+    latency_ms = models.PositiveIntegerField()
+    outcome = models.CharField(max_length=24)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        indexes = [models.Index(fields=["created_at"], name="ai_request_log_created_idx")]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(outcome__in=AI_OUTCOMES), name="ai_request_log_outcome_valid"
+            )
+        ]
