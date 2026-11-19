@@ -309,6 +309,9 @@ def test_local_settings_smoke(monkeypatch):
         "CSRF_TRUSTED_ORIGINS",
         "FRONTEND_BASE_URL",
         "TRUSTED_PROXIES",
+        "MAIL_HOST",
+        "MAIL_PORT",
+        "MAIL_FROM",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(env_module, "load_dotenv", lambda path=None: None)

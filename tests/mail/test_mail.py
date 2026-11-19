@@ -1,10 +1,12 @@
 import importlib
 import json
 import logging
+import sys
 import time
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
 from django.test import Client
@@ -35,7 +37,7 @@ def test_sent_once_after_commit(django_capture_on_commit_callbacks, outbox):
     assert len(outbox) == 1
     sent = outbox[0]
     assert (sent.to, sent.subject, sent.body) == ([ADDRESS], SUBJECT, BODY)
-    assert sent.from_email == "EstateAI <no-reply@localhost>"
+    assert sent.from_email == settings.DEFAULT_FROM_EMAIL
     assert sent.alternatives[0][0] == "<p>hi</p>"
     assert sent.alternatives[0][1] == "text/html"
 
@@ -310,20 +312,21 @@ def load_local(monkeypatch, **env):
     monkeypatch.setenv("DJANGO_SECRET_KEY", "k" * 40)
     monkeypatch.setenv("RUNTIME_PASSWORD", "r" * 40)
     monkeypatch.setenv("MIGRATOR_PASSWORD", "m" * 40)
+    # Explicit loopback defaults: CI exports a non-loopback MAIL_HOST for the prod-settings tests.
+    monkeypatch.setenv("MAIL_HOST", "127.0.0.1")
+    monkeypatch.setenv("MAIL_PORT", "1025")
     for name, value in env.items():
         monkeypatch.setenv(name, value)
-    import config.settings.local as local
-
-    return importlib.reload(local)
+    sys.modules.pop("config.settings.local", None)
+    return importlib.import_module("config.settings.local")
 
 
 @pytest.fixture
 def restore_local(monkeypatch):
     yield
     monkeypatch.undo()
-    import config.settings.local as local
-
-    importlib.reload(local)
+    # Drop the module instead of reloading: reloading needs secrets that CI does not have.
+    sys.modules.pop("config.settings.local", None)
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
