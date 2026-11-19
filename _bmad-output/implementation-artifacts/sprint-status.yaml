@@ -52,7 +52,7 @@ development_status:
   1-14-shared-contact-detail-patterns: review
   1-15-individual-registration: review
   1-16-email-verification: review
-  1-17-sign-in-and-sign-out-with-session-security: backlog
+  1-17-sign-in-and-sign-out-with-session-security: in-progress
   1-18-password-reset-and-password-change: backlog
   1-19-agency-registration: backlog
   1-20-individual-profile-management: backlog
