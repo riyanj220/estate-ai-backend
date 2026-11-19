@@ -11,6 +11,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.17",
     "pytest>=8",
     "pytest-django>=4.9",
     "ruff>=0.6",
@@ -34,3 +35,108 @@ select = ["E", "F", "I", "B", "UP", "S"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106"]
+
+[tool.importlinter]
+root_package = "apps"
+include_external_packages = false
+
+[[tool.importlinter.contracts]]
+name = "Layers point downward only"
+type = "layers"
+layers = [
+    "presentation",
+    "governance",
+    "valuation | search | assistant | messaging",
+    "listings",
+    "identity",
+    "catalog",
+    "kernel",
+]
+containers = ["apps"]
+exhaustive = true
+
+[[tool.importlinter.contracts]]
+name = "Tier-4 apps never import each other"
+type = "independence"
+modules = ["apps.valuation", "apps.search", "apps.assistant", "apps.messaging"]
+
+[[tool.importlinter.contracts]]
+name = "Nothing outside catalog imports its models"
+type = "forbidden"
+source_modules = ["apps.kernel", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.governance", "apps.presentation"]
+forbidden_modules = ["apps.catalog.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Nothing outside identity imports its models"
+type = "forbidden"
+source_modules = ["apps.kernel", "apps.catalog", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.governance", "apps.presentation"]
+forbidden_modules = ["apps.identity.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Nothing outside listings imports its models"
+type = "forbidden"
+source_modules = ["apps.kernel", "apps.catalog", "apps.identity", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.governance", "apps.presentation"]
+forbidden_modules = ["apps.listings.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Nothing outside valuation imports its models"
+type = "forbidden"
+source_modules = ["apps.kernel", "apps.catalog", "apps.identity", "apps.listings", "apps.search", "apps.assistant", "apps.messaging", "apps.governance", "apps.presentation"]
+forbidden_modules = ["apps.valuation.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Nothing outside search imports its models"
+type = "forbidden"
+source_modules = ["apps.kernel", "apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.assistant", "apps.messaging", "apps.governance", "apps.presentation"]
+forbidden_modules = ["apps.search.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Nothing outside assistant imports its models"
+type = "forbidden"
+source_modules = ["apps.kernel", "apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.messaging", "apps.governance", "apps.presentation"]
+forbidden_modules = ["apps.assistant.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Nothing outside messaging imports its models"
+type = "forbidden"
+source_modules = ["apps.kernel", "apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.governance", "apps.presentation"]
+forbidden_modules = ["apps.messaging.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Nothing outside governance imports its models"
+type = "forbidden"
+source_modules = ["apps.kernel", "apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.presentation"]
+forbidden_modules = ["apps.governance.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Nothing imports a subscribers module"
+type = "forbidden"
+source_modules = ["apps.kernel", "apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.governance", "apps.presentation"]
+forbidden_modules = ["apps.catalog.subscribers", "apps.identity.subscribers", "apps.listings.subscribers", "apps.valuation.subscribers", "apps.search.subscribers", "apps.assistant.subscribers", "apps.messaging.subscribers", "apps.governance.subscribers"]
+allow_indirect_imports = true
+ignore_imports = [
+    "apps.catalog.apps -> apps.catalog.subscribers",
+    "apps.identity.apps -> apps.identity.subscribers",
+    "apps.listings.apps -> apps.listings.subscribers",
+    "apps.valuation.apps -> apps.valuation.subscribers",
+    "apps.search.apps -> apps.search.subscribers",
+    "apps.assistant.apps -> apps.assistant.subscribers",
+    "apps.messaging.apps -> apps.messaging.subscribers",
+    "apps.governance.apps -> apps.governance.subscribers",
+]
+unmatched_ignore_imports_alerting = "none"
+
+[[tool.importlinter.contracts]]
+name = "Assistant never imports listings models"
+type = "forbidden"
+source_modules = ["apps.assistant"]
+forbidden_modules = ["apps.listings.models"]
+allow_indirect_imports = true
