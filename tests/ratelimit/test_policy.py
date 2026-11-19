@@ -22,6 +22,9 @@ EXPECTED = {
     "estimates": (20, H, "account"),
     "sign_in": (5, 900, "client"),
     "verification_resend": (5, H, "client"),
+    "password_reset_request": (5, H, "client"),
+    "password_reset_confirm": (20, H, "client"),
+    "password_change_failed": (5, 900, "account"),
 }
 
 

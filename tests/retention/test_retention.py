@@ -37,6 +37,7 @@ def test_kernel_jobs_are_registered_in_order():
         "kernel.ratelimit",
         "kernel.ai_request_log",
         "identity.email_verification_tokens",
+        "identity.password_reset_tokens",
         "identity.sessions",
     ]
 
@@ -75,6 +76,7 @@ def test_dry_run_reports_counts_and_deletes_nothing(db):
         "kernel.ratelimit: would delete 1",
         "kernel.ai_request_log: would delete 1",
         "identity.email_verification_tokens: would delete 0",
+        "identity.password_reset_tokens: would delete 0",
         "identity.sessions: would delete 0",
     ]
     assert IdempotencyRecord.objects.count() == 2
@@ -91,6 +93,7 @@ def test_real_run_deletes_expired_and_keeps_newer(db):
         "kernel.ratelimit: deleted 1",
         "kernel.ai_request_log: deleted 1",
         "identity.email_verification_tokens: deleted 0",
+        "identity.password_reset_tokens: deleted 0",
         "identity.sessions: deleted 0",
     ]
     assert list(IdempotencyRecord.objects.values_list("key", flat=True)) == ["new"]
