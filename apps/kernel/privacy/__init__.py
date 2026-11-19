@@ -6,6 +6,7 @@ from apps.kernel.privacy.patterns import (
     ContactKind,
     Finding,
     find_contact_details,
+    normalise_phone,
     reject_contact_details,
 )
 
@@ -28,6 +29,7 @@ __all__ = [
     "Finding",
     "PrivateTargetRef",
     "find_contact_details",
+    "normalise_phone",
     "record_private_read",
     "register_private_target",
     "reject_contact_details",

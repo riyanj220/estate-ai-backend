@@ -210,3 +210,58 @@ def reject_contact_details(text: str) -> str | None:
     if len(names) > 1:
         names = [", ".join(names[:-1]), names[-1]]
     return f"The text appears to contain {' and '.join(names)}."
+
+
+# --- phone validation ------------------------------------------------------------------------
+
+PHONE_MAX_INPUT = 40  # characters; a registration phone is never longer
+_PHONE_SEPARATORS = frozenset(" -.()")
+_PK_MOBILE_DIGITS = 10  # national significant number, e.g. 3001234567
+INTERNATIONAL_MIN_DIGITS = 8
+INTERNATIONAL_MAX_DIGITS = 15
+
+
+def _is_pk_mobile(national: str) -> bool:
+    return len(national) == _PK_MOBILE_DIGITS and national[0] == "3"
+
+
+def normalise_phone(text: str) -> str | None:
+    """E.164 for a valid Pakistani mobile or international number, else None.
+
+    Accepts `03xx xxxxxxx`, `+92 3xx xxxxxxx` and `0092 3xx xxxxxxx` with spaces, dashes, dots
+    or parentheses, and any `+` country-code number of 8 to 15 digits. A Pakistani number that
+    is not a mobile (a landline) is refused. Never logs or echoes the input.
+    """
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    if not text.strip() or len(text) > PHONE_MAX_INPUT:
+        return None
+    if any(_dropped(char) for char in text):  # invisible or combining characters: refuse
+        return None
+    normal, _ = _normalise(text.strip())
+    plus = normal.startswith("+")
+    body = normal[1:] if plus else normal
+    digits = []
+    for char in body:
+        if char in "0123456789":
+            digits.append(char)
+        elif char not in _PHONE_SEPARATORS:
+            return None  # letters, a stray "+" and anything else
+    number = "".join(digits)
+    if not number:
+        return None
+    if not plus and number.startswith("00"):  # "00" is the international dialling prefix
+        plus, number = True, number[2:]
+        if not number:
+            return None
+    if plus:
+        if number[0] == "0" or not (
+            INTERNATIONAL_MIN_DIGITS <= len(number) <= INTERNATIONAL_MAX_DIGITS
+        ):
+            return None
+        if number.startswith("92") and not _is_pk_mobile(number[2:]):
+            return None
+        return "+" + number
+    if number.startswith("0") and _is_pk_mobile(number[1:]):
+        return "+92" + number[1:]
+    return None
