@@ -47,3 +47,23 @@ class RateLimitCounter(models.Model):
                 fields=["scope", "key_hash", "window_start"], name="ratelimit_counter_window_uniq"
             )
         ]
+
+
+class IdempotencyRecord(models.Model):
+    """A claimed idempotency key (AD-17). Holds a hash and a result reference, never a body."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    scope = models.CharField(max_length=64)
+    account_id = models.UUIDField()  # plain UUID: kernel never points at another app's table
+    key = models.CharField(max_length=128)
+    request_hash = models.CharField(max_length=64)
+    result_ref = models.CharField(max_length=128, null=True, blank=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        indexes = [models.Index(fields=["created_at"], name="idempotency_created_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scope", "account_id", "key"], name="idempotency_scope_account_key_uniq"
+            )
+        ]
