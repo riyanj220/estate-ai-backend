@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from typing import ClassVar
 from uuid import UUID
 
+from apps.identity import models
 from apps.kernel.events import DomainEvent, emit
 
-SESSION_END_REASONS = frozenset({"sign_out", "password_changed", "deactivated"})
+# `replaced` (a new sign-in, or the open-session cap) is internal and never announced.
+SESSION_END_REASONS = frozenset(r for r in models.SESSION_END_REASONS if r != "replaced")
 
 
 @dataclass(frozen=True)

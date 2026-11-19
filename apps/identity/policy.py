@@ -31,3 +31,20 @@ def can(actor: Actor, capability: Capability | str) -> bool:
             return False
         return capability in _ADMIN_CAPABILITIES
     return matrix_access(account.state, capability) is Access.ALLOWED
+
+
+def capabilities_for(account_type: str, state: AccountState) -> list[Capability]:
+    """The capabilities `can` grants an account of this type and state, in matrix order.
+
+    Mirrors `can` for a signed-in account: pending capabilities are not listed, administrators
+    sign in and browse only, and a deactivated administrator has none.
+    """
+    if account_type == AccountType.ADMIN:
+        if state is AccountState.DEACTIVATED:
+            return []
+        return [c for c in Capability if c in _ADMIN_CAPABILITIES]
+    return [
+        c
+        for c in Capability
+        if c not in PENDING_CAPABILITIES and matrix_access(state, c) is Access.ALLOWED
+    ]

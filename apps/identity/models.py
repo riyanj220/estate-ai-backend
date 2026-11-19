@@ -87,3 +87,42 @@ class EmailVerificationToken(models.Model):
             models.Index(fields=["expires_at"], name="identity_evt_expires_idx"),
             models.Index(fields=["used_at"], name="identity_evt_used_idx"),
         ]
+
+
+# The one definition of why a session ends; events and services derive their sets from it.
+SESSION_END_REASONS = ["sign_out", "password_changed", "deactivated", "replaced"]
+
+
+class Session(models.Model):
+    """A sign-in session. Only the SHA-256 hash of the cookie token is ever stored.
+
+    Written only by `identity.services`. `ended_at` and `ended_reason` are set together.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="sessions")
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+    expires_at = models.DateTimeField()  # the absolute limit; the idle limit follows last_seen_at
+    ended_at = models.DateTimeField(null=True, blank=True)
+    ended_reason = models.CharField(max_length=16, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ended_at__isnull=True, ended_reason="")
+                    | (
+                        models.Q(ended_at__isnull=False)
+                        & models.Q(ended_reason__in=SESSION_END_REASONS)
+                    )
+                ),
+                name="identity_session_end_consistent",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["ended_at"], name="identity_session_ended_idx"),
+            models.Index(fields=["expires_at"], name="identity_session_expires_idx"),
+            models.Index(fields=["last_seen_at"], name="identity_session_seen_idx"),
+        ]
