@@ -8,21 +8,22 @@ from django.db import IntegrityError, transaction
 from django.db.models.functions import Lower
 from django.utils import timezone
 
-from apps.identity.events import emit_session_ended
-from apps.identity.models import Account, AccountType
+from apps.identity import notices
+from apps.identity.events import (
+    emit_registered,
+    emit_session_ended,
+    emit_verification_requested,
+)
+from apps.identity.models import Account, AccountType, IndividualProfile
+from apps.identity.passwords import PASSWORD_MAX
 from apps.identity.selectors import AccountView, get_account, parse_id
 from apps.identity.state import AccountState
-from apps.kernel import audit
+from apps.identity.validation import check_email, validate_individual
+from apps.kernel import audit, ratelimit
 from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.errors import DomainError
-from apps.kernel.privacy.patterns import (
-    EMAIL_ADDRESS_SHAPE,
-    LONG_DIGIT_RUN,
-    reject_contact_details,
-)
+from apps.kernel.privacy.patterns import LONG_DIGIT_RUN, reject_contact_details
 
-EMAIL_MAX = 254
-PASSWORD_MAX = 1024
 EMAIL_CONSTRAINT = "identity_account_email_ci_uniq"
 
 
@@ -33,16 +34,8 @@ def _require_system(actor: Actor) -> None:
 
 
 def _clean_email(email) -> str:
-    if not isinstance(email, str):
-        raise DomainError("validation_error")
-    email = email.strip()
-    if (
-        len(email) > EMAIL_MAX
-        or not email.isprintable()
-        or not EMAIL_ADDRESS_SHAPE.fullmatch(email)
-    ):
-        raise DomainError("validation_error")
-    if "" in email.rpartition("@")[2].split("."):  # empty domain label
+    email, code = check_email(email)
+    if code:
         raise DomainError("validation_error")
     return email
 
@@ -87,8 +80,29 @@ def _view(account_id) -> AccountView:
     return view
 
 
+def _insert_account(actor: Actor, email: str, hashed: str, account_type: str) -> Account | None:
+    """Insert the account and its audit record; None when the email is already registered.
+
+    Runs in the caller's transaction. A lost race on the unique email counts as taken.
+    """
+    if _email_taken(email):
+        return None
+    try:
+        with transaction.atomic():
+            account = Account.objects.create(
+                email=email, password=hashed, account_type=account_type
+            )
+    except IntegrityError as exc:
+        diag = getattr(exc.__cause__, "diag", None)
+        if getattr(diag, "constraint_name", None) != EMAIL_CONSTRAINT:
+            raise
+        return None
+    audit.record(actor, "account.created", "account", account.id, {"account_type": account_type})
+    return account
+
+
 def create_account(actor: Actor, email: str, password: str, account_type: str) -> AccountView:
-    """Create an unverified account. Used by registration and administrator provisioning."""
+    """Create an unverified account. Used by administrator provisioning."""
     _require_system(actor)
     email = _clean_email(email)
     if not isinstance(password, str) or not password.strip() or len(password) > PASSWORD_MAX:
@@ -96,22 +110,62 @@ def create_account(actor: Actor, email: str, password: str, account_type: str) -
     if account_type not in {t.value for t in AccountType}:
         raise DomainError("validation_error")
     with transaction.atomic():
-        if _email_taken(email):
+        account = _insert_account(actor, email, make_password(password), account_type)
+        if account is None:
             raise DomainError("validation_error")
-        try:
-            with transaction.atomic():
-                account = Account.objects.create(
-                    email=email, password=make_password(password), account_type=account_type
-                )
-        except IntegrityError as exc:
-            diag = getattr(exc.__cause__, "diag", None)
-            if getattr(diag, "constraint_name", None) != EMAIL_CONSTRAINT:
-                raise
-            raise DomainError("validation_error") from None  # lost a race on the email
-        audit.record(
-            actor, "account.created", "account", account.id, {"account_type": account_type}
-        )
         return _view(account.id)
+
+
+class RegistrationInvalid(DomainError):
+    """Registration fields failed validation. `fields` maps field name to a stable error code."""
+
+    def __init__(self, fields: dict[str, str]) -> None:
+        super().__init__("validation_error")
+        self.fields = dict(fields)
+
+
+def _notify_existing(typed_email: str) -> None:
+    """Tell the existing account's owner, at most 5 times an hour per account, silently.
+
+    An unverified account gets a new verification request (Story 1.16 sends it); any other gets
+    the sign-in notice, addressed to the stored email, not the typed case variant.
+    """
+    existing = (
+        Account.objects.annotate(lowered=Lower("email")).filter(lowered=typed_email.lower()).first()
+    )
+    if existing is None:
+        return
+    key = ratelimit.derive_key("account", str(existing.id))
+    if not ratelimit.hit("verification_email", key).allowed:
+        return
+    if existing.email_verified_at is None:
+        emit_verification_requested(existing.id)
+    else:
+        notices.send_already_registered(existing.email)
+
+
+def register_individual(actor: Actor, full_name, email, password, phone) -> None:
+    """Register an Individual account in the Email-unverified state.
+
+    Returns nothing, whether or not the email is already registered, so the caller cannot tell
+    (an existing address is sent an "already registered" notice instead). The password is hashed
+    on both paths so timing does not reveal existence. Only a Visitor may register.
+    """
+    if not actor.is_visitor:
+        raise DomainError("forbidden")
+    details, errors = validate_individual(full_name, email, password, phone)
+    if details is None:
+        raise RegistrationInvalid(errors)
+    hashed = make_password(details.password)
+    with transaction.atomic():
+        account = _insert_account(actor, details.email, hashed, AccountType.INDIVIDUAL.value)
+        if account is None:
+            _notify_existing(details.email)
+            return
+        IndividualProfile.objects.create(
+            account=account, full_name=details.full_name, phone=details.phone
+        )
+        emit_registered(account.id)
 
 
 def mark_email_verified(actor: Actor, account_id) -> AccountView:

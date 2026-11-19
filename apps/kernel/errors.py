@@ -55,6 +55,14 @@ FIELD_MESSAGES: dict[str, str] = {
     "date": "Enter a valid date.",
     "datetime": "Enter a valid date and time.",
     "does_not_exist": "The referenced item does not exist.",
+    "unknown_field": "The request contains fields that are not accepted.",
+    "invalid_name": "Enter a name of 2 to 80 letters, without phone numbers or email addresses.",
+    "invalid_email": "Enter a valid email address.",
+    "password_too_short": "Use at least 8 characters.",
+    "password_too_long": "Use at most 1024 characters.",
+    "password_too_common": "This password is too common. Choose a less guessable one.",
+    "password_matches_email": "The password must not be the same as the email address.",
+    "invalid_phone": "Enter a Pakistani mobile number or a valid international number.",
 }
 DEFAULT_FIELD_MESSAGE = "Enter a valid value."
 

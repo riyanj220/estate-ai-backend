@@ -52,3 +52,19 @@ class Account(models.Model):
             suspended=self.suspended_at is not None,
             deactivated=self.deactivated_at is not None,
         )
+
+
+class IndividualProfile(models.Model):
+    """Profile of an Individual account. Written only by `identity.services`.
+
+    `phone` is private-class data, stored as E.164 and never returned by any public response.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account = models.OneToOneField(
+        Account, on_delete=models.CASCADE, related_name="individual_profile"
+    )
+    full_name = models.CharField(max_length=80)
+    phone = models.CharField(max_length=16)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
