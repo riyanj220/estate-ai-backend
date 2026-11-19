@@ -84,4 +84,16 @@ Errors use `{error:{code,message,fields,request_id}}` with the catalogue in `app
 static so submitted values never appear. Every response carries `X-Request-ID`, and request logs are JSON lines with an
 allow-list of fields (no bodies, query strings, headers, cookies or exception messages).
 
-Note: `/api/v1/schema` is public and no default-deny permission class exists yet; both must be gated by Stories 1.4 and 1.6 before any non-local deployment.
+## Authorisation
+
+Every request resolves to one immutable `Actor` (visitor, user, admin or system; `apps/kernel/actor.py`) through the
+single resolver in `apps/presentation/api/actors.py`; a Visitor is the fail-closed default until sign-in exists
+(Story 1.17). Services take `actor` first and enforce policy themselves; tests enforce the actor-first signature
+(`tests/architecture/test_service_signature.py`) and the ban on HTTP imports in domain apps, while
+not reading request state is a rule reviewers uphold. Views read the caller with `get_actor(request)`. DRF denies by default, so each view declares `AllowPublic`,
+`RequireSignedIn` or `RequireAdmin`; `tests/authz/test_routes.py` fails any route that does not. A Visitor on a
+sign-in route gets 401 `unauthenticated`; a non-admin on an admin route and any unauthorised resource get 404
+`not_found`. Domain apps may not import `django.http`, `rest_framework` or `channels` (import-linter). The route table
+in `docs/authorisation-matrix.md` is generated (`uv run python scripts/authz_matrix.py`) and a test fails when stale.
+
+Note: `/api/v1/schema` is public and must be gated before any non-local deployment (tracked in `deferred-work.md`).
