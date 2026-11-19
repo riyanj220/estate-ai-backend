@@ -24,5 +24,9 @@ def bad_request(request, exception=None):
     return _respond(request, "bad_request")
 
 
+def csrf_failure(request, reason=""):
+    return _respond(request, "forbidden")
+
+
 def forbidden(request, exception=None):
     return _respond(request, "forbidden")
