@@ -50,7 +50,7 @@ development_status:
   1-12-account-model-states-and-capability-matrix: review
   1-13-mail-port-and-dev-mail-catcher: review
   1-14-shared-contact-detail-patterns: review
-  1-15-individual-registration: backlog
+  1-15-individual-registration: in-progress
   1-16-email-verification: backlog
   1-17-sign-in-and-sign-out-with-session-security: backlog
   1-18-password-reset-and-password-change: backlog

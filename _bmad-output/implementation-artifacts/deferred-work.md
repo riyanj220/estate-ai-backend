@@ -38,3 +38,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-11-city-reference-data.md`
   summary: Give `create_city` field-level error detail and a reactivate path for an inactive city when city management is built.
   evidence: An inactive city still reserves its name and the service raises one generic `validation_error`; settle in the platform administration epic.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-15-individual-registration.md`
+  summary: Capture terms and privacy-policy acceptance (with timestamp) at registration if the product requires it.
+  evidence: Registration collects a name and private phone with no consent record; the PRD is silent, so it needs a product decision before launch.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-15-individual-registration.md`
+  summary: Define retention and erasure for the private phone and register the profile with the private-read target registry when an administrator read of it exists.
+  evidence: The phone is stored in plaintext in `identity_individualprofile`; erasure belongs to the governance use case (AD-23).

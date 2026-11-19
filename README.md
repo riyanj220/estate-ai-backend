@@ -126,6 +126,10 @@ The `identity` app owns the account table. The account state (`email_unverified`
 
 `apps.kernel.privacy.patterns` is the only definition of phone, email and private-address patterns; features and AI redaction call `reject_contact_details(text)` or `find_contact_details(text)` and never write their own contact regex (a repository test enforces it). See `docs/privacy-patterns.md`.
 
+## Registration
+
+`POST /api/v1/registrations/individuals` registers an Individual account (Email-unverified, with an individual profile) and answers the same `202` for a new and an existing email; an existing address gets an "already registered" notice instead. Rules and codes are shared by the service and the API; the phone is normalised to E.164 by `normalise_phone` in the patterns module and kept private. The `account.registered` event is the hook for Story 1.16. See `docs/registration.md`.
+
 ## Mail
 
 Features send email only through `apps.kernel.mail.send(MailMessage(...))` inside their transaction; it is delivered after commit, off the request thread, never retried, and links come from `email_link` (`FRONTEND_BASE_URL`). Local mail goes to Mailpit only. See `docs/mail.md`.

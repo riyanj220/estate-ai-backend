@@ -66,3 +66,7 @@ scrubbing of an actor's known values belongs to `redact()`.
 Edit `patterns.py` only, keep every quantifier linear (no nested or adjacent unbounded quantifiers), add catch cases and,
 if it could touch ordinary listing text, false-positive cases to `tests/privacy/test_patterns.py`, and make sure the
 false-positive set and the long-input test still pass.
+
+## Phone validation
+
+`normalise_phone(text)` returns the E.164 form of a valid Pakistani mobile (`03xx`, `+92 3xx`, `0092 3xx`) or international (`+`, 8 to 15 digits) number, else `None` (landlines are refused). It is for validating a phone field, not for finding phones in free text. Registration (`docs/registration.md`) is its caller.

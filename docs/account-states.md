@@ -94,3 +94,5 @@ reason (kept on the row; digit characters of any script are counted, seven or mo
 `identity.events.AccountSessionEnded` (`account.session_ended`, fields `account_id` and `reason` of `sign_out`,
 `password_changed` or `deactivated`) is emitted with `emit_session_ended(account_id, reason)`; it dispatches after commit.
 Story 1.17 subscribes to end sessions; the sign-out and password-change stories reuse the helper.
+
+`identity.register_individual` (Story 1.15) creates the Email-unverified account and emits `account.registered` (field `account_id`) after commit for Story 1.16; see `docs/registration.md`.
