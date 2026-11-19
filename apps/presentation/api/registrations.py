@@ -12,15 +12,9 @@ from apps.identity import services
 from apps.identity.validation import validate_individual
 from apps.kernel.errors import DomainError
 from apps.presentation.api.actors import get_actor
+from apps.presentation.api.bodies import field_errors
 from apps.presentation.api.permissions import AllowPublic
 from apps.presentation.api.throttling import PolicyThrottle
-
-
-def _invalid(fields: Mapping[str, str]) -> serializers.ValidationError:
-    """Field errors keyed by field name, carrying only stable codes (never submitted values)."""
-    return serializers.ValidationError(
-        {field: [ErrorDetail(code, code=code)] for field, code in fields.items()}
-    )
 
 
 class IndividualRegistrationSerializer(serializers.Serializer):
@@ -54,7 +48,7 @@ class IndividualRegistrationSerializer(serializers.Serializer):
             phone=data.get("phone"),
         )
         if details is None:
-            raise _invalid(errors)
+            raise field_errors(errors)
         return {
             "full_name": details.full_name,
             "email": details.email,
@@ -96,5 +90,5 @@ class IndividualRegistrationView(APIView):
         try:
             services.register_individual(actor, **serializer.validated_data)
         except services.RegistrationInvalid as exc:
-            raise _invalid(exc.fields) from None
+            raise field_errors(exc.fields) from None
         return Response({"status": "check_your_email"}, status=status.HTTP_202_ACCEPTED)

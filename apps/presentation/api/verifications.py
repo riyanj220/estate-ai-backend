@@ -1,7 +1,5 @@
 """Email verification endpoints: confirm a link, request a new one."""
 
-from collections.abc import Mapping
-
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers, status
 from rest_framework.exceptions import ErrorDetail
@@ -10,24 +8,10 @@ from rest_framework.views import APIView
 
 from apps.identity import services
 from apps.presentation.api.actors import get_actor
+from apps.presentation.api.bodies import single_field
 from apps.presentation.api.permissions import AllowPublic
 from apps.presentation.api.registrations import RegistrationAcceptedSerializer
 from apps.presentation.api.throttling import PolicyThrottle
-
-
-def _single_field(data, name: str):
-    """The value of the only accepted field; any other body shape is a validation error."""
-    if not isinstance(data, Mapping):
-        raise serializers.ValidationError(
-            {"non_field_errors": [ErrorDetail("not_a_dict", code="not_a_dict")]}
-        )
-    if set(data) - {name}:
-        raise serializers.ValidationError(
-            {"non_field_errors": [ErrorDetail("unknown_field", code="unknown_field")]}
-        )
-    if name not in data:
-        raise serializers.ValidationError({name: [ErrorDetail("required", code="required")]})
-    return data[name]
 
 
 class ConfirmEmailSerializer(serializers.Serializer):
@@ -35,14 +19,14 @@ class ConfirmEmailSerializer(serializers.Serializer):
 
     def to_internal_value(self, data):
         # A wrong type or size is a bad link, not a bad body.
-        return {"token": _single_field(data, "token")}
+        return {"token": single_field(data, "token")}
 
 
 class VerificationRequestSerializer(serializers.Serializer):
     email = serializers.CharField(help_text="The address to send a new link to.")
 
     def to_internal_value(self, data):
-        value = _single_field(data, "email")
+        value = single_field(data, "email")
         if not isinstance(value, str):
             raise serializers.ValidationError({"email": [ErrorDetail("invalid", code="invalid")]})
         return {"email": value}
