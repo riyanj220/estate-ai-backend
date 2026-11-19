@@ -3,20 +3,31 @@
 Every state change and its audit record share one transaction.
 """
 
-from django.contrib.auth.hashers import make_password
-from django.db import IntegrityError, transaction
+import hashlib
+from dataclasses import dataclass
+
+from django.conf import settings
+from django.contrib.auth.hashers import check_password, is_password_usable, make_password
+from django.db import IntegrityError, connection, transaction
 from django.db.models.functions import Lower
 from django.utils import timezone
 
-from apps.identity import notices, verification
+from apps.identity import notices, passwords, sessions, verification
 from apps.identity.events import (
+    SESSION_END_REASONS,
     emit_registered,
     emit_session_ended,
     emit_verification_requested,
 )
-from apps.identity.models import Account, AccountType, EmailVerificationToken, IndividualProfile
+from apps.identity.models import (
+    Account,
+    AccountType,
+    EmailVerificationToken,
+    IndividualProfile,
+    Session,
+)
 from apps.identity.passwords import PASSWORD_MAX
-from apps.identity.selectors import AccountView, get_account, parse_id
+from apps.identity.selectors import AccountView, ActorSummary, get_account, parse_id, summarise
 from apps.identity.state import AccountState
 from apps.identity.validation import check_email, validate_individual
 from apps.kernel import audit, ratelimit
@@ -311,3 +322,144 @@ def deactivate(actor: Actor, account_id) -> AccountView:
         audit.record(actor, "account.deactivated", "account", account.id)
         emit_session_ended(account.id, "deactivated")
         return _view(account.id)
+
+
+@dataclass(frozen=True)
+class SignedIn:
+    """The result of a successful sign-in. `token` goes only into the cookie."""
+
+    token: str
+    summary: ActorSummary
+
+
+def _lock_key(key: str) -> None:
+    """Serialise sign-in attempts per throttle key for the rest of the transaction."""
+    number = int.from_bytes(hashlib.sha256(key.encode()).digest()[:8], "big", signed=True)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [number])
+
+
+def _cap_open_sessions(account_id, now) -> None:
+    """Keep at most SESSION_MAX_OPEN open sessions: the oldest beyond the cap end as replaced."""
+    open_ids = list(
+        Session.objects.filter(account_id=account_id, ended_at__isnull=True, expires_at__gt=now)
+        .order_by("-created_at", "-id")
+        .values_list("id", flat=True)
+    )
+    excess = open_ids[settings.SESSION_MAX_OPEN :]
+    if excess:
+        Session.objects.filter(id__in=excess).update(ended_at=now, ended_reason="replaced")
+
+
+def _attempt(key: str, email: str, password: str, current_token, now) -> SignedIn | None:
+    """One sign-in attempt under the per-key lock. None means failed; a failure has been counted
+    and committed (nothing here raises out of the transaction after counting)."""
+    with transaction.atomic():
+        _lock_key(key)
+        if ratelimit.peek("sign_in", key, now):
+            return None
+        if len(password) > PASSWORD_MAX:
+            ratelimit.hit("sign_in", key, now)
+            return None
+        account = (
+            Account.objects.annotate(lowered=Lower("email")).filter(lowered=email.lower()).first()
+        )
+        verified = None
+        if (
+            account is not None
+            and account.state is not AccountState.DEACTIVATED
+            and is_password_usable(account.password)
+        ):
+            verified = account.password
+        matches = check_password(password, verified or passwords.dummy_hash())
+        if verified is None or not matches:
+            ratelimit.hit("sign_in", key, now)
+            return None
+        locked = Account.objects.select_for_update().filter(id=account.id).first()
+        if (
+            locked is None
+            or locked.state is AccountState.DEACTIVATED
+            or locked.password != verified
+            or locked.email.lower() != email.lower()
+        ):
+            ratelimit.hit("sign_in", key, now)  # changed under us: the checked password is stale
+            return None
+        if sessions.well_formed(current_token):
+            Session.objects.filter(
+                token_hash=sessions.hash_token(current_token), ended_at__isnull=True
+            ).update(ended_at=now, ended_reason="replaced")
+        token = sessions.new_token()
+        Session.objects.create(
+            account=locked,
+            token_hash=sessions.hash_token(token),
+            created_at=now,
+            last_seen_at=now,
+            expires_at=now + sessions.absolute_lifetime(),
+        )
+        _cap_open_sessions(locked.id, now)
+        return SignedIn(token=token, summary=summarise(locked))
+
+
+def sign_in(actor: Actor, email, password, network: str, current_token=None) -> SignedIn:
+    """Start a session for the email and password, or raise `invalid_credentials`.
+
+    Wrong password, unknown email, a Deactivated account and a throttled key all raise the same
+    error. Attempts for one key run one at a time; the throttle is asked first, so a correct
+    password during lockout also fails and no hash is computed. Only failures count. Unknown,
+    Deactivated and unusable-password accounts still check the password against a dummy hash so
+    timing does not separate them. Any session the caller already held (`current_token`) is ended
+    as `replaced`. Email-unverified and Suspended accounts can sign in; their restrictions come
+    from the capability matrix.
+    """
+    if not isinstance(email, str) or not isinstance(password, str):
+        raise DomainError("validation_error")
+    email = email.strip()
+    if not email or len(email) > 254 or "\x00" in email:
+        raise DomainError("invalid_credentials")
+    now = timezone.now()
+    key = ratelimit.derive_key("sign_in", email.lower(), network)
+    result = _attempt(key, email, password, current_token, now)
+    if result is None:
+        raise DomainError("invalid_credentials")
+    return result
+
+
+def sign_out(actor: Actor, session_id) -> None:
+    """End the caller's current session only, and announce it. A session already ended is
+    `unauthenticated`, so a second sign-out fails."""
+    require_signed_in(actor)
+    key = parse_id(session_id)
+    with transaction.atomic():
+        ended = (
+            Session.objects.filter(
+                id=key, account_id=actor.account_id, ended_at__isnull=True
+            ).update(ended_at=timezone.now(), ended_reason="sign_out")
+            if key
+            else 0
+        )
+        if not ended:
+            raise DomainError("unauthenticated")
+        emit_session_ended(actor.account_id, "sign_out")
+
+
+def end_account_sessions(actor: Actor, account_id, reason: str) -> int:
+    """End every open session of the account. System only; returns how many were open."""
+    _require_system(actor)
+    key = parse_id(account_id)
+    if key is None or reason not in SESSION_END_REASONS - {"sign_out"}:
+        raise DomainError("validation_error")
+    return Session.objects.filter(account_id=key, ended_at__isnull=True).update(
+        ended_at=timezone.now(), ended_reason=reason
+    )
+
+
+def refresh_session(actor: Actor, session_id) -> None:
+    """Move `last_seen_at` forward, at most once per touch interval. System only."""
+    _require_system(actor)
+    now = timezone.now()
+    Session.objects.filter(
+        id=session_id,
+        ended_at__isnull=True,
+        expires_at__gt=now,
+        last_seen_at__lte=now - sessions.touch_interval(),
+    ).update(last_seen_at=now)

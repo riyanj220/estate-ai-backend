@@ -5,12 +5,17 @@ Also home of the two primitives other apps use: `lock_account` and `is_active_ow
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 
 from django.db import connection
 
-from apps.identity.models import Account, AccountType
+from apps.identity import sessions
+from apps.identity.models import Account, AccountType, IndividualProfile, Session
+from apps.identity.policy import capabilities_for
 from apps.identity.state import AccountState
 from apps.kernel.errors import DomainError
+
+ACCOUNT_TYPES = tuple(t.value for t in AccountType)
 
 
 @dataclass(frozen=True)
@@ -87,3 +92,63 @@ def is_active_owner(account_id) -> bool:
         and account.state is AccountState.ACTIVE
         and account.account_type in (AccountType.INDIVIDUAL, AccountType.AGENCY)
     )
+
+
+@dataclass(frozen=True)
+class LiveSession:
+    """A valid session and the account it belongs to; never carries the token or its hash."""
+
+    id: uuid.UUID
+    account_id: uuid.UUID
+    account_type: str
+    last_seen_at: datetime
+
+
+def live_session(token, now: datetime) -> LiveSession | None:
+    """The session for a cookie token, or None unless it is open, inside both lifetimes and its
+    account exists and is not Deactivated."""
+    if not sessions.well_formed(token):
+        return None
+    row = (
+        Session.objects.select_related("account")
+        .filter(token_hash=sessions.hash_token(token), ended_at__isnull=True, expires_at__gt=now)
+        .first()
+    )
+    if row is None or row.last_seen_at + sessions.idle_lifetime() <= now:
+        return None
+    if row.account.state is AccountState.DEACTIVATED:
+        return None
+    return LiveSession(row.id, row.account_id, row.account.account_type, row.last_seen_at)
+
+
+@dataclass(frozen=True)
+class ActorSummary:
+    """What the account's owner may see of it. `email` is private: owner-only, never cached."""
+
+    id: uuid.UUID
+    account_type: str
+    state: AccountState
+    email: str
+    full_name: str
+    capabilities: tuple[str, ...]
+
+
+def summarise(account: Account) -> ActorSummary:
+    profile = IndividualProfile.objects.filter(account_id=account.id).first()
+    return ActorSummary(
+        id=account.id,
+        account_type=account.account_type,
+        state=account.state,
+        email=account.email,
+        full_name=profile.full_name if profile else "",
+        capabilities=tuple(c.value for c in capabilities_for(account.account_type, account.state)),
+    )
+
+
+def get_actor_summary(account_id) -> ActorSummary | None:
+    """The signed-in account's own summary; unknown and deactivated accounts give None."""
+    key = parse_id(account_id)
+    account = Account.objects.filter(id=key).first() if key else None
+    if account is None or account.state is AccountState.DEACTIVATED:
+        return None
+    return summarise(account)

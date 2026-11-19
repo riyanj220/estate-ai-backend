@@ -7,7 +7,7 @@ class IdentityConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):
-        from apps.identity import subscribers, verification
+        from apps.identity import passwords, sessions, subscribers, verification
         from apps.identity.models import AccountType
         from apps.kernel import audit, retention
 
@@ -23,3 +23,5 @@ class IdentityConfig(AppConfig):
 
         subscribers.register()
         retention.register("identity.email_verification_tokens", verification.purge_expired)
+        retention.register("identity.sessions", sessions.purge_stale)
+        passwords.dummy_hash()

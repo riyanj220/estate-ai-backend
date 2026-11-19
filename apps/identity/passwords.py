@@ -3,6 +3,9 @@
 Returns a stable error code or None; never echoes the password.
 """
 
+from functools import cache
+
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.password_validation import CommonPasswordValidator
 from django.core.exceptions import ValidationError
 
@@ -40,3 +43,10 @@ def password_error(password, email: str = "") -> str | None:
     if _is_common(password):
         return "password_too_common"
     return None
+
+
+@cache
+def dummy_hash() -> str:
+    """A hash in the current preferred format; unknown emails are checked against it so they cost
+    the same as known ones. Warmed at start-up (`IdentityConfig.ready`), not on a first request."""
+    return make_password("dummy-password-for-timing-only")
