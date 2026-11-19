@@ -16,10 +16,10 @@ from django.utils import timezone
 
 from apps.kernel.actor import Actor
 from apps.kernel.models import AuditRecord
+from apps.kernel.privacy.patterns import LONG_DIGIT_RUN
 
 _ACTION = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
 _KEY = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
-DIGIT_RUN = re.compile(r"\d{7,}")
 _SCALARS = (bool, int, uuid.UUID)
 READ_ACTION = "privacy.viewed"  # written only by kernel.privacy.reads
 REASON_MAX = 300
@@ -41,7 +41,7 @@ def _normalise(schema: Mapping[str, Any]) -> dict[str, Any]:
                 values = frozenset(kind)
             except TypeError:
                 raise ValueError("enumeration values must be strings") from None
-            if not all(isinstance(v, str) and v and not DIGIT_RUN.search(v) for v in values):
+            if not all(isinstance(v, str) and v and not LONG_DIGIT_RUN.search(v) for v in values):
                 raise ValueError("enumeration values must be short strings without digit runs")
             out[key] = values
         else:
@@ -75,7 +75,7 @@ def _validate(action: str, metadata: Mapping[str, Any] | None) -> dict[str, Any]
     for key, kind in schema.items():
         value = metadata[key]
         if isinstance(kind, frozenset):
-            if not isinstance(value, str) or value not in kind or DIGIT_RUN.search(value):
+            if not isinstance(value, str) or value not in kind or LONG_DIGIT_RUN.search(value):
                 raise ValueError(f"metadata {key!r} is not an allowed value")
             clean[key] = value
         elif kind is bool:
@@ -85,7 +85,7 @@ def _validate(action: str, metadata: Mapping[str, Any] | None) -> dict[str, Any]
         elif kind is int:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ValueError(f"metadata {key!r} must be an int")
-            if DIGIT_RUN.search(str(abs(value))):
+            if LONG_DIGIT_RUN.search(str(abs(value))):
                 raise ValueError(f"metadata {key!r} looks like contact details")
             clean[key] = value
         else:

@@ -192,7 +192,18 @@ def validate_port(name: str, port: int) -> int:
     return port
 
 
-_SENDER = re.compile(r"^(?:[^<>@]*<(?P<angle>[^<>@\s]+@[^<>@\s]+)>|(?P<bare>[^<>@\s]+@[^<>@\s]+))$")
+def _plausible_sender(value: str) -> bool:
+    """`addr` or `Name <addr>`, where addr is `local@domain` with no `<`, `>`, `@` or space."""
+    if value.endswith(">"):
+        name, bracket, address = value[:-1].partition("<")
+        if not bracket or not name.strip() or "@" in name or ">" in name:
+            return False
+    else:
+        address = value
+    local, at, domain = address.partition("@")
+    return bool(
+        at and local and domain and not any(ch in "<>@" or ch.isspace() for ch in local + domain)
+    )
 
 
 def validate_sender(name: str, value: str) -> str:
@@ -200,6 +211,6 @@ def validate_sender(name: str, value: str) -> str:
     value = value.strip()
     if any(unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") for ch in value):
         raise _bad(name, "must not contain control characters")
-    if not _SENDER.fullmatch(value) or "," in value or ";" in value:
+    if not _plausible_sender(value) or "," in value or ";" in value:
         raise _bad(name, "must be one address, optionally as Name <address>")
     return value

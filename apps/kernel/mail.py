@@ -8,7 +8,6 @@ link. Nothing about a message (address, subject, body, link) is ever logged.
 """
 
 import logging
-import re
 import unicodedata
 from dataclasses import dataclass
 from urllib.parse import urlencode
@@ -20,6 +19,7 @@ from django.db import transaction
 from apps.kernel import runtime
 from apps.kernel.events import DomainEvent, emit
 from apps.kernel.links import frontend_url
+from apps.kernel.privacy.patterns import EMAIL_ADDRESS_SHAPE
 
 logger = logging.getLogger("estate.mail")
 
@@ -28,7 +28,6 @@ MAX_SUBJECT_LENGTH = 200
 MAX_BODY_LENGTH = 100_000
 
 _UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
-_ADDRESS = re.compile(r"^[^\s@<>,;:\"()\[\]\\]+@[^\s@<>,;:\"()\[\]\\]+$")
 
 
 @dataclass(frozen=True)
@@ -65,7 +64,7 @@ def validate(message: MailMessage) -> None:
         not to
         or len(to) > MAX_ADDRESS_LENGTH
         or _has_control(to)
-        or not _ADDRESS.fullmatch(to)
+        or not EMAIL_ADDRESS_SHAPE.fullmatch(to)
         or not _valid_domain(to.rsplit("@", 1)[1])
     ):
         raise ValueError("recipient must be a single plain email address")

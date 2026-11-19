@@ -3,8 +3,6 @@
 Every state change and its audit record share one transaction.
 """
 
-import re
-
 from django.contrib.auth.hashers import make_password
 from django.db import IntegrityError, transaction
 from django.db.models.functions import Lower
@@ -17,11 +15,15 @@ from apps.identity.state import AccountState
 from apps.kernel import audit
 from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.errors import DomainError
+from apps.kernel.privacy.patterns import (
+    EMAIL_ADDRESS_SHAPE,
+    LONG_DIGIT_RUN,
+    reject_contact_details,
+)
 
 EMAIL_MAX = 254
 PASSWORD_MAX = 1024
 EMAIL_CONSTRAINT = "identity_account_email_ci_uniq"
-_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _require_system(actor: Actor) -> None:
@@ -34,7 +36,11 @@ def _clean_email(email) -> str:
     if not isinstance(email, str):
         raise DomainError("validation_error")
     email = email.strip()
-    if len(email) > EMAIL_MAX or not email.isprintable() or not _EMAIL.fullmatch(email):
+    if (
+        len(email) > EMAIL_MAX
+        or not email.isprintable()
+        or not EMAIL_ADDRESS_SHAPE.fullmatch(email)
+    ):
         raise DomainError("validation_error")
     if "" in email.rpartition("@")[2].split("."):  # empty domain label
         raise DomainError("validation_error")
@@ -48,9 +54,8 @@ def _clean_reason(reason) -> str:
     if (
         not 1 <= len(reason) <= audit.REASON_MAX
         or not reason.isprintable()
-        or "@" in reason
-        or audit.DIGIT_RUN.search(reason)
-        or sum(ch.isdigit() for ch in reason) >= 7  # Unicode digits, separators ignored
+        or LONG_DIGIT_RUN.search(reason)
+        or reject_contact_details(reason) is not None
     ):
         raise DomainError("validation_error")
     return reason
