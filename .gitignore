@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Environment and secrets (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local runtime data
+media/
+.docker-data/
+*.log
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# BMAD generated render output
+_bmad/render/

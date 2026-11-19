@@ -1,0 +1,191 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 11-19-2026 08:06
+last_updated: 11-19-2026 08:06
+project: estate-ai-backend
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: backlog
+  1-1-backend-repository-local-environment-and-database-roles: backlog
+  1-2-layered-app-skeleton-and-import-contracts: backlog
+  1-3-api-contract-error-envelope-and-structured-logging: backlog
+  1-4-security-baseline: backlog
+  1-5-frontend-scaffold-and-generated-api-client: backlog
+  1-6-actor-and-default-deny-authorisation-foundation: backlog
+  1-7-rate-limit-foundation: backlog
+  1-8-domain-events-and-idempotency: backlog
+  1-9-runtime-executor-feature-flags-ai-request-log-and-retention: backlog
+  1-10-audit-trail-and-reasoned-private-reads: backlog
+  1-11-city-reference-data: backlog
+  1-12-account-model-states-and-capability-matrix: backlog
+  1-13-mail-port-and-dev-mail-catcher: backlog
+  1-14-shared-contact-detail-patterns: backlog
+  1-15-individual-registration: backlog
+  1-16-email-verification: backlog
+  1-17-sign-in-and-sign-out-with-session-security: backlog
+  1-18-password-reset-and-password-change: backlog
+  1-19-agency-registration: backlog
+  1-20-individual-profile-management: backlog
+  1-21-agency-business-profile: backlog
+  1-22-administrator-provisioning-and-protected-admin-api: backlog
+  1-23-admin-area-shell: backlog
+  1-24-in-app-notification-list: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-start-a-draft-with-purpose-category-and-subtype: backlog
+  2-2-conflict-safe-editing-with-title-description-and-price: backlog
+  2-3-area-and-measurement-units: backlog
+  2-4-house-and-apartment-details: backlog
+  2-5-plot-and-commercial-details: backlog
+  2-6-sale-and-rent-terms: backlog
+  2-7-public-location-and-private-address: backlog
+  2-8-amenities-and-seller-declared-nearby-facilities: backlog
+  2-9-image-upload-pipeline-and-storage: backlog
+  2-10-media-endpoint-cover-image-and-ordering: backlog
+  2-11-profile-pictures-and-agency-logos: backlog
+  2-12-visibility-policy-and-public-projections: backlog
+  2-13-draft-preview-and-management: backlog
+  2-14-publication-quota-policy-and-allowance-view: backlog
+  2-15-validate-and-publish-a-listing: backlog
+  2-16-sample-data-foundation: backlog
+  2-17-manage-the-listing-lifecycle: backlog
+  2-18-republication: backlog
+  2-19-correction-window-for-locality-and-area: backlog
+  2-20-administrator-quota-policy-management: backlog
+  2-21-administrator-account-suspension-and-reactivation: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-browse-published-listings-and-view-details: backlog
+  3-2-privacy-verification-gates-in-ci: backlog
+  3-3-filter-schema-and-search-selector: backlog
+  3-4-search-fixture-and-performance-budget: backlog
+  3-5-filter-panel-and-results-page: backlog
+  3-6-listing-provenance-on-cards-and-detail: backlog
+  3-7-favourites: backlog
+  3-8-agency-public-profile-and-agency-listings: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-synthetic-dataset-generator-and-model-training: backlog
+  4-2-model-registration-feature-test-and-forecast-parameters: backlog
+  4-3-request-an-ai-price-estimate-and-supportability: backlog
+  4-4-baseline-price-in-the-listing-form-limitation-note-and-about: backlog
+  4-5-estimate-on-publish-and-on-edit: backlog
+  4-6-estimated-property-value-on-the-listing-page: backlog
+  4-7-5-year-price-forecast: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-ai-ports-redaction-and-recorded-stub-adapter: backlog
+  5-2-gateway-controls-limits-flags-request-log-and-budget: backlog
+  5-3-external-service-notice: backlog
+  5-4-provider-adapters-and-availability-trial: backlog
+  5-5-knowledge-base-index-and-embedding-runtime: backlog
+  5-6-knowledge-base-content: backlog
+  5-7-grounded-knowledge-retrieval: backlog
+  5-8-assistant-turn-endpoint-chat-shell-and-retrieval-integration: backlog
+  5-9-extraction-and-applying-updates: backlog
+  5-10-follow-up-question-planning: backlog
+  5-11-nearby-facilities-and-corrections: backlog
+  5-12-integrity-and-explicit-approval: backlog
+  5-13-description-generation: backlog
+  5-14-resume-and-idempotent-turns: backlog
+  5-15-graceful-degradation-of-the-assistant: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-natural-language-text-search: backlog
+  6-2-interpretation-transparency-and-unknown-data: backlog
+  6-3-voice-search: backlog
+  6-4-search-availability-and-abuse-control: backlog
+  epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-start-an-inquiry: backlog
+  7-2-websocket-consumer-authentication-and-event-schema: backlog
+  7-3-live-delivery-and-frontend-connection: backlog
+  7-4-chat-latency-under-load: backlog
+  7-5-inbox-history-and-unread-state: backlog
+  7-6-conversation-continuity-and-restrictions: backlog
+  epic-7-retrospective: optional
+
+  epic-8: backlog
+  8-1-agency-dashboard: backlog
+  8-2-listing-performance-statistics: backlog
+  8-3-request-agency-verification: backlog
+  8-4-review-verification-and-verified-status: backlog
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-report-a-listing: backlog
+  9-2-review-reports: backlog
+  9-3-moderation-listing-review: backlog
+  9-4-moderation-actions: backlog
+  9-5-report-a-conversation-or-message: backlog
+  9-6-suspicious-and-duplicate-listing-flags: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-request-account-deactivation-or-deletion: backlog
+  10-2-decide-and-execute-account-deactivation: backlog
+  10-3-erasure-by-messaging-assistant-and-governance: backlog
+  10-4-account-directory-and-review: backlog
+  10-5-reference-data-management: backlog
+  10-6-ai-and-ml-oversight: backlog
+  10-7-audit-trail-review: backlog
+  10-8-administrator-dashboard: backlog
+  10-9-support-requests: backlog
+  10-10-administrator-second-factor: backlog
+  10-11-retention-jobs-for-kernel-data: backlog
+  10-12-retention-jobs-for-app-owned-data: backlog
+  10-13-audit-purge-with-its-own-database-role: backlog
+  epic-10-retrospective: optional
+
+  epic-11: backlog
+  11-1-full-sample-marketplace: backlog
+  11-2-local-operation-and-one-command-setup: backlog
+  11-3-deferred-attribute-fields: backlog
+  11-4-floor-plan-and-video-link: backlog
+  11-5-evaluation-sets: backlog
+  11-6-evaluation-harness-and-live-runs: backlog
+  11-7-technical-documentation: backlog
+  11-8-security-checklist-and-hardening-verification: backlog
+  11-9-accessibility-and-compatibility-verification: backlog
+  11-10-end-to-end-journeys-uj-1-and-uj-2: backlog
+  11-11-end-to-end-journey-uj-3: backlog
+  11-12-end-to-end-journey-uj-4: backlog
+  11-13-end-to-end-journeys-uj-5-and-uj-6: backlog
+  11-14-measure-and-report-success-metrics: backlog
+  epic-11-retrospective: optional
