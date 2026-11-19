@@ -1,0 +1,51 @@
+openapi: 3.0.3
+info:
+  title: EstateAI API
+  version: 1.0.0
+  description: EstateAI backend contract. One error envelope, stable error codes.
+paths: {}
+components:
+  schemas:
+    ErrorCode:
+      type: string
+      enum:
+      - bad_request
+      - validation_error
+      - unauthenticated
+      - forbidden
+      - not_found
+      - method_not_allowed
+      - not_acceptable
+      - stale_revision
+      - unsupported_media_type
+      - idempotency_key_reused
+      - throttled
+      - server_error
+      description: Stable error code catalogue.
+    ErrorBody:
+      type: object
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        request_id:
+          type: string
+      required:
+      - code
+      - message
+      - fields
+      - request_id
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+      required:
+      - error
