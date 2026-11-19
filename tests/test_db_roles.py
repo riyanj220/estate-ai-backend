@@ -108,3 +108,19 @@ def test_runtime_can_upsert_counters_and_read_policy_but_not_ddl(runtime_conn):
     runtime_conn.execute("DELETE FROM kernel_ratelimitcounter WHERE scope = 'role_probe'")
     with pytest.raises(errors.InsufficientPrivilege):
         runtime_conn.execute("ALTER TABLE kernel_ratelimitpolicy ADD COLUMN nope int")
+
+
+def test_runtime_can_claim_and_purge_idempotency_records_but_not_ddl(runtime_conn):
+    sql = (
+        "INSERT INTO kernel_idempotencyrecord "
+        "(id, scope, account_id, key, request_hash, created_at) "
+        "VALUES (gen_random_uuid(), 'role_probe', gen_random_uuid(), 'k', 'h', now()) "
+        "ON CONFLICT (scope, account_id, key) DO NOTHING RETURNING id"
+    )
+    assert runtime_conn.execute(sql).fetchone() is not None
+    runtime_conn.execute(
+        "UPDATE kernel_idempotencyrecord SET result_ref = 'x:1' WHERE scope = 'role_probe'"
+    )
+    runtime_conn.execute("DELETE FROM kernel_idempotencyrecord WHERE scope = 'role_probe'")
+    with pytest.raises(errors.InsufficientPrivilege):
+        runtime_conn.execute("ALTER TABLE kernel_idempotencyrecord ADD COLUMN nope int")
