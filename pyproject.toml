@@ -7,6 +7,8 @@ dependencies = [
     "django>=5.2,<5.3",
     "daphne>=4.1",
     "psycopg[binary]>=3.2",
+    "djangorestframework>=3.16,<4",
+    "drf-spectacular>=0.28,<0.31",
 ]
 
 [dependency-groups]
@@ -14,6 +16,7 @@ dev = [
     "import-linter>=2.17",
     "pytest>=8",
     "pytest-django>=4.9",
+    "pyyaml>=6.0.3",
     "ruff>=0.6",
 ]
 
