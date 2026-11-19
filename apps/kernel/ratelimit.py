@@ -34,6 +34,11 @@ DO UPDATE SET count = LEAST(kernel_ratelimitcounter.count + 1, %s)
 RETURNING count
 """
 
+_PEEK = """
+SELECT count FROM kernel_ratelimitcounter
+WHERE scope = %s AND key_hash = %s AND window_start = %s
+"""
+
 _ENDED = """
 FROM kernel_ratelimitcounter c
 WHERE NOT EXISTS (
@@ -84,6 +89,11 @@ def _network_part(address: str) -> str:
     if parsed.version == 6:
         return str(ipaddress.ip_network(f"{parsed}/64", strict=False))
     return address
+
+
+def client_network(request) -> str:
+    """The trusted client address (IPv6 as its /64), for composite keys built with `derive_key`."""
+    return _network_part(client_ip(request))
 
 
 def client_key(actor: Actor, request, key_kind: str) -> str:
@@ -167,6 +177,29 @@ def hit(scope: str, key: str, now: datetime | None = None) -> Decision:
     if policy is None:
         return Decision(True, 0, 0)
     return _count(policy, key, now)
+
+
+def peek(scope: str, key: str, now: datetime | None = None) -> bool:
+    """True when the key has reached the limit in the current window. Never counts a hit.
+
+    Fails open like `hit`: a store fault reports not reached.
+    """
+    now = _aware(now)
+    policy = _lookup(scope)
+    if policy is None:
+        return False
+    if policy.window_seconds is None:
+        raise ImproperlyConfigured(f"Scope {scope} is a cap; count against limit_for(scope)")
+    epoch = int(now.timestamp())
+    start = datetime.fromtimestamp(epoch - epoch % policy.window_seconds, UTC)
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(_PEEK, [scope, key, start])
+            row = cursor.fetchone()
+    except DatabaseError as exc:
+        _log_store_failure(exc)
+        return False
+    return row is not None and row[0] >= policy.limit
 
 
 def hit_client(scope: str, actor: Actor, request, now: datetime | None = None) -> Decision:

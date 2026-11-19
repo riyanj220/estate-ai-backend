@@ -20,6 +20,7 @@ CATALOGUE: dict[str, ErrorCode] = _catalogue(
     ErrorCode("validation_error", 400, "The request contains invalid values."),
     ErrorCode("link_invalid", 400, "This link is not valid. Request a new one."),
     ErrorCode("unauthenticated", 401, "Authentication is required."),
+    ErrorCode("invalid_credentials", 401, "The email or password is incorrect."),
     ErrorCode("forbidden", 403, "You do not have permission to perform this action."),
     ErrorCode("not_found", 404, "The requested resource was not found."),
     ErrorCode("method_not_allowed", 405, "This method is not allowed for this resource."),
