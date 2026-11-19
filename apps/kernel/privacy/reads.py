@@ -14,6 +14,7 @@ from django.db import transaction
 
 from apps.kernel import audit
 from apps.kernel.actor import Actor, require_admin
+from apps.kernel.privacy.patterns import LONG_DIGIT_RUN, reject_contact_details
 
 _NAME = re.compile(r"^[a-z][a-z0-9_]{0,47}$")  # same limit as audit target_type
 REASON_MIN = 10
@@ -58,8 +59,7 @@ def record_private_read(actor: Actor, reason: str, target_ref: PrivateTargetRef 
     reason = reason.strip()
     if not REASON_MIN <= len(reason) <= REASON_MAX:
         raise ValueError("reason must be 10 to 300 characters")
-    # Interim screen until Story 1.14's shared contact patterns replace it.
-    if "@" in reason or audit.DIGIT_RUN.search(reason):
+    if LONG_DIGIT_RUN.search(reason) or reject_contact_details(reason) is not None:
         raise ValueError("reason must not contain contact details")
     with transaction.atomic():
         audit._record_reasoned(actor, READ_ACTION, target, target_id, reason)
