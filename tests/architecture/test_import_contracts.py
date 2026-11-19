@@ -50,6 +50,27 @@ def test_clean_tree_passes() -> None:
     assert "0 broken" in result.stdout
 
 
+def test_http_import_contract_covers_every_domain_app() -> None:
+    contracts = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["importlinter"][
+        "contracts"
+    ]
+    http = next(
+        c for c in contracts if c["name"] == "Domain apps never import HTTP or WebSocket code"
+    )
+    assert sorted(http["source_modules"]) == [f"apps.{app}" for app in DOMAIN_APPS]
+    for module in (
+        "django.http",
+        "django.shortcuts",
+        "django.views",
+        "django.urls",
+        "django.template.response",
+        "django.core.handlers",
+        "rest_framework",
+        "channels",
+    ):
+        assert module in http["forbidden_modules"]
+
+
 def test_domain_apps_have_public_modules() -> None:
     assert DOMAIN_APPS
     for app in DOMAIN_APPS:
@@ -105,6 +126,36 @@ VIOLATIONS = [
         "Assistant never imports listings models",
         id="assistant-to-listings-models",
     ),
+    pytest.param(
+        "apps/listings/services.py",
+        "import django.http\n",
+        "Domain apps never import HTTP or WebSocket code",
+        id="domain-imports-django-http",
+    ),
+    pytest.param(
+        "apps/catalog/selectors.py",
+        "import django.shortcuts\n",
+        "Domain apps never import HTTP or WebSocket code",
+        id="domain-imports-django-shortcuts",
+    ),
+    pytest.param(
+        "apps/catalog/services.py",
+        "import django.urls\n",
+        "Domain apps never import HTTP or WebSocket code",
+        id="domain-imports-django-urls",
+    ),
+    pytest.param(
+        "apps/identity/selectors.py",
+        "import rest_framework\n",
+        "Domain apps never import HTTP or WebSocket code",
+        id="domain-imports-drf",
+    ),
+    pytest.param(
+        "apps/messaging/services.py",
+        "import channels\n",
+        "Domain apps never import HTTP or WebSocket code",
+        id="domain-imports-channels",
+    ),
 ]
 
 
@@ -145,3 +196,9 @@ def test_unlisted_app_breaks_exhaustive_layers(project: Path) -> None:
     assert result.returncode != 0, result.stdout
     assert "Layers point downward only BROKEN" in result.stdout
     assert "apps.newapp" in result.stdout
+
+
+def test_domain_apps_may_use_django_db(project: Path) -> None:
+    append_code(project / "apps/listings/services.py", "import django.db\n")
+    result = run_contracts(project)
+    assert result.returncode == 0, result.stdout

@@ -40,8 +40,8 @@ select = ["E", "F", "I", "B", "UP", "S"]
 "tests/**" = ["S101", "S105", "S106"]
 
 [tool.importlinter]
-root_package = "apps"
-include_external_packages = false
+root_packages = ["apps", "django"]
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Layers point downward only"
@@ -142,4 +142,11 @@ name = "Assistant never imports listings models"
 type = "forbidden"
 source_modules = ["apps.assistant"]
 forbidden_modules = ["apps.listings.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Domain apps never import HTTP or WebSocket code"
+type = "forbidden"
+source_modules = ["apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.governance"]
+forbidden_modules = ["django.http", "django.shortcuts", "django.views", "django.urls", "django.template.response", "django.core.handlers", "rest_framework", "channels"]
 allow_indirect_imports = true
