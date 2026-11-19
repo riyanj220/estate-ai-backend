@@ -2,7 +2,7 @@
 title: 'Story 1.18: Password reset and password change (backend half)'
 type: 'feature'
 created: '2026-11-19'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -97,6 +97,22 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, backend half (blind, edge-case, verification-gap).
+
+| # | Finding | Verdict | Route |
+|---|---------|---------|-------|
+| 1 | A password change left outstanding reset links valid (blind, edge) | high | patch: change marks every unused reset token used |
+| 2 | Known vs unknown addresses did different response-path DB work, docstring wrong (blind, edge) | medium | patch: symmetric counter write; after-commit and SMTP timing residual documented |
+| 3 | Delayed `session_ended` handler could end a session opened after commit (blind, edge) | medium | patch: `ended_before` bound on event and handler |
+| 4 | Confirm route had no throttle (blind, edge) | medium | patch: seeded `password_reset_confirm` 20 per hour per client |
+| 5 | Unusable-password accounts could be re-enabled by a reset (blind) | low | patch: treated as unknown |
+| 6 | Notice copy wrong for reset, seed rollback could delete tuned policies, duplicated body helpers, purge filter (blind, edge) | low | patch |
+| 7 | Tests: confirm-side supersede, change throttle success path, state unchanged after reset, missing or non-string password, audit actor, seed idempotency, no-store on errors (verification-gap) | medium | patch: about 20 tests |
+| 8 | Silent per-account cap lets an attacker block a victim's reset for an hour; a new request supersedes an already-emailed link (blind, edge) | medium | defer, same accepted risk as Story 1.16 #9, documented |
+| 9 | Token in query string rather than fragment; hashing under lock; fail-open throttle on store faults (blind, edge) | low | defer, consistent with Stories 1.16 and 1.17 |
+
+Deviation recorded: in `change_password`, `ended_before` and the in-transaction end use a fresh `now` taken after the locks and hash, so a session created while waiting for the lock is not missed.
 
 ## Design Notes
 
