@@ -13,7 +13,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "apps.kernel.request_logging.RequestLoggingMiddleware",
+    "apps.kernel.security_headers.SecurityHeadersMiddleware",
+    "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
 ]
 
 TEMPLATES: list = []
@@ -50,6 +53,23 @@ def build_database(user: str, password: str) -> dict:
 
 
 STATIC_URL = "static/"
+
+# Cookies: never readable by scripts, never sent cross-site on subrequests.
+# Secure is on here and switched off only in local and test settings.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = True
+
+CSRF_FAILURE_VIEW = "apps.presentation.api.handlers.csrf_failure"
+SECURE_REFERRER_POLICY = "no-referrer"
+# TLS terminates at the proxy and X-Forwarded-Proto is never trusted from an
+# unconfigured source, so no SSL redirect or proxy-SSL header is configured.
+SECURE_SSL_REDIRECT = False
+SECURE_HSTS_SECONDS = 0
+
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],

@@ -4,8 +4,11 @@ For local and test use, `load_dotenv` reads an ignored `.env` file into the
 process environment without overriding variables that are already set.
 """
 
+import ipaddress
 import os
+import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -74,3 +77,84 @@ def require_secret(name: str) -> str:
             f"Environment variable {name} must be at least {MIN_SECRET_LENGTH} characters."
         )
     return value
+
+
+def env_list(name: str, default: str = "") -> list[str]:
+    """Comma-separated variable as a list; blanks are dropped."""
+    raw = os.environ.get(name)
+    if raw is None:
+        raw = default
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+_HOST_RE = re.compile(
+    r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
+)
+
+
+def _bad(name: str, why: str) -> ImproperlyConfigured:
+    # Names the variable only; a value is never echoed.
+    return ImproperlyConfigured(f"Environment variable {name} {why}.")
+
+
+def validate_hosts(name: str, hosts: list[str], *, required: bool) -> list[str]:
+    if required and not hosts:
+        raise _bad(name, "is missing or empty")
+    for host in hosts:
+        if (
+            "*" in host
+            or host.startswith(".")
+            or not (_HOST_RE.match(host) or _is_ip(host.strip("[]")))
+        ):
+            raise _bad(name, "must list exact host names without wildcards")
+    return hosts
+
+
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _origin_parts(value: str):
+    if any(ch in value for ch in "?#@*"):
+        return None
+    try:
+        parts = urlsplit(value)
+        parts.port  # noqa: B018 - raises on an invalid port
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or not parts.hostname or "*" in parts.netloc:
+        return None
+    if parts.path or parts.query or parts.fragment or parts.username or parts.password:
+        return None
+    return parts
+
+
+def validate_origins(name: str, origins: list[str], *, require_https: bool = False) -> list[str]:
+    for origin in origins:
+        parts = _origin_parts(origin)
+        if parts is None or (require_https and parts.scheme != "https"):
+            raise _bad(name, "must list origins like https://host with a scheme and no wildcard")
+    return origins
+
+
+def validate_base_url(name: str, value: str, *, require_https: bool) -> str:
+    parts = _origin_parts(value.strip()) if value else None
+    if parts is None or (require_https and parts.scheme != "https"):
+        scheme = "an https" if require_https else "an http(s)"
+        raise _bad(name, f"must be {scheme} origin with no path")
+    return value.strip()
+
+
+def validate_proxies(name: str, entries: list[str]) -> list[str]:
+    for entry in entries:
+        try:
+            network = ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            raise _bad(name, "must list IP addresses or CIDR ranges") from None
+        if network.prefixlen < (8 if network.version == 4 else 16):
+            raise _bad(name, "must list the proxy's own narrow range (at least /8 or /16 for IPv6)")
+    return entries
