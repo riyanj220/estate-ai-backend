@@ -117,3 +117,7 @@ Security-sensitive actions are recorded in an append-only table through `kernel.
 ## Reference data
 
 Cities live in the `catalog` app (seeded with Karachi) and are served as plain strings at `GET /api/v1/reference/cities`, never as OpenAPI enums. See `docs/reference-data.md` for how they are managed and where localities arrive.
+
+## Accounts
+
+The `identity` app owns the account table. The account state (`email_unverified`, `active`, `suspended`, `deactivated`) is derived from separate conditions, `identity.policy.can(actor, capability)` implements the FR-74 capability matrix (capabilities that depend on later stories are pending), state changes are audited services, and `lock_account` and `is_active_owner` are the lock and eligibility primitives. See `docs/account-states.md`.
