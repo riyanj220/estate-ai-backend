@@ -124,3 +124,30 @@ def test_runtime_can_claim_and_purge_idempotency_records_but_not_ddl(runtime_con
     runtime_conn.execute("DELETE FROM kernel_idempotencyrecord WHERE scope = 'role_probe'")
     with pytest.raises(errors.InsufficientPrivilege):
         runtime_conn.execute("ALTER TABLE kernel_idempotencyrecord ADD COLUMN nope int")
+
+
+def test_runtime_can_use_flags_ai_log_and_purges_but_not_ddl(runtime_conn):
+    runtime_conn.execute(
+        "INSERT INTO kernel_featureflag (id, name, enabled, changed_by, changed_at) "
+        "VALUES (gen_random_uuid(), 'role_probe', true, NULL, now())"
+    )
+    runtime_conn.execute("UPDATE kernel_featureflag SET enabled = false WHERE name = 'role_probe'")
+    assert runtime_conn.execute(
+        "SELECT enabled FROM kernel_featureflag WHERE name = 'role_probe'"
+    ).fetchone() == (False,)
+    runtime_conn.execute("DELETE FROM kernel_featureflag WHERE name = 'role_probe'")
+
+    runtime_conn.execute(
+        "INSERT INTO kernel_airequestlog (id, feature, provider, model, latency_ms, outcome, "
+        "created_at) VALUES (gen_random_uuid(), 'role_probe', 'p', 'm', 1, 'success', "
+        "now() - interval '100 days')"
+    )
+    runtime_conn.execute(
+        "DELETE FROM kernel_airequestlog WHERE created_at < now() - interval '90 days'"
+    )
+    assert runtime_conn.execute(
+        "SELECT count(*) FROM kernel_airequestlog WHERE feature = 'role_probe'"
+    ).fetchone() == (0,)
+    for table in ("kernel_featureflag", "kernel_airequestlog"):
+        with pytest.raises(errors.InsufficientPrivilege):
+            runtime_conn.execute(f"ALTER TABLE {table} ADD COLUMN nope int")
