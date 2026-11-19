@@ -79,6 +79,17 @@ context:
 
 ## Review Triage Log
 
+Blind, edge-case and verification-gap reviewers ran on the frontend diff.
+
+**Patched:**
+- Unknown 4xx codes claimed "Your link is still valid": retry copy is now neutral and the retry state also offers the resend form.
+- Reload after the token was scrubbed shows the missing-link state: wording now tells the user to reopen the email link.
+- Whitespace-only token is treated as missing.
+- Production `Cache-Control: no-store` verified against `next start`. A `force-dynamic` idea was tried and rejected because it embeds the token in the served HTML; the page stays static and the header still applies.
+- Tests added: known status with unknown code or non-envelope body lands in the retry state; token absent from the address bar while the request is pending; token privacy (logs, markup, storage) in error, broken and expired states; vacuous history assertion replaced.
+
+**Deferred or rejected:** keeping the token in sessionStorage (contradicts the never-stored rule); resend accepting any 2xx and clearing the sent notice when the email is edited (low value); duplicated error-summary machinery between forms (extract when a third form needs it); extra resend 4xx stub modes, same-origin request assertion, live-region and focus-after-retry polish (low risk, revisit in the accessibility pass); huge Retry-After values; HTTP access logs still see the initial GET URL, which no client change can fix.
+
 ## Design Notes
 
 Decisions made without asking: the page confirms automatically on load (the backend requires a POST so link scanners cannot consume the token); the token is cleared from the address bar as early as possible to limit leakage through history and screenshots; shared form helpers are extracted now because two pages use them; the success state links home because sign-in arrives in Story 1.17; wording distinguishes expired, used and invalid links because the backend now provides three codes.
