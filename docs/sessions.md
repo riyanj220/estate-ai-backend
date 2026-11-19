@@ -35,7 +35,8 @@ sign-out service (`unauthenticated` without a session) and by the CSRF check in 
 - **Settings check**: at load, `0 < SESSION_TOUCH_SECONDS < SESSION_IDLE_SECONDS <= SESSION_ABSOLUTE_SECONDS` and
   `SESSION_MAX_OPEN > 0`, or start-up fails. The end reasons are defined once (`identity.models.SESSION_END_REASONS`).
 - **Ending**: `sign_out` ends the current session only. A `password_changed` or `deactivated` `account.session_ended` event
-  (handler in `identity/subscribers.py`) ends every open session of the account; `sign_out` events end nothing more. A
+  (handler in `identity/subscribers.py`) ends every open session of the account, except `except_session_id` when the event
+  carries one (a password change keeps the session it came from); `sign_out` events end nothing more. A
   Deactivated account is also refused at authentication time, so there is no window before the event runs. A Suspended
   account keeps its session; it is restricted by capability.
 - **Retention**: job `identity.sessions` purges sessions ended, expired or idled out more than 7 days ago.
@@ -114,9 +115,9 @@ pass the origin check.
 - **`TRUSTED_PROXIES` must be set behind the proxy**: otherwise every client appears to come from the proxy address and all
   users share one throttle key (and one lockout).
 - **No audit by design**: sign-in and sign-out write no audit record (private data, noise); failures are not logged.
-- **`password_changed` emitter arrives in Story 1.18**: it must end sessions in its own transaction (call
-  `services.end_account_sessions` or equivalent), not rely only on the after-commit event, so a crash between commit and
-  dispatch cannot leave old sessions alive.
+- **`password_changed` emitters (resolved in Story 1.18)**: password reset and password change end sessions directly in
+  their own transaction and then emit `account.session_ended` (reason `password_changed`, with `except_session_id` for a
+  change), so a crash between commit and dispatch cannot leave old sessions alive. See `docs/password-reset.md`.
 - **No hash upgrade on sign-in**: a password hashed with an older algorithm or cost is not re-hashed when it verifies.
 - **No `__Host-` cookie prefix**: `estate_session` is not prefixed. Moving to `__Host-estate_session` (Secure, path `/`, no
   Domain) is a documented follow-up; it needs `Secure` in local development.

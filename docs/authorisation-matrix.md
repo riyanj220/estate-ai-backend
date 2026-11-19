@@ -31,6 +31,9 @@ whose permission is not explicit.
 | `/api/v1/email-verifications/confirm` | POST | public | `apps.presentation.api.verifications.ConfirmEmailView` |
 | `/api/v1/health` | GET, HEAD | public | `apps.presentation.api.health.WrappedAPIView` |
 | `/api/v1/me` | GET | signed_in | `apps.presentation.api.sessions.MeView` |
+| `/api/v1/me/password` | POST | signed_in | `apps.presentation.api.passwords.ChangePasswordView` |
+| `/api/v1/password-reset-requests` | POST | public | `apps.presentation.api.passwords.PasswordResetRequestView` |
+| `/api/v1/password-resets/confirm` | POST | public | `apps.presentation.api.passwords.PasswordResetConfirmView` |
 | `/api/v1/reference/cities` | GET | public | `apps.presentation.api.reference.CityView` |
 | `/api/v1/registrations/individuals` | POST | public | `apps.presentation.api.registrations.IndividualRegistrationView` |
 | `/api/v1/schema` | GET | public | `apps.presentation.api.schema.PublicSchemaView` |

@@ -65,6 +65,11 @@ changes a response; the user can request a new link.
   retry after the hour. Accepted for the prototype.
 - Confirm has no throttle: tokens carry 256 bits of entropy, so guessing is infeasible. Revisit if abuse appears.
 
+## Related: password reset
+
+Password reset (Story 1.18) mirrors this design with its own table and 1-hour links; see `docs/password-reset.md`. The
+two flows share only the token helpers in `identity.verification`.
+
 ## Hand-off
 
 - **Frontend half** (separate spec): the `/verify-email` page reads `token` from the query, confirms on load, shows
