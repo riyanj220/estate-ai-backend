@@ -61,3 +61,18 @@ touching `listings.models`. `tests/architecture/` proves each rule fails on a de
 `fields = "__all__"` in serializers. Event handlers live in each app's `subscribers` module, imported only by that app's own `apps.py` `ready()`.
 New apps are added to `INSTALLED_APPS` only when they own models.
 `scripts/asgi_thread_spike.py` re-runs the AD-14 sync-view concurrency spike; results are in `docs/architecture-notes.md`.
+
+## API contract
+
+The contract is the committed `openapi.yaml` (drf-spectacular, served at `/api/v1/schema`). After changing any
+endpoint, serializer or error code, regenerate it; `tests/api/test_openapi.py` fails when it is stale:
+
+```bash
+uv run python manage.py spectacular --validate --file openapi.yaml
+```
+
+Errors use `{error:{code,message,fields,request_id}}` with the catalogue in `apps/kernel/errors.py`; messages are
+static so submitted values never appear. Every response carries `X-Request-ID`, and request logs are JSON lines with an
+allow-list of fields (no bodies, query strings, headers, cookies or exception messages).
+
+Note: `/api/v1/schema` is public and no default-deny permission class exists yet; both must be gated by Stories 1.4 and 1.6 before any non-local deployment.
