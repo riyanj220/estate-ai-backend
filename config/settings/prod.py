@@ -1,12 +1,18 @@
 import os
 
+from django.core.exceptions import ImproperlyConfigured
+
 from config.env import (
+    env_bool,
+    env_int,
     env_list,
     require_secret,
     validate_base_url,
     validate_hosts,
     validate_origins,
+    validate_port,
     validate_proxies,
+    validate_sender,
 )
 
 from .base import *  # noqa: F403
@@ -39,3 +45,23 @@ DATABASES = {
 # only where MIGRATOR_PASSWORD is provided (the migration job).
 if os.environ.get("MIGRATOR_PASSWORD"):
     DATABASES["migrator"] = build_database(MIGRATOR_DB_USER, require_secret("MIGRATOR_PASSWORD"))
+
+# Mail: SMTP from the environment. MAIL_PASSWORD is a secret and is never logged.
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.environ.get("MAIL_HOST", "").strip()
+if not EMAIL_HOST:
+    raise ImproperlyConfigured("Environment variable MAIL_HOST is missing or empty.")
+_mail_from = os.environ.get("MAIL_FROM", "").strip()
+if not _mail_from:
+    raise ImproperlyConfigured("Environment variable MAIL_FROM is missing or empty.")
+DEFAULT_FROM_EMAIL = validate_sender("MAIL_FROM", _mail_from)
+EMAIL_PORT = validate_port("MAIL_PORT", env_int("MAIL_PORT", 587))
+EMAIL_HOST_USER = os.environ.get("MAIL_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("MAIL_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("MAIL_USE_TLS", True)
+EMAIL_USE_SSL = env_bool("MAIL_USE_SSL", False)
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    raise ImproperlyConfigured("MAIL_USE_TLS and MAIL_USE_SSL cannot both be true.")
+if EMAIL_HOST_USER and not (EMAIL_USE_TLS or EMAIL_USE_SSL):
+    raise ImproperlyConfigured("MAIL_USER requires MAIL_USE_TLS or MAIL_USE_SSL.")
+EMAIL_TIMEOUT = 10

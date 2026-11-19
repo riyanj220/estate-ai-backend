@@ -60,6 +60,10 @@ RUNTIME_EXECUTOR_MAX_WORKERS = env_int("RUNTIME_EXECUTOR_MAX_WORKERS", 4)
 RUNTIME_EXECUTOR_RESERVED_WORKERS = env_int("RUNTIME_EXECUTOR_RESERVED_WORKERS", 1)
 validate_limits(RUNTIME_EXECUTOR_MAX_WORKERS, RUNTIME_EXECUTOR_RESERVED_WORKERS)
 
+# Mail (Story 1.13). Delivery is off the request thread unless MAIL_SEND_INLINE (tests).
+DEFAULT_FROM_EMAIL = env("MAIL_FROM", "EstateAI <no-reply@localhost>")
+MAIL_SEND_INLINE = False
+
 STATIC_URL = "static/"
 
 # Cookies: never readable by scripts, never sent cross-site on subrequests.

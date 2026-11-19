@@ -7,6 +7,7 @@ process environment without overriding variables that are already set.
 import ipaddress
 import os
 import re
+import unicodedata
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -158,3 +159,47 @@ def validate_proxies(name: str, entries: list[str]) -> list[str]:
         if network.prefixlen < (8 if network.version == 4 else 16):
             raise _bad(name, "must list the proxy's own narrow range (at least /8 or /16 for IPv6)")
     return entries
+
+
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    lowered = raw.strip().lower()
+    if lowered in ("1", "true", "yes", "on"):
+        return True
+    if lowered in ("0", "false", "no", "off"):
+        return False
+    raise _bad(name, "must be true or false")
+
+
+def validate_loopback_host(name: str, value: str) -> str:
+    """Local mail must reach only the catcher on this machine."""
+    host = value.strip().strip("[]").lower()
+    if host not in LOOPBACK_HOSTS:
+        raise _bad(
+            name, "must be a loopback address (127.0.0.1, localhost or ::1) in local settings"
+        )
+    return host
+
+
+def validate_port(name: str, port: int) -> int:
+    if not 1 <= port <= 65535:
+        raise _bad(name, "must be between 1 and 65535")
+    return port
+
+
+_SENDER = re.compile(r"^(?:[^<>@]*<(?P<angle>[^<>@\s]+@[^<>@\s]+)>|(?P<bare>[^<>@\s]+@[^<>@\s]+))$")
+
+
+def validate_sender(name: str, value: str) -> str:
+    """`addr` or `Name <addr>`: one plausible address and no control or format characters."""
+    value = value.strip()
+    if any(unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") for ch in value):
+        raise _bad(name, "must not contain control characters")
+    if not _SENDER.fullmatch(value) or "," in value or ";" in value:
+        raise _bad(name, "must be one address, optionally as Name <address>")
+    return value

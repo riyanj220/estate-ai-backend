@@ -5,7 +5,9 @@ from config.env import (
     load_dotenv,
     validate_base_url,
     validate_hosts,
+    validate_loopback_host,
     validate_origins,
+    validate_port,
     validate_proxies,
 )
 
@@ -41,5 +43,9 @@ DATABASES = {
     "migrator": build_database(MIGRATOR_DB_USER, env("MIGRATOR_PASSWORD")),
 }
 
-EMAIL_HOST = env("MAIL_HOST", "127.0.0.1")
-EMAIL_PORT = env_int("MAIL_PORT", 1025)
+# Mailpit catcher; start-up refuses any non-loopback host so local mail never leaves the machine.
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = validate_loopback_host("MAIL_HOST", env("MAIL_HOST", "127.0.0.1"))
+EMAIL_PORT = validate_port("MAIL_PORT", env_int("MAIL_PORT", 1025))
+EMAIL_USE_TLS = False
+EMAIL_TIMEOUT = 10
