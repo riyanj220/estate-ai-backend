@@ -128,7 +128,11 @@ The `identity` app owns the account table. The account state (`email_unverified`
 
 ## Registration
 
-`POST /api/v1/registrations/individuals` registers an Individual account (Email-unverified, with an individual profile) and answers the same `202` for a new and an existing email; an existing address gets an "already registered" notice instead. Rules and codes are shared by the service and the API; the phone is normalised to E.164 by `normalise_phone` in the patterns module and kept private. The `account.registered` event is the hook for Story 1.16. See `docs/registration.md`.
+`POST /api/v1/registrations/individuals` registers an Individual account (Email-unverified, with an individual profile) and answers the same `202` for a new and an existing email; an existing address gets an "already registered" notice instead. Rules and codes are shared by the service and the API; the phone is normalised to E.164 by `normalise_phone` in the patterns module and kept private. See `docs/registration.md`.
+
+## Email verification
+
+Registration queues a single-use, 24-hour verification link (after commit, through the mail port). `POST /api/v1/email-verifications/confirm` consumes it and moves the account to Active; `POST /api/v1/email-verification-requests` asks for a new link and always answers the same `202`. Tokens are stored hashed; expired and used ones are purged after 7 days by the `identity.email_verification_tokens` retention job. See `docs/email-verification.md`.
 
 ## Mail
 

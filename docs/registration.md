@@ -27,7 +27,7 @@ A duplicate phone is never reported; two accounts may share one.
   with Story 1.16's verification sends). Over the cap nothing is sent and the response is unchanged.
 - An existing account that is still Email-unverified gets no sign-in notice; the service emits
   `identity.events.AccountVerificationRequested` (`account.verification_requested`, field `account_id`) instead.
-  **Story 1.16 must subscribe to it and send the verification message.**
+  Story 1.16 subscribes to it and sends a new verification link (`docs/email-verification.md`).
 - A verified (or otherwise non-unverified) account gets the sign-in notice.
 
 ## What a new registration writes (one transaction)
@@ -64,8 +64,9 @@ The service refuses any actor other than a Visitor with `forbidden` and writes n
 
 ## Hand-off
 
-- **Story 1.16 (email verification)** subscribes to `identity.events.AccountRegistered` (`account.registered`, field
-  `account_id`) and sends the verification message; this story sends no verification email.
+- **Story 1.16 (email verification, done)** subscribes to `identity.events.AccountRegistered` (`account.registered`,
+  field `account_id`) and sends the verification link; registration itself sends no verification email. See
+  `docs/email-verification.md`.
 - **Frontend half** is a separate spec written after this merges: regenerate the typed client from `openapi.yaml`
   (operation `register_individual`), show the field errors by code, the 429 message and the "check your email" state.
 

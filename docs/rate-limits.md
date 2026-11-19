@@ -7,7 +7,7 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | Scope | Limit | Window | Key | Applied by |
 |---|---|---|---|---|
 | `registration` | 10 | 1 hour | client | registration stories |
-| `verification_email` | 5 | 1 hour | account | verification story |
+| `verification_email` | 5 | 1 hour | account | verification story (shared by the resend and the existing-address notice) |
 | `password_reset_email` | 5 | 1 hour | account | password reset story |
 | `messages` | 60 | 1 minute | account | messaging |
 | `conversations_new` | 20 | 1 day | account | messaging |
@@ -19,6 +19,7 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | `ai_search_visitor` | 10 | 1 minute | client | search |
 | `ai_search_account` | 30 | 1 hour | account | search |
 | `estimates` | 20 | 1 hour | account | valuation (FR-42) |
+| `verification_resend` | 5 | 1 hour | client | `POST /api/v1/email-verification-requests` (Story 1.16); 429 for every address alike |
 | `sign_in` | 5 | 15 minutes | client | sign-in (FR-3); key by account plus address |
 
 A null window marks a cap: `limit_for(scope)` returns it for the owning story to count against; `hit` refuses it.

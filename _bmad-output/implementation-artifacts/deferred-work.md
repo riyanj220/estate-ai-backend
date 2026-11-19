@@ -45,3 +45,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-15-individual-registration.md`
   summary: Define retention and erasure for the private phone and register the profile with the private-read target registry when an administrator read of it exists.
   evidence: The phone is stored in plaintext in `identity_individualprofile`; erasure belongs to the governance use case (AD-23).
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-16-email-verification.md`
+  summary: Add a per-client throttle policy for `POST /api/v1/email-verifications/confirm` if token-guessing abuse or database load appears.
+  evidence: Confirm is public and unthrottled; tokens carry 256 bits of entropy so guessing is impractical, but each attempt costs a lookup.
