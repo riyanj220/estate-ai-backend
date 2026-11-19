@@ -113,3 +113,7 @@ A bounded executor keeps capacity free for chat and sign-in (`RUNTIME_EXECUTOR_M
 ## Audit trail
 
 Security-sensitive actions are recorded in an append-only table through `kernel.audit`, in the caller's transaction, with allow-listed metadata; administrator reads of private data call `record_private_read` first with a per-read reason. See `docs/audit.md`. Stories 1.12 and 1.18 write the account-state and password-change records through this writer.
+
+## Reference data
+
+Cities live in the `catalog` app (seeded with Karachi) and are served as plain strings at `GET /api/v1/reference/cities`, never as OpenAPI enums. See `docs/reference-data.md` for how they are managed and where localities arrive.

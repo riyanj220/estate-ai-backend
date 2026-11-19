@@ -34,3 +34,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-10-audit-trail-and-reasoned-private-reads.md`
   summary: Write an audit record for feature-flag changes (register a `flag.changed` action with a token schema) and apply the Story 1.14 contact-pattern check to read reasons.
   evidence: `set_flag` is an administrator action recorded only by its changed-by and changed-at columns; read reasons currently use a crude `@` and digit-run rule.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-11-city-reference-data.md`
+  summary: Give `create_city` field-level error detail and a reactivate path for an inactive city when city management is built.
+  evidence: An inactive city still reserves its name and the service raises one generic `validation_error`; settle in the platform administration epic.
