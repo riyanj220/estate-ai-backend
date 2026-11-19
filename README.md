@@ -46,6 +46,18 @@ same way), which only the migration job should provide.
 
 ```bash
 uv run ruff check . && uv run ruff format --check .
+uv run lint-imports           # layering and import contracts (pyproject.toml)
 uv run pytest                 # needs the compose database running and .env present
 uv audit
 ```
+
+## Architecture checks
+
+`apps/` holds one package per domain, layered bottom to top: `kernel`, `catalog`, `identity`, `listings`,
+tier 4 (`valuation`, `search`, `assistant`, `messaging`), `governance`, `presentation`. `uv run lint-imports`
+enforces the contracts in `pyproject.toml`: downward-only layers, independent tier-4 peers, no importing another
+app's `models`, no importing any `subscribers` module (only an app's own `apps.py` may), and `assistant` never
+touching `listings.models`. `tests/architecture/` proves each rule fails on a deliberate violation and rejects
+`fields = "__all__"` in serializers. Event handlers live in each app's `subscribers` module, imported only by that app's own `apps.py` `ready()`.
+New apps are added to `INSTALLED_APPS` only when they own models.
+`scripts/asgi_thread_spike.py` re-runs the AD-14 sync-view concurrency spike; results are in `docs/architecture-notes.md`.
