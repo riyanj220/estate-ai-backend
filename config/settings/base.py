@@ -1,3 +1,4 @@
+from apps.kernel.runtime import validate_limits
 from config.env import env, env_int
 
 ROOT_URLCONF = "config.urls"
@@ -52,6 +53,11 @@ def build_database(user: str, password: str) -> dict:
         "OPTIONS": {"connect_timeout": 3},
     }
 
+
+# Runtime executor (AD-14): heavy work never uses more than total minus reserved workers.
+RUNTIME_EXECUTOR_MAX_WORKERS = env_int("RUNTIME_EXECUTOR_MAX_WORKERS", 4)
+RUNTIME_EXECUTOR_RESERVED_WORKERS = env_int("RUNTIME_EXECUTOR_RESERVED_WORKERS", 1)
+validate_limits(RUNTIME_EXECUTOR_MAX_WORKERS, RUNTIME_EXECUTOR_RESERVED_WORKERS)
 
 STATIC_URL = "static/"
 
