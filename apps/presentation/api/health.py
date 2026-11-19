@@ -13,6 +13,8 @@ from rest_framework.negotiation import BaseContentNegotiation
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 
+from apps.presentation.api.permissions import AllowPublic
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,7 +47,7 @@ class HealthUnavailableSerializer(serializers.Serializer):
 @api_view(["GET", "HEAD"])
 @renderer_classes([JSONRenderer])
 @authentication_classes([])
-@permission_classes([])
+@permission_classes([AllowPublic])
 def health(request):
     """Liveness plus database reachability. Never reveals connection details."""
     try:

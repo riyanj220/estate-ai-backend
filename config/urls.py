@@ -1,8 +1,8 @@
 from django.urls import path
-from drf_spectacular.views import SpectacularAPIView
 
 from apps.presentation.api.handlers import bad_request, forbidden, not_found, server_error
 from apps.presentation.api.health import health
+from apps.presentation.api.schema import PublicSchemaView
 
 handler400 = bad_request
 handler403 = forbidden
@@ -11,5 +11,5 @@ handler500 = server_error
 
 urlpatterns = [
     path("api/v1/health", health, name="health"),
-    path("api/v1/schema", SpectacularAPIView.as_view(), name="schema"),
+    path("api/v1/schema", PublicSchemaView.as_view(), name="schema"),
 ]

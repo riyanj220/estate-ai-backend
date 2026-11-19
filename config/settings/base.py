@@ -74,7 +74,9 @@ SECURE_HSTS_SECONDS = 0
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
-    # Authentication, permissions and throttling arrive in Stories 1.6, 1.7 and 1.17.
+    # Default deny: every view declares its permission explicitly (Story 1.6).
+    # Throttling and authentication arrive in Stories 1.7 and 1.17.
+    "DEFAULT_PERMISSION_CLASSES": ["apps.presentation.api.permissions.DenyByDefault"],
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "UNAUTHENTICATED_USER": None,  # the auth app is not installed
     "EXCEPTION_HANDLER": "apps.presentation.api.exceptions.exception_handler",

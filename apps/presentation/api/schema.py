@@ -1,6 +1,14 @@
 """Spectacular post-processing: publish the error catalogue and default error responses."""
 
+from drf_spectacular.views import SpectacularAPIView
+
 from apps.kernel.errors import CATALOGUE
+from apps.presentation.api.permissions import AllowPublic
+
+
+class PublicSchemaView(SpectacularAPIView):
+    permission_classes = [AllowPublic]
+
 
 ENVELOPE_REF = {"$ref": "#/components/schemas/ErrorEnvelope"}
 DEFAULT_ERROR_STATUSES = (400, 401, 403, 404, 429, 500)
