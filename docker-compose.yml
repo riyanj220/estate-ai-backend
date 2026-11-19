@@ -1,0 +1,39 @@
+# Local services only; everything is published on 127.0.0.1.
+# Secrets come from the ignored .env (generate it with scripts/bootstrap_env.py).
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg18-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/bootstrap_env.py first}
+      POSTGRES_DB: ${POSTGRES_DB:-estate_ai}
+      MIGRATOR_USER: ${MIGRATOR_USER:-migrator}
+      MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?run scripts/bootstrap_env.py first}
+      RUNTIME_USER: ${RUNTIME_USER:-runtime}
+      RUNTIME_PASSWORD: ${RUNTIME_PASSWORD:?run scripts/bootstrap_env.py first}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./docker/postgres/create_roles.sh:/docker-entrypoint-initdb.d/10-create-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-estate_ai}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mail:
+    image: axllent/mailpit:v1.27.7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAIL_PORT:-1025}:1025"
+      - "127.0.0.1:${MAIL_UI_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
