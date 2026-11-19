@@ -9,6 +9,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "config.apps.ConfigAppConfig",
+    "apps.kernel",
 ]
 
 MIDDLEWARE = [
@@ -75,7 +76,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     # Default deny: every view declares its permission explicitly (Story 1.6).
-    # Throttling and authentication arrive in Stories 1.7 and 1.17.
+    # Throttling is opt-in per view (PolicyThrottle); authentication arrives in Story 1.17.
     "DEFAULT_PERMISSION_CLASSES": ["apps.presentation.api.permissions.DenyByDefault"],
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "UNAUTHENTICATED_USER": None,  # the auth app is not installed
