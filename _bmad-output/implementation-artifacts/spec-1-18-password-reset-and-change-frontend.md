@@ -2,7 +2,7 @@
 title: 'Story 1.18: Password reset and change (frontend half)'
 type: 'feature'
 created: '2026-11-19'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -87,6 +87,20 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, frontend half (blind, edge-case, verification-gap).
+
+**Patched:**
+- Change form: 429 on the POST shows the wait; timeout and network add a hint that the change may already have happened; success message clears on edit.
+- Forgot form: email field codes mapped, raw server message never shown.
+- Reset page: a 400 flagging the token (or lacking a password field) ends as an invalid link; CSRF cache cleared on success; one announcement mechanism for failures.
+- Tests (12 new): `next.config.ts` header rules asserted directly (dev responses cannot fail on no-store), provider refresh after change, distinct-sentence and unknown-code fallbacks, all six policy codes for each map, CSRF fetch failures on the change page, forgot privacy test, unknown-code 410 shows no raw text, edit clears confirmations.
+
+**Rejected:** CSRF header on the anonymous forgot and reset POSTs. The backend public views ignore the session cookie (`authentication_classes = []`) and need none; backend tests prove a 400 or 202 with a session cookie and no token. Documented in the README.
+
+**Deferred:** token in a URL fragment (documented trade-off, same as Story 1.16), shared form scaffolding hook (five forms repeat it, extract with the next form), hidden username field for password managers, lockout hint on the incorrect-password message, trailing-slash header variants, automated `next build && next start` header check (manual check documented), reset-ok header flip when previously signed in.
+
+Deviation recorded: the backend sends static field sentences, not bare codes; the maps accept both and show an unknown sentence as sent only when it is a known static server sentence, otherwise the generic text.
 
 ## Design Notes
 
