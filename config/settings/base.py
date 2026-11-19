@@ -37,9 +37,8 @@ DB_PORT = env_int("POSTGRES_PORT", 5432)
 MIGRATOR_DB_USER = env("MIGRATOR_USER", "migrator")
 RUNTIME_DB_USER = env("RUNTIME_USER", "runtime")
 
-# Tables the runtime role may only read and insert (for example the audit table,
-# added in Story 1.10). Grants skip UPDATE and DELETE on these.
-RUNTIME_APPEND_ONLY_TABLES: list[str] = []
+# Tables the runtime role may only read and insert (the audit table, Story 1.10).
+RUNTIME_APPEND_ONLY_TABLES: list[str] = ["kernel_auditrecord"]
 
 
 def build_database(user: str, password: str) -> dict:

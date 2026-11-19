@@ -100,3 +100,42 @@ class AiRequestLog(models.Model):
                 condition=models.Q(outcome__in=AI_OUTCOMES), name="ai_request_log_outcome_valid"
             )
         ]
+
+
+class AuditRecord(models.Model):
+    """One security-relevant action. Append-only for the runtime role (never updated or purged).
+
+    Holds plain UUID references and allow-listed metadata, never contact details or message text.
+    `reason` is used only by reasoned private reads.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor_id = models.UUIDField(null=True, blank=True)  # null for visitor and system actors
+    actor_kind = models.CharField(max_length=16)
+    action = models.CharField(max_length=64)
+    target_type = models.CharField(max_length=64)
+    target_id = models.UUIDField()
+    reason = models.CharField(max_length=300, blank=True)
+    request_id = models.CharField(max_length=64, blank=True)
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["target_type", "target_id"], name="audit_target_idx"),
+            models.Index(fields=["actor_id"], name="audit_actor_idx"),
+            models.Index(fields=["created_at"], name="audit_created_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(actor_kind__in=["visitor", "user", "admin", "system"]),
+                name="audit_actor_kind_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(actor_kind__in=["visitor", "system"], actor_id__isnull=True)
+                    | models.Q(actor_kind__in=["user", "admin"], actor_id__isnull=False)
+                ),
+                name="audit_actor_id_matches_kind",
+            ),
+        ]
