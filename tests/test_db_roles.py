@@ -197,3 +197,23 @@ def test_runtime_can_read_and_write_cities_but_not_ddl(runtime_conn, django_db_b
     finally:
         with django_db_blocker.unblock(), connection.cursor() as cursor:
             cursor.execute("DELETE FROM catalog_city WHERE name = 'Role Probe'")
+
+
+def test_runtime_can_read_and_write_accounts_but_not_ddl(runtime_conn, django_db_blocker):
+    try:
+        runtime_conn.execute("SELECT count(*) FROM identity_account").fetchone()
+        runtime_conn.execute(
+            "INSERT INTO identity_account (id, email, password, account_type, suspension_reason, "
+            "created_at, updated_at) VALUES (gen_random_uuid(), 'role.probe@example.com', 'x', "
+            "'individual', '', now(), now())"
+        )
+        runtime_conn.execute(
+            "UPDATE identity_account SET email_verified_at = now() "
+            "WHERE email = 'role.probe@example.com'"
+        )
+        runtime_conn.execute("DELETE FROM identity_account WHERE email = 'role.probe@example.com'")
+        with pytest.raises(errors.InsufficientPrivilege):
+            runtime_conn.execute("ALTER TABLE identity_account ADD COLUMN nope int")
+    finally:
+        with django_db_blocker.unblock(), connection.cursor() as cursor:
+            cursor.execute("DELETE FROM identity_account WHERE email = 'role.probe@example.com'")
