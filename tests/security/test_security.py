@@ -395,6 +395,8 @@ def test_local_and_test_settings_derive_trusted_origins(monkeypatch, module):
     monkeypatch.setenv("RUNTIME_PASSWORD", "r" * 40)
     monkeypatch.setenv("MIGRATOR_PASSWORD", "m" * 40)
     monkeypatch.setenv("FRONTEND_BASE_URL", "http://Front.Example.test:4000")
+    # CI exports a non-loopback MAIL_HOST for the prod-settings tests; local settings need loopback.
+    monkeypatch.setenv("MAIL_HOST", "127.0.0.1")
     monkeypatch.delenv("CSRF_TRUSTED_ORIGINS", raising=False)
     monkeypatch.setattr(env_module, "load_dotenv", lambda path=None: None)
     saved = sys.modules.pop(module, None)
