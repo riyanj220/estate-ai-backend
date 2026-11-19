@@ -1,5 +1,6 @@
 import importlib
 import json
+import sys
 
 import pytest
 from asgiref.sync import async_to_sync
@@ -299,7 +300,6 @@ def test_test_settings_always_allow_testserver(monkeypatch):
 
 def test_local_settings_smoke(monkeypatch):
     import config.env as env_module
-    import config.settings.local as local
 
     monkeypatch.setenv("DJANGO_SECRET_KEY", "k" * 40)
     monkeypatch.setenv("RUNTIME_PASSWORD", "r" * 40)
@@ -312,8 +312,11 @@ def test_local_settings_smoke(monkeypatch):
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(env_module, "load_dotenv", lambda path=None: None)
+    # Import only after the environment is set: the module reads secrets at import
+    # time, and CI has no .env file to fall back on.
+    sys.modules.pop("config.settings.local", None)
     try:
-        loaded = importlib.reload(local)
+        loaded = importlib.import_module("config.settings.local")
         assert loaded.ALLOWED_HOSTS == ["127.0.0.1", "localhost"]
         assert loaded.CSRF_TRUSTED_ORIGINS == ["http://localhost:3000"]
         assert loaded.FRONTEND_BASE_URL == "http://localhost:3000"
@@ -323,8 +326,7 @@ def test_local_settings_smoke(monkeypatch):
             assert getattr(loaded, f"{prefix}_COOKIE_HTTPONLY") is True
             assert getattr(loaded, f"{prefix}_COOKIE_SAMESITE") == "Lax"
     finally:
-        monkeypatch.undo()
-        importlib.reload(local)
+        sys.modules.pop("config.settings.local", None)
 
 
 @pytest.mark.urls("tests.api.urls")
