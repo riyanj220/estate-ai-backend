@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EstateAI Direction C: Gallery</title>
+<style>
+/*
+ DIRECTION C: GALLERY
+ Palette
+  background            #FFFFFF
+  surface (alt tint)    #F4F3F1   (photo wells only)
+  text (near-black)     #111111
+  muted text            #5C5C5C   (6.9:1 on white)
+  hairline              #E2E1DE
+  page backdrop         #E9E8E5
+  accent (terracotta)   #B4532F   (5.0:1 on white). Used ONLY for price and AI estimate figures.
+ Fonts: high-contrast grotesk from system stack: "Helvetica Neue", Helvetica, Arial, system-ui.
+        Thin/light weights (200-300) for display; 400 for body; 500 for small labels.
+ Radius 0. No gradients, no shadows. Whitespace does the structuring.
+*/
+:root{--bg:#fff;--alt:#F4F3F1;--ink:#111;--muted:#5C5C5C;--line:#E2E1DE;--back:#E9E8E5;--acc:#B4532F;
+--sans:"Helvetica Neue",Helvetica,Arial,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+html{background:var(--back)}
+body{margin:0;padding:32px 24px 64px;font-family:var(--sans);color:var(--ink);background:var(--back);font-size:15px;line-height:1.5}
+a{color:var(--ink);text-underline-offset:4px}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+button{font:inherit;color:inherit}
+h1,h2,h3,h4,p,dl,dd,ul{margin:0;padding:0}
+ul{list-style:none}
+.wrap{max-width:1180px;margin:0 auto}
+.intro{margin-bottom:24px}
+.intro .kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.intro h1{font-size:44px;font-weight:200;letter-spacing:-.03em;margin:4px 0 10px}
+.intro p{max-width:760px;font-size:15px}
+.intro .trade{margin-top:8px;font-size:13px;color:var(--muted)}
+.intro .trade b{color:var(--ink);font-weight:600}
+.sec-h{margin:44px 0 12px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+.sec-h small{font-size:12px;color:var(--muted);font-weight:400;letter-spacing:0;text-transform:none}
+.scroll{overflow-x:auto}
+
+.frame{width:1180px;border:1px solid #A9A8A3;background:var(--bg)}
+.frame .bar{display:flex;align-items:center;gap:6px;height:32px;padding:0 12px;background:#EDECE9;border-bottom:1px solid var(--line)}
+.frame .bar i{width:9px;height:9px;border-radius:50%;background:#BDBCB7}
+.frame .bar span{margin-left:14px;flex:0 0 420px;height:20px;line-height:20px;padding:0 10px;font-size:11px;color:var(--muted);background:#fff;border:1px solid var(--line)}
+
+.site{display:flex;align-items:center;padding:0 64px;height:88px}
+.logo{font-size:26px;font-weight:200;letter-spacing:-.03em;text-decoration:none;color:var(--ink);flex:0 0 220px}
+.logo b{font-weight:600}
+.site nav{display:flex;gap:36px;flex:1}
+.site nav a{text-decoration:none;font-size:14px;padding:6px 0;border-bottom:1px solid transparent}
+.site nav a:hover{border-color:var(--ink)}
+.site nav a[aria-current]{border-color:var(--ink)}
+.acct{font-size:14px;text-decoration:none;border-bottom:1px solid var(--ink);padding:6px 0}
+
+.composer{padding:8px 64px 0}
+.composer label{display:block;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.composer .line{display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--ink);margin-top:6px}
+.composer input{flex:1;border:0;background:none;font:inherit;font-size:18px;font-weight:300;padding:10px 0;color:var(--ink);min-width:0}
+.composer input:focus-visible{outline:none}
+.composer .line:focus-within{outline:2px solid var(--ink);outline-offset:4px}
+.composer .line button{border:0;background:none;font-size:14px;font-weight:500;text-decoration:underline;text-underline-offset:4px;cursor:pointer;padding:6px 0}
+.read{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;align-items:center}
+.read .lbl{font-size:13px;color:var(--muted);margin-right:6px}
+.tag{display:inline-flex;align-items:center;height:28px;padding:0 4px 0 11px;border:1px solid #C9C8C4;font-size:13px}
+.tag button{width:22px;height:22px;border:0;background:none;cursor:pointer;font-size:15px;padding:0}
+.fl{display:flex;gap:28px;padding:22px 64px 0;font-size:14px;flex-wrap:wrap}
+.fl button{border:0;background:none;cursor:pointer;padding:6px 0;border-bottom:1px solid var(--line)}
+.fl button b{font-weight:500;color:var(--muted);margin-right:6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+.fl .sp{flex:1}
+
+.rhead{display:flex;justify-content:space-between;align-items:flex-end;padding:72px 64px 32px}
+.rhead h2{font-size:48px;font-weight:200;letter-spacing:-.035em;line-height:1}
+.rhead h2 span{color:var(--muted)}
+.rhead .sort{font-size:14px}
+.rhead .sort button{border:0;background:none;font-weight:500;text-decoration:underline;text-underline-offset:4px;cursor:pointer;padding:6px 0}
+
+.grid{display:grid;grid-template-columns:repeat(12,1fr);column-gap:24px;row-gap:72px;padding:0 64px 96px;align-items:start}
+.t1{grid-column:1 / 8}.t2{grid-column:9 / 13;margin-top:96px}.t3{grid-column:2 / 6}.t4{grid-column:7 / 10;margin-top:72px}.t5{grid-column:10 / 13}
+.ph{position:relative;overflow:hidden;background:#D8D6D1}
+.ph svg{display:block;width:100%;height:100%}
+.ph em{position:absolute;left:12px;top:12px;font-style:normal;font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding:2px 7px;background:#fff;color:var(--muted)}
+.t1 .ph{aspect-ratio:7/5}.t2 .ph{aspect-ratio:3/4}.t3 .ph{aspect-ratio:1/1}.t4 .ph{aspect-ratio:4/5}.t5 .ph{aspect-ratio:1/1}
+.cap{margin-top:16px}
+.cap .pr{font-size:28px;font-weight:300;letter-spacing:-.02em;color:var(--acc);line-height:1.1}
+.t1 .cap .pr{font-size:36px}
+.cap .loc{margin-top:6px;font-size:16px;font-weight:500}
+.cap .sp{margin-top:2px;font-size:14px;color:var(--muted)}
+.cap .by{margin-top:10px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:500}
+.cap .by .v{color:var(--ink)}
+.cap .by .v:before{content:"\2713\00a0"}
+.cap .by .d{color:var(--muted);font-weight:400}
+.cap .es{margin-top:8px;font-size:13px;color:var(--acc)}
+.cap .es.none{color:var(--muted)}
+.foot{display:flex;justify-content:space-between;padding:24px 64px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+
+.hero{margin:0 64px;aspect-ratio:21/9}
+.hero svg{width:100%;height:100%}
+.strip2{display:grid;grid-template-columns:5fr 3fr 4fr;gap:24px;margin:24px 64px 0}
+.strip2 .ph{aspect-ratio:4/3}
+.dmain{display:grid;grid-template-columns:repeat(12,1fr);column-gap:24px;padding:72px 64px 96px}
+.dleft{grid-column:1 / 8}
+.dright{grid-column:9 / 13}
+.crumbs{padding:0 64px 24px;font-size:13px;color:var(--muted)}
+.crumbs a{color:var(--muted)}
+.dleft h1{font-size:56px;font-weight:200;letter-spacing:-.04em;line-height:1.02}
+.dleft .sub{margin-top:12px;font-size:17px;color:var(--muted);font-weight:300}
+.nums{display:flex;gap:56px;margin-top:48px;padding:24px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.nums div dd{font-size:36px;font-weight:200;letter-spacing:-.03em;line-height:1}
+.nums div dt{margin-top:6px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.dleft h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;margin:56px 0 14px}
+.desc{font-size:18px;line-height:1.65;font-weight:300;max-width:620px}
+.desc p+p{margin-top:14px}
+.facts{display:grid;grid-template-columns:1fr 1fr;column-gap:40px;max-width:620px}
+.facts div{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);font-size:14.5px}
+.facts dt{color:var(--muted)}
+.facts dd{font-weight:500}
+.est{max-width:620px}
+.est .v{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.est .n{font-size:40px;font-weight:200;letter-spacing:-.03em;color:var(--acc);line-height:1.1;margin-top:4px}
+.est .ln{position:relative;height:1px;background:var(--ink);margin:36px 0 36px}
+.est .ln i{position:absolute;top:-5px;width:1px;height:11px;background:var(--ink)}
+.est .ln b{position:absolute;top:-3px;height:7px;width:1px}
+.est .ln .rg{position:absolute;top:-2px;height:5px;background:var(--acc)}
+.est .ln span{position:absolute;top:12px;font-size:12px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
+.est .ln span.est-l{color:var(--acc);font-weight:500;top:-26px}
+.est p.small{font-size:13px;color:var(--muted);margin-top:8px;max-width:520px}
+.fc{max-width:620px}
+.fc li{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);font-size:14.5px}
+.fc li span:last-child{color:var(--acc);font-weight:400}
+.dright .box{position:sticky;top:24px}
+.dright .pr{font-size:48px;font-weight:200;letter-spacing:-.04em;color:var(--acc);line-height:1}
+.dright .ps{margin-top:10px;color:var(--muted);font-size:14px}
+.dright .sell{margin-top:40px;padding-top:24px;border-top:1px solid var(--ink)}
+.dright .sell h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+.dright .sell p.n{font-size:20px;font-weight:300;margin-top:8px}
+.dright .sell p.s{font-size:13px;color:var(--muted)}
+.btn{display:block;width:100%;margin-top:24px;height:52px;border:1px solid var(--ink);background:var(--ink);color:#fff;font-size:15px;font-weight:500;letter-spacing:.02em;cursor:pointer}
+.btn:focus-visible{outline-color:var(--ink);outline-offset:4px}
+.priv{margin-top:12px;font-size:13px;color:var(--muted)}
+.report{display:inline-block;margin-top:28px;font-size:13px;color:var(--muted)}
+
+.mob{width:375px;border:1px solid #A9A8A3;background:var(--bg)}
+.mob .site{height:64px;padding:0 4px 0 20px}
+.mob .logo{flex:1;font-size:22px}
+.mob .mb{min-width:44px;min-height:44px;padding:0 12px;border:0;background:none;font-size:14px;font-weight:500;cursor:pointer}
+.mob .composer{padding:4px 20px 0}
+.mob .composer input{font-size:16px;min-height:44px}
+.mob .composer .line button{min-height:44px;padding:0 4px}
+.mob .read{margin-top:10px}
+.mob .tag{min-height:44px;padding:0 0 0 12px;font-size:14px}
+.mob .tag button{width:44px;height:44px;font-size:18px}
+.mob .fl{padding:16px 20px 0;gap:0 20px}
+.mob .fl button{min-height:44px}
+.mob .rhead{padding:36px 20px 20px;flex-direction:column;align-items:flex-start;gap:6px}
+.mob .rhead h2{font-size:34px}
+.mob .rhead .sort button{min-height:44px}
+.mob .mlist{padding:0 20px 24px}
+.mob .m{margin-bottom:44px}
+.mob .m .ph{aspect-ratio:4/5}
+.mob .m.w .ph{aspect-ratio:4/3}
+.mob .cap .pr{font-size:28px}
+.mob .m a.go{display:inline-flex;align-items:center;min-height:44px;font-size:14px;margin-top:4px}
+
+.gone{display:grid;grid-template-columns:240px 1fr;gap:40px;padding:40px;background:var(--bg);border:1px solid var(--line);max-width:1180px;align-items:center}
+.gone .ph{aspect-ratio:4/3;background:#CFCDC8}
+.gone .ph svg{filter:grayscale(1)}
+.gone h3{font-size:34px;font-weight:200;letter-spacing:-.03em;line-height:1.1}
+.gone p{margin-top:12px;color:var(--muted);max-width:520px;font-size:16px;font-weight:300}
+.gone ul{margin-top:20px;display:flex;gap:28px;flex-wrap:wrap}
+.gone li a{display:inline-block;padding:10px 0;font-size:14px;font-weight:500}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+ <defs><pattern id="w" width="18" height="18" patternUnits="userSpaceOnUse"><rect x="4" y="4" width="10" height="11" fill="#EFEDE8"/></pattern></defs>
+ <symbol id="b1" viewBox="0 0 160 120"><rect width="160" height="120" fill="#D9D6CF"/><rect y="102" width="160" height="18" fill="#A9A59B"/><rect x="30" y="22" width="100" height="80" fill="#6F6B63"/><rect x="36" y="28" width="88" height="66" fill="url(#w)"/><rect x="70" y="84" width="20" height="18" fill="#2E2C28"/></symbol>
+ <symbol id="b2" viewBox="0 0 160 120"><rect width="160" height="120" fill="#CBC8C0"/><rect y="102" width="160" height="18" fill="#9D998F"/><rect x="14" y="50" width="132" height="52" fill="#8A857A"/><rect x="56" y="20" width="48" height="30" fill="#5E5A52"/><rect x="20" y="56" width="120" height="40" fill="url(#w)"/><rect x="62" y="26" width="36" height="20" fill="url(#w)"/></symbol>
+ <symbol id="b3" viewBox="0 0 160 120"><rect width="160" height="120" fill="#E2DFD8"/><rect y="102" width="160" height="18" fill="#B1ADA2"/><rect x="48" y="6" width="64" height="96" fill="#4B4944"/><rect x="14" y="66" width="34" height="36" fill="#8F8A7F"/><rect x="53" y="11" width="54" height="86" fill="url(#w)"/><rect x="18" y="70" width="26" height="28" fill="url(#w)"/></symbol>
+</svg>
+
+<div class="wrap">
+<header class="intro">
+ <div class="kicker">EstateAI design direction C</div>
+ <h1>Gallery</h1>
+ <p><b>Rationale.</b> A photography-led, editorial register: white and near-black, wide margins and a thin high-contrast grotesk so images and prices carry the page. A single terracotta is kept for price and the AI estimate only, and the AI is reduced to a slim composer line above the grid and a short estimate caption.</p>
+ <p class="trade"><b>Trade-offs:</b> The most premium and calm, and it makes good photography shine, but it shows fewer listings per screen and weaker filtering utility at a glance; it depends on strong photos and on thin type that needs a good font to render well.</p>
+</header>
+
+<h2 class="sec-h">1. Search results, desktop <small>Query typed: "3 bedroom flat in Gulshan-e-Iqbal with a mosque and park nearby, under 2.5 crore"</small></h2>
+<div class="scroll"><div class="frame">
+ <div class="bar"><i></i><i></i><i></i><span>estateai.pk/buy/karachi/gulshan-e-iqbal</span></div>
+ <div class="site">
+  <a class="logo" href="#">Estate<b>AI</b></a>
+  <nav aria-label="Main"><a href="#" aria-current="page">Buy</a><a href="#">Rent</a><a href="#">Sell</a><a href="#">Messages</a></nav>
+  <a class="acct" href="#">My account</a>
+ </div>
+ <section class="composer">
+  <label for="c1">Describe what you want</label>
+  <div class="line"><input id="c1" type="text" value="3 bedroom flat in Gulshan-e-Iqbal with a mosque and park nearby, under 2.5 crore"><button type="button">Search</button></div>
+  <div class="read" aria-label="How we read your words"><span class="lbl">Read as</span>
+   <span class="tag">Apartment<button aria-label="Remove Apartment">&times;</button></span>
+   <span class="tag">Gulshan-e-Iqbal<button aria-label="Remove Gulshan-e-Iqbal">&times;</button></span>
+   <span class="tag">3 beds<button aria-label="Remove 3 beds">&times;</button></span>
+   <span class="tag">Mosque nearby<button aria-label="Remove Mosque nearby">&times;</button></span>
+   <span class="tag">Park nearby<button aria-label="Remove Park nearby">&times;</button></span>
+   <span class="tag">Up to PKR 2.5 crore<button aria-label="Remove price limit">&times;</button></span>
+  </div>
+ </section>
+ <div class="fl" role="group" aria-label="Filters">
+  <button type="button"><b>Price</b>Up to 2.5 crore</button>
+  <button type="button"><b>Area</b>Any size</button>
+  <button type="button"><b>Listed by</b>Anyone</button>
+  <button type="button"><b>Nearby</b>Mosque, park</button>
+  <span class="sp"></span>
+  <button type="button">More filters</button>
+ </div>
+ <div class="rhead"><h2>5 homes <span>in Gulshan-e-Iqbal</span></h2><div class="sort">Sort by <button type="button">Best match</button></div></div>
+
+ <div class="grid">
+  <article class="t1">
+   <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b1"/></svg><em>photo</em></div>
+   <div class="cap"><div class="pr">PKR 2.35 crore</div>
+    <div class="loc">Block 13-D, Gulshan-e-Iqbal</div>
+    <div class="sp">3 beds &middot; 3 baths &middot; 1,650 sq ft &middot; Listed 4 days ago</div>
+    <div class="by">Individual</div>
+    <div class="es">AI estimate PKR 2.31 crore, within range</div></div>
+  </article>
+  <article class="t2">
+   <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b2"/></svg><em>photo</em></div>
+   <div class="cap"><div class="pr">PKR 2.20 crore</div>
+    <div class="loc">Block 10-A, Gulshan-e-Iqbal</div>
+    <div class="sp">3 beds &middot; 2 baths &middot; 1,500 sq ft</div>
+    <div class="by"><span class="v">Verified Agency</span> <span class="d">&middot; Bukhari Estates</span></div>
+    <div class="es">AI estimate PKR 2.24 crore, within range</div></div>
+  </article>
+  <article class="t3">
+   <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b3"/></svg><em>photo</em></div>
+   <div class="cap"><div class="pr">PKR 2.48 crore</div>
+    <div class="loc">Block 6, Gulshan-e-Iqbal</div>
+    <div class="sp">3 beds &middot; 3 baths &middot; 1,800 sq ft</div>
+    <div class="by"><span class="d">Noor Properties</span></div>
+    <div class="es">AI estimate PKR 2.62 crore, asking is below it</div></div>
+  </article>
+  <article class="t4">
+   <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b1"/></svg><em>photo</em></div>
+   <div class="cap"><div class="pr">PKR 1.95 crore</div>
+    <div class="loc">Block 14, Gulshan-e-Iqbal</div>
+    <div class="sp">3 beds &middot; 2 baths &middot; 1,350 sq ft</div>
+    <div class="by">Individual</div>
+    <div class="es">AI estimate PKR 1.98 crore, within range</div></div>
+  </article>
+  <article class="t5">
+   <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b2"/></svg><em>photo</em></div>
+   <div class="cap"><div class="pr">PKR 2.40 crore</div>
+    <div class="loc">Block 17, Gulshan-e-Iqbal</div>
+    <div class="sp">3 beds &middot; 3 baths &middot; 1,720 sq ft</div>
+    <div class="by"><span class="v">Verified Agency</span> <span class="d">&middot; Karachi Homes</span></div>
+    <div class="es none">AI estimate not available yet</div></div>
+  </article>
+ </div>
+ <div class="foot"><span>EstateAI. Karachi property for sale and rent.</span><span>Phone numbers stay private. Chat on EstateAI.</span></div>
+</div></div>
+
+<h2 class="sec-h">2. Search results, mobile <small>375px. First three of five homes shown. Touch targets 44px or larger.</small></h2>
+<div class="mob">
+ <div class="site"><a class="logo" href="#">Estate<b>AI</b></a><button class="mb" type="button">Menu</button></div>
+ <section class="composer">
+  <label for="c2">Describe what you want</label>
+  <div class="line"><input id="c2" type="text" value="3 bedroom flat in Gulshan-e-Iqbal with a mosque and park nearby, under 2.5 crore"><button type="button">Go</button></div>
+  <div class="read"><span class="tag">Apartment<button aria-label="Remove Apartment">&times;</button></span>
+   <span class="tag">Gulshan-e-Iqbal<button aria-label="Remove Gulshan-e-Iqbal">&times;</button></span>
+   <span class="tag">3 beds<button aria-label="Remove 3 beds">&times;</button></span>
+   <span class="tag">Mosque nearby<button aria-label="Remove Mosque nearby">&times;</button></span>
+   <span class="tag">Park nearby<button aria-label="Remove Park nearby">&times;</button></span>
+   <span class="tag">Up to PKR 2.5 crore<button aria-label="Remove price limit">&times;</button></span></div>
+ </section>
+ <div class="fl"><button type="button">Filters</button><button type="button">Price</button><button type="button">Listed by</button></div>
+ <div class="rhead"><h2>5 homes</h2><div class="sort">Sort by <button type="button">Best match</button></div></div>
+ <div class="mlist">
+  <article class="m cap">
+   <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b1"/></svg><em>photo</em></div>
+   <div class="pr" style="margin-top:16px">PKR 2.35 crore</div>
+   <div class="loc">Block 13-D, Gulshan-e-Iqbal</div>
+   <div class="sp">3 beds &middot; 3 baths &middot; 1,650 sq ft</div>
+   <div class="by">Individual</div>
+   <div class="es">AI estimate PKR 2.31 crore, within range</div>
+   <a class="go" href="#">View home</a>
+  </article>
+  <article class="m w cap">
+   <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b2"/></svg><em>photo</em></div>
+   <div class="pr" style="margin-top:16px">PKR 2.20 crore</div>
+   <div class="loc">Block 10-A, Gulshan-e-Iqbal</div>
+   <div class="sp">3 beds &middot; 2 baths &middot; 1,500 sq ft</div>
+   <div class="by"><span class="v">Verified Agency</span> <span class="d">&middot; Bukhari Estates</span></div>
+   <div class="es">AI estimate PKR 2.24 crore, within range</div>
+   <a class="go" href="#">View home</a>
+  </article>
+  <article class="m cap">
+   <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b3"/></svg><em>photo</em></div>
+   <div class="pr" style="margin-top:16px">PKR 2.48 crore</div>
+   <div class="loc">Block 6, Gulshan-e-Iqbal</div>
+   <div class="sp">3 beds &middot; 3 baths &middot; 1,800 sq ft</div>
+   <div class="by"><span class="d">Noor Properties</span></div>
+   <div class="es">AI estimate PKR 2.62 crore, asking is below it</div>
+   <a class="go" href="#">View home</a>
+  </article>
+ </div>
+</div>
+
+<h2 class="sec-h">3. Listing detail, desktop</h2>
+<div class="scroll"><div class="frame">
+ <div class="bar"><i></i><i></i><i></i><span>estateai.pk/listing/gulshan-e-iqbal-13d-3-bed</span></div>
+ <div class="site">
+  <a class="logo" href="#">Estate<b>AI</b></a>
+  <nav aria-label="Main"><a href="#" aria-current="page">Buy</a><a href="#">Rent</a><a href="#">Sell</a><a href="#">Messages</a></nav>
+  <a class="acct" href="#">My account</a>
+ </div>
+ <div class="crumbs"><a href="#">Back to 5 homes</a></div>
+ <div class="hero ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder: front elevation"><use href="#b1"/></svg><em>photo 1 of 12</em></div>
+ <div class="strip2">
+  <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b2"/></svg><em>photo</em></div>
+  <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b3"/></svg><em>photo</em></div>
+  <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b1"/></svg><em>photo &middot; 9 more</em></div>
+ </div>
+ <div class="dmain">
+  <div class="dleft">
+   <h1>Block 13-D, Gulshan-e-Iqbal</h1>
+   <p class="sub">3 bedroom apartment for sale in Karachi. Listed 4 days ago.</p>
+   <dl class="nums"><div><dd>3</dd><dt>Bedrooms</dt></div><div><dd>3</dd><dt>Bathrooms</dt></div><div><dd>1,650</dd><dt>Sq ft</dt></div><div><dd>3rd</dd><dt>Floor of 4</dt></div></dl>
+
+   <h2>About this home</h2>
+   <div class="desc"><p>Well-kept third-floor apartment in a quiet part of Block 13-D, with three bedrooms, each with its own bathroom. The lounge and dining area open onto a covered balcony facing the street, and the kitchen has been refitted.</p>
+   <p>The building has a lift, generator backup and a covered car space. A mosque is a short walk away and the neighbourhood park is about five minutes on foot.</p></div>
+
+   <h2>Details</h2>
+   <dl class="facts">
+    <div><dt>Type</dt><dd>Apartment</dd></div><div><dt>Parking</dt><dd>1 covered space</dd></div>
+    <div><dt>Mosque nearby</dt><dd>250 m</dd></div><div><dt>Park nearby</dt><dd>400 m</dd></div>
+    <div><dt>Listed by</dt><dd>Individual owner</dd></div><div><dt>Listed</dt><dd>4 days ago</dd></div>
+   </dl>
+
+   <h2>AI Price Estimate</h2>
+   <div class="est">
+    <div class="v">Estimated Property Value</div>
+    <div class="n">PKR 2.31 crore</div>
+    <div class="ln" role="img" aria-label="Estimated range 2.18 to 2.45 crore, estimate 2.31 crore">
+     <div class="rg" style="left:0;width:100%"></div>
+     <i style="left:0"></i><i style="left:48%;height:17px;top:-8px"></i><i style="left:100%"></i>
+     <span style="left:0;transform:none">2.18</span><span style="left:48%">2.31</span><span style="left:100%;transform:translateX(-100%)">2.45 crore</span>
+    </div>
+    <p class="small">Within range: the asking price of PKR 2.35 crore sits inside our estimated range of 2.18 to 2.45 crore. Based on 42 nearby sales and listings. An estimate, not a formal valuation.</p>
+   </div>
+
+   <h2>5-Year Price Forecast</h2>
+   <ul class="fc">
+    <li><span>In 1 year</span><span>PKR 2.40 to 2.55 crore</span></li>
+    <li><span>In 3 years</span><span>PKR 2.60 to 2.95 crore</span></li>
+    <li><span>In 5 years</span><span>PKR 2.85 to 3.40 crore</span></li>
+   </ul>
+   <p class="est"><span class="small" style="display:block;font-size:13px;color:#5C5C5C;margin-top:10px">This is an estimate, not a guarantee. Property prices can move for reasons we cannot predict.</span></p>
+  </div>
+
+  <aside class="dright"><div class="box">
+   <div class="pr">PKR 2.35 crore</div>
+   <p class="ps">AI estimate PKR 2.31 crore, within range</p>
+   <div class="sell">
+    <h3>Seller</h3>
+    <p class="n">Individual owner</p>
+    <p class="s">Listed 4 days ago</p>
+    <button class="btn" type="button">Message seller</button>
+    <p class="priv">Phone numbers stay private. Chat on EstateAI.</p>
+   </div>
+   <a class="report" href="#">Report this listing</a>
+  </div></aside>
+ </div>
+</div></div>
+
+<h2 class="sec-h">4. State variant: listing no longer available <small>Shown when a saved or shared listing has been sold or withdrawn</small></h2>
+<div class="gone" role="status">
+ <div class="ph"><svg viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo placeholder"><use href="#b1"/></svg><em>photo</em></div>
+ <div>
+  <h3>This home is no longer available.</h3>
+  <p>Block 13-D, Gulshan-e-Iqbal was sold or taken off EstateAI by its owner. Your saved search and messages are unchanged.</p>
+  <ul><li><a href="#">See 4 similar homes in Gulshan-e-Iqbal</a></li><li><a href="#">Back to your search</a></li><li><a href="#">Set an alert for new listings</a></li></ul>
+ </div>
+</div>
+</div>
+</body>
+</html>
