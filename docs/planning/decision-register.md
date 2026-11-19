@@ -1,6 +1,6 @@
 # EstateAI Decision Register
 
-Status: consolidated, pre-validation. Last updated 2026-11-18 (revision 5 (adds R17): adds B17-B25 from PRD validation; sole developer, no fixed deadline, professional AI-estimate presentation).
+Status: consolidated, pre-validation. Last updated 2026-11-19 (revision 6 adds A12 database hosting; revision 5 (adds R17): adds B17-B25 from PRD validation; sole developer, no fixed deadline, professional AI-estimate presentation).
 Sources: approved FYP proposal, Actors & Functional Requirements, Domain Modeling & Database Architecture (all in `docs/references/`, unchanged), plus the team's confirmations in this planning session.
 
 **Precedence:** latest confirmed decisions > Functional Requirements / Domain doc > approved proposal text where they conflict on technology. The proposal remains the authority for the four committed features. The proposal's Gantt chart stack (Angular, AWS/Azure) is ignored.
@@ -58,6 +58,7 @@ Sources: approved FYP proposal, Actors & Functional Requirements, Domain Modelin
 | A9 | LLM access through hosted APIs, preferring reliable free tiers (e.g. Gemini or alternatives). No locally hosted LLMs. Integration is provider-independent; specific models chosen later after testing availability, limits and structured-output quality. | CONFIRMED |
 | A10 | Embeddings and speech-to-text: prefer hosted APIs or lightweight solutions; no unnecessary paid infrastructure. Provider choice deferred. | CONFIRMED (direction), DEFERRED (providers) |
 | A11 | LLM output is untrusted. It never writes to the database or generates SQL. Validation uses the registry. | CONFIRMED (domain doc) |
+| A12 | Database hosting: Docker PostgreSQL (with pgvector) for local development and automated tests; Supabase PostgreSQL as the hosted database (plain PostgreSQL only; Supabase Auth, Storage and other services remain unused, per A2). Django ORM and migrations are the only schema authority (no Supabase dashboard or SQL-editor schema changes). Connection settings are environment-specific with no hardcoded credentials. Supabase's PostgreSQL major version and pgvector availability must be checked and kept compatible with local and CI; the PostgreSQL 18 pin applies where Supabase allows, otherwise local and CI match the Supabase version. The migrator and runtime roles are created with SQL on Supabase; migrations use a direct connection, not the pooler. | CONFIRMED |
 
 ### Defaults carried forward (earlier recommendations, not objected to)
 

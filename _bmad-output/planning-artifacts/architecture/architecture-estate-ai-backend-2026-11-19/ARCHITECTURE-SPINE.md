@@ -171,6 +171,7 @@ flowchart TB
 - **Binds:** all; A6, FR-73, NFR-2
 - **Prevents:** secrets in the repo; behaviour differing silently between environments; tampered dependencies or model files
 - **Rule:** settings split into base, local, test and prod, driven by environment variables; prod fails to start on a missing or default secret; a secret scan runs in CI. Local operation: Docker Compose (PostgreSQL with pgvector, dev mail catcher), published on 127.0.0.1 only, plus host processes (Daphne, Next dev). Separate database roles for migrations and runtime. Dependencies are locked with hashes and audited; the embedding model files are pinned and vendored (no runtime download). AI feature flags live in `kernel` and are read by the gateway.
+- **Hosted database (A12, confirmed 2026-11-19):** Docker PostgreSQL + pgvector for local and CI; Supabase PostgreSQL as the hosted database, as plain PostgreSQL only. Django migrations are the sole schema authority; the migrator and runtime roles are created by SQL on Supabase; migrations use the direct connection. Local and CI match Supabase's PostgreSQL major version if it differs from 18.
 
 ### AD-21 — Test gates
 
