@@ -6,10 +6,13 @@ WSGI_APPLICATION = None
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
+    "rest_framework",
+    "drf_spectacular",
     "config.apps.ConfigAppConfig",
 ]
 
 MIDDLEWARE = [
+    "apps.kernel.request_logging.RequestLoggingMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
 
@@ -47,3 +50,57 @@ def build_database(user: str, password: str) -> dict:
 
 
 STATIC_URL = "static/"
+
+REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+    # Authentication, permissions and throttling arrive in Stories 1.6, 1.7 and 1.17.
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    "UNAUTHENTICATED_USER": None,  # the auth app is not installed
+    "EXCEPTION_HANDLER": "apps.presentation.api.exceptions.exception_handler",
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "EstateAI API",
+    "DESCRIPTION": "EstateAI backend contract. One error envelope, stable error codes.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SERVE_AUTHENTICATION": [],
+    "SCHEMA_PATH_PREFIX": "/api/v1",
+    "COMPONENT_SPLIT_REQUEST": True,
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        "apps.presentation.api.schema.add_error_contract",
+    ],
+}
+
+# Structured JSON to stdout with an allow-list of fields (AD-26). Loggers that
+# record request paths and query strings are silenced; the request middleware
+# logs the route template instead.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"json": {"()": "apps.kernel.request_logging.JsonFormatter"}},
+    "handlers": {
+        "stdout": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+            "formatter": "json",
+        },
+        "null": {"class": "logging.NullHandler"},
+    },
+    "root": {"handlers": ["stdout"], "level": "INFO"},
+    "loggers": {
+        "django": {"handlers": ["stdout"], "level": "INFO", "propagate": False},
+        **{
+            name: {"handlers": ["null"], "level": "CRITICAL", "propagate": False}
+            for name in (
+                "django.request",
+                "django.server",
+                "django.channels.server",
+                "daphne.server",
+            )
+        },
+    },
+}
