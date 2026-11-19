@@ -244,3 +244,32 @@ def test_runtime_can_write_individual_profiles_but_not_ddl(runtime_conn, django_
                 "(SELECT id FROM identity_account WHERE email = 'profile.probe@example.com')"
             )
             cursor.execute("DELETE FROM identity_account WHERE email = 'profile.probe@example.com'")
+
+
+def test_runtime_can_write_verification_tokens_but_not_ddl(runtime_conn, django_db_blocker):
+    try:
+        runtime_conn.execute(
+            "INSERT INTO identity_account (id, email, password, account_type, suspension_reason, "
+            "created_at, updated_at) VALUES (gen_random_uuid(), 'token.probe@example.com', 'x', "
+            "'individual', '', now(), now())"
+        )
+        runtime_conn.execute(
+            "INSERT INTO identity_emailverificationtoken (id, account_id, token_hash, created_at, "
+            "expires_at) SELECT gen_random_uuid(), id, 'probehash', now(), now() "
+            "FROM identity_account WHERE email = 'token.probe@example.com'"
+        )
+        runtime_conn.execute(
+            "UPDATE identity_emailverificationtoken SET used_at = now() "
+            "WHERE token_hash = 'probehash'"
+        )
+        runtime_conn.execute(
+            "DELETE FROM identity_emailverificationtoken WHERE token_hash = 'probehash'"
+        )
+        with pytest.raises(errors.InsufficientPrivilege):
+            runtime_conn.execute("ALTER TABLE identity_emailverificationtoken ADD COLUMN nope int")
+    finally:
+        with django_db_blocker.unblock(), connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM identity_emailverificationtoken WHERE token_hash = 'probehash'"
+            )
+            cursor.execute("DELETE FROM identity_account WHERE email = 'token.probe@example.com'")

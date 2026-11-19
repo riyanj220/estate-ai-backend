@@ -21,6 +21,7 @@ EXPECTED = {
     "ai_search_account": (30, H, "account"),
     "estimates": (20, H, "account"),
     "sign_in": (5, 900, "client"),
+    "verification_resend": (5, H, "client"),
 }
 
 

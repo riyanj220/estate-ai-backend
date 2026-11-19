@@ -258,3 +258,13 @@ def test_immutable_annotations_are_accepted():
         b: tuple[int, ...] | None
         c: frozenset[str]
         d: uuid.UUID
+
+
+def test_is_subscribed_reports_registration():
+    def handler(event):
+        pass
+
+    assert not events.is_subscribed(ThingHappened, handler)
+    events.subscribe(ThingHappened, handler)
+    assert events.is_subscribed(ThingHappened, handler)
+    assert not events.is_subscribed(OtherThingHappened, handler)
