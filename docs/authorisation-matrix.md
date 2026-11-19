@@ -26,12 +26,15 @@ whose permission is not explicit.
 <!-- BEGIN GENERATED ROUTES -->
 | Route | Methods | Permission | View |
 | --- | --- | --- | --- |
+| `/api/v1/csrf` | GET | public | `apps.presentation.api.sessions.CsrfView` |
 | `/api/v1/email-verification-requests` | POST | public | `apps.presentation.api.verifications.VerificationRequestView` |
 | `/api/v1/email-verifications/confirm` | POST | public | `apps.presentation.api.verifications.ConfirmEmailView` |
 | `/api/v1/health` | GET, HEAD | public | `apps.presentation.api.health.WrappedAPIView` |
+| `/api/v1/me` | GET | signed_in | `apps.presentation.api.sessions.MeView` |
 | `/api/v1/reference/cities` | GET | public | `apps.presentation.api.reference.CityView` |
 | `/api/v1/registrations/individuals` | POST | public | `apps.presentation.api.registrations.IndividualRegistrationView` |
 | `/api/v1/schema` | GET | public | `apps.presentation.api.schema.PublicSchemaView` |
+| `/api/v1/session` | DELETE, POST | public | `apps.presentation.api.sessions.SessionView` |
 <!-- END GENERATED ROUTES -->
 
 ## Extending the matrix in later phases
@@ -39,6 +42,6 @@ whose permission is not explicit.
 - Each new route appears in the table above once it is added to a urlconf; pick its permission class deliberately.
 - Story 1.12 adds the capability matrix (`identity.can(actor, capability)`); route permissions stay coarse and each
   service checks its own capability.
-- Story 1.17 sets `request.authenticated_identity` from a verified session; until then every caller is a Visitor.
+- `SessionAuthentication` (Story 1.17) sets `request.authenticated_identity` from a verified session cookie; anything else is a Visitor. `/api/v1/session` serves sign-in (public, CSRF) and sign-out (signed in, CSRF) on one route, so the table shows `public`; see `docs/sessions.md`.
 - For each new service or selector, add a test row per caller kind (Visitor, non-owner, owner, admin, system) that
   shows the refusal code, using `not_found` for any resource the caller may not know about.

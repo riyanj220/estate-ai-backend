@@ -46,8 +46,8 @@ the environment (see `.env.example`). Wildcards are refused; prod also refuses a
 (never the Host header); `apps.kernel.network.client_ip` trusts `X-Forwarded-For` only from `TRUSTED_PROXIES`
 (empty trusts none). Every response carries security headers and an API-only CSP; HSTS is prod-only. The Django
 admin is not installed.
-`CSRF_TRUSTED_ORIGINS` is separate from `FRONTEND_BASE_URL`: prod needs https origins only and it may be empty when the
-proxy is same-origin. `TRUSTED_PROXIES` must be the proxy's own address range, never `0.0.0.0/0` (ranges wider than
+`CSRF_TRUSTED_ORIGINS` lists extra origins (prod needs https only); the `FRONTEND_BASE_URL` origin is always added to it, so
+the list may be empty when the frontend proxy is the only caller. `TRUSTED_PROXIES` must be the proxy's own address range, never `0.0.0.0/0` (ranges wider than
 /8 IPv4 or /16 IPv6 are refused).
 `DJANGO_SETTINGS_MODULE` must be set for ASGI (`scripts/dev_server.sh` defaults it to local).
 
@@ -133,6 +133,10 @@ The `identity` app owns the account table. The account state (`email_unverified`
 ## Email verification
 
 Registration queues a single-use, 24-hour verification link (after commit, through the mail port). `POST /api/v1/email-verifications/confirm` consumes it and moves the account to Active; `POST /api/v1/email-verification-requests` asks for a new link and always answers the same `202`. Tokens are stored hashed; expired and used ones are purged after 7 days by the `identity.email_verification_tokens` retention job. See `docs/email-verification.md`.
+
+## Sessions and sign-in
+
+`POST /api/v1/session` signs in (generic `401 invalid_credentials` for every failure, a per-email-and-network failure throttle that never uses 429), `DELETE /api/v1/session` signs out, `GET /api/v1/me` returns the actor summary and `GET /api/v1/csrf` returns the CSRF token the SPA must send as `X-CSRFToken`. Sessions are server-side: an HttpOnly, SameSite=Lax `estate_session` cookie holds a random token and only its hash is stored; they last 14 days absolute and 24 hours idle, and end on sign-out, password change and deactivation. `CSRF_TRUSTED_ORIGINS` always includes `FRONTEND_BASE_URL`. See `docs/sessions.md`.
 
 ## Mail
 

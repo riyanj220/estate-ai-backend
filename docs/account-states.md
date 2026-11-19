@@ -93,6 +93,11 @@ reason (kept on the row; digit characters of any script are counted, seven or mo
 
 `identity.events.AccountSessionEnded` (`account.session_ended`, fields `account_id` and `reason` of `sign_out`,
 `password_changed` or `deactivated`) is emitted with `emit_session_ended(account_id, reason)`; it dispatches after commit.
-Story 1.17 subscribes to end sessions; the sign-out and password-change stories reuse the helper.
+Story 1.17 subscribes (`identity/subscribers.py`) and ends all of the account's open sessions for `password_changed` and
+`deactivated`; `sign_out` ends only the current session itself. See `docs/sessions.md`.
+
+Sign-in (`identity.sign_in`): Email-unverified, Active and Suspended accounts can sign in and receive their state and
+capabilities in the summary; a Deactivated account cannot (the same generic `invalid_credentials` as a wrong password). A
+Deactivated account's sessions are also refused at authentication time.
 
 `identity.register_individual` (Story 1.15) creates the Email-unverified account and emits `account.registered` (field `account_id`) after commit for Story 1.16; see `docs/registration.md`.

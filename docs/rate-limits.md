@@ -20,10 +20,10 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | `ai_search_account` | 30 | 1 hour | account | search |
 | `estimates` | 20 | 1 hour | account | valuation (FR-42) |
 | `verification_resend` | 5 | 1 hour | client | `POST /api/v1/email-verification-requests` (Story 1.16); 429 for every address alike |
-| `sign_in` | 5 | 15 minutes | client | sign-in (FR-3); key by account plus address |
+| `sign_in` | 5 | 15 minutes | client | `POST /api/v1/session` (Story 1.17); keyed by lowercased email plus client network; failures only; see `docs/sessions.md` |
 
 A null window marks a cap: `limit_for(scope)` returns it for the owning story to count against; `hit` refuses it.
-No real endpoint is limited yet; each owning story attaches its scope.
+Each owning story attaches its scope.
 
 ## Semantics
 
@@ -33,8 +33,8 @@ No real endpoint is limited yet; each owning story attaches its scope.
   still count, and `retry_after` is the seconds to the window end.
 - **Client key** (`kernel.ratelimit.client_key(actor, request, key_kind)`), chosen by the policy's `key_kind`:
   `account` uses the account id and refuses a Visitor (`ImproperlyConfigured`); `client` always uses the client address
-  from `kernel.network.client_ip` (forwarded headers honoured only from `TRUSTED_PROXIES`) plus the session key (empty
-  until sessions exist in Story 1.17), even for signed-in actors, so signing in does not escape it. IPv6 addresses are
+  from `kernel.network.client_ip` (forwarded headers honoured only from `TRUSTED_PROXIES`) plus the session key (empty:
+  the app has no Django session, so it is keyed by address only), even for signed-in actors, so signing in does not escape it. IPv6 addresses are
   keyed by their /64, so one subscriber cannot rotate through addresses in its prefix. The key is an HMAC under
   `SECRET_KEY`; no raw address, session or id is stored. Use `derive_key(*parts)` for composite keys such as account
   plus address.
@@ -52,8 +52,11 @@ No real endpoint is limited yet; each owning story attaches its scope.
 - **Editing policies.** Only through a migration or a controlled SQL change run by the `migrator` role; the `runtime`
   role can read policies but a request never edits them. There is no admin UI yet.
 - **Rotating `SECRET_KEY`** changes every key hash, which resets all counters (old rows are purged once their windows end).
-- **Sign-in counts failed attempts only.** The fixed-window `hit` counts every call, so Story 1.17 must add a
-  peek-and-reset approach (check without counting, count on failure, reset on success) before using `sign_in`.
+- **Sign-in counts failed attempts only.** `ratelimit.peek(scope, key, now=None)` reports whether the key has reached its
+  limit in the current window without counting; sign-in peeks first, then calls `hit` on a failure. A success does not
+  reset the counter (the window clears it) and the route never uses 429, so lockout reveals nothing. A cap scope or an
+  unknown scope raises `ImproperlyConfigured`; a store fault fails open like `hit`. `ratelimit.client_network(request)`
+  gives the trusted client network (IPv6 as /64) for composite keys built with `derive_key`.
 
 ## Adopting a scope
 
