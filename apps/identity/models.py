@@ -89,6 +89,25 @@ class EmailVerificationToken(models.Model):
         ]
 
 
+class PasswordResetToken(models.Model):
+    """A single-use password reset link. Only the SHA-256 hash of the token is ever stored."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="password_reset_tokens"
+    )
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)  # set on use or when superseded
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["expires_at"], name="identity_prt_expires_idx"),
+            models.Index(fields=["used_at"], name="identity_prt_used_idx"),
+        ]
+
+
 # The one definition of why a session ends; events and services derive their sets from it.
 SESSION_END_REASONS = ["sign_out", "password_changed", "deactivated", "replaced"]
 

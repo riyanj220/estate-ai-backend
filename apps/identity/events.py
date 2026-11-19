@@ -1,6 +1,7 @@
 """Events emitted by identity."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import ClassVar
 from uuid import UUID
 
@@ -18,15 +19,35 @@ class AccountSessionEnded(DomainEvent):
     name: ClassVar[str] = "account.session_ended"
     account_id: UUID
     reason: str
+    except_session_id: UUID | None = None  # a password change keeps the session it came from
+    ended_before: datetime | None = None  # only sessions created up to then end (never a later one)
 
 
-def emit_session_ended(account_id: UUID, reason: str) -> None:
+def emit_session_ended(
+    account_id: UUID,
+    reason: str,
+    except_session_id: UUID | None = None,
+    ended_before: datetime | None = None,
+) -> None:
     """Schedule `account.session_ended` for after the surrounding transaction commits."""
     if not isinstance(account_id, UUID):
         raise ValueError("account_id must be a UUID")
     if reason not in SESSION_END_REASONS:
         raise ValueError("unknown session end reason")
-    emit(AccountSessionEnded(account_id=account_id, reason=reason))
+    if except_session_id is not None and not isinstance(except_session_id, UUID):
+        raise ValueError("except_session_id must be a UUID")
+    if ended_before is not None and (
+        not isinstance(ended_before, datetime) or ended_before.tzinfo is None
+    ):
+        raise ValueError("ended_before must be an aware datetime")
+    emit(
+        AccountSessionEnded(
+            account_id=account_id,
+            reason=reason,
+            except_session_id=except_session_id,
+            ended_before=ended_before,
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -56,3 +77,17 @@ def emit_verification_requested(account_id: UUID) -> None:
     if not isinstance(account_id, UUID):
         raise ValueError("account_id must be a UUID")
     emit(AccountVerificationRequested(account_id=account_id))
+
+
+@dataclass(frozen=True)
+class AccountPasswordResetRequested(DomainEvent):
+    """A password reset was asked for an existing, non-deactivated account."""
+
+    name: ClassVar[str] = "account.password_reset_requested"
+    account_id: UUID
+
+
+def emit_password_reset_requested(account_id: UUID) -> None:
+    if not isinstance(account_id, UUID):
+        raise ValueError("account_id must be a UUID")
+    emit(AccountPasswordResetRequested(account_id=account_id))
