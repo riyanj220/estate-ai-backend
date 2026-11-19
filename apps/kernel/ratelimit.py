@@ -34,8 +34,8 @@ DO UPDATE SET count = LEAST(kernel_ratelimitcounter.count + 1, %s)
 RETURNING count
 """
 
-_PURGE = """
-DELETE FROM kernel_ratelimitcounter c
+_ENDED = """
+FROM kernel_ratelimitcounter c
 WHERE NOT EXISTS (
     SELECT 1 FROM kernel_ratelimitpolicy p
     WHERE p.scope = c.scope
@@ -186,9 +186,15 @@ def enforce(scope: str, key: str, now: datetime | None = None) -> Decision:
     return decision
 
 
-def purge_expired(now: datetime) -> int:
-    """Delete counters whose window has ended (and those of scopes with no windowed policy)."""
+def purge_expired(now: datetime, dry_run: bool = False) -> int:
+    """Delete counters whose window has ended (and those of scopes with no windowed policy).
+
+    With `dry_run` it only counts them.
+    """
     _aware(now)
     with connection.cursor() as cursor:
-        cursor.execute(_PURGE, [now])
+        if dry_run:
+            cursor.execute("SELECT count(*) " + _ENDED, [now])
+            return cursor.fetchone()[0]
+        cursor.execute("DELETE " + _ENDED, [now])
         return cursor.rowcount

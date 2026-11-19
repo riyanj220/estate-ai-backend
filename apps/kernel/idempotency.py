@@ -2,7 +2,7 @@
 
 A replay inside 24 hours returns the original result reference; a different request hash is
 refused with `idempotency_key_reused`. Records between 24 hours and 7 days old are expired and
-are reclaimed in place; `purge_expired` deletes them after 7 days (scheduled by Story 1.9).
+are reclaimed in place; `purge_expired` deletes them after 7 days (run by `run_retention`).
 Only a request hash and a `type:id` reference are stored, never a request or response body.
 
 A claim that is not new and has no `result_ref` should not occur: claim and `complete` share one
@@ -154,7 +154,10 @@ def claim(
     raise RuntimeError("could not claim idempotency key")
 
 
-def purge_expired(now: datetime) -> int:
-    """Delete records older than the retention window; returns how many."""
-    deleted, _ = IdempotencyRecord.objects.filter(created_at__lt=_aware(now) - RETENTION).delete()
+def purge_expired(now: datetime, dry_run: bool = False) -> int:
+    """Delete records older than the retention window; returns how many (dry-run only counts)."""
+    rows = IdempotencyRecord.objects.filter(created_at__lt=_aware(now) - RETENTION)
+    if dry_run:
+        return rows.count()
+    deleted, _ = rows.delete()
     return deleted
