@@ -94,3 +94,17 @@ def test_vector_extension_present():
     with connection.cursor() as cursor:
         cursor.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
         assert cursor.fetchone() is not None
+
+
+def test_runtime_can_upsert_counters_and_read_policy_but_not_ddl(runtime_conn):
+    runtime_conn.execute("SELECT count(*) FROM kernel_ratelimitpolicy").fetchone()
+    sql = (
+        "INSERT INTO kernel_ratelimitcounter (id, scope, key_hash, window_start, count) "
+        "VALUES (gen_random_uuid(), 'role_probe', 'k', now(), 1) "
+        "ON CONFLICT (scope, key_hash, window_start) "
+        "DO UPDATE SET count = kernel_ratelimitcounter.count + 1 RETURNING count"
+    )
+    assert runtime_conn.execute(sql).fetchone() == (1,)
+    runtime_conn.execute("DELETE FROM kernel_ratelimitcounter WHERE scope = 'role_probe'")
+    with pytest.raises(errors.InsufficientPrivilege):
+        runtime_conn.execute("ALTER TABLE kernel_ratelimitpolicy ADD COLUMN nope int")
