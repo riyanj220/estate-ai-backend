@@ -1,6 +1,8 @@
 """Tests-only urlconf: views that raise each catalogued error, plus a paginated list."""
 
 from django.contrib.contenttypes.models import ContentType
+from django.http import JsonResponse
+from django.middleware.csrf import get_token
 from django.urls import path
 from rest_framework import exceptions as drf
 from rest_framework import generics, serializers
@@ -87,7 +89,17 @@ def plain_failure(request):
     raise RuntimeError("0300-1234567 secret@example.com")
 
 
+def csrf_token(request):
+    return JsonResponse({"token": get_token(request)})
+
+
+def csrf_post(request):
+    return JsonResponse({"ok": True})
+
+
 urlpatterns = [
+    path("csrf-token", csrf_token),
+    path("csrf-post", csrf_post),
     path("validate", ValidationView.as_view()),
     path("items", ContentTypeList.as_view()),
     path("unordered", UnorderedList.as_view()),

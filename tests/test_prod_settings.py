@@ -23,6 +23,10 @@ def load_prod(monkeypatch, **overrides):
     monkeypatch.setenv("DJANGO_SECRET_KEY", GOOD)
     monkeypatch.setenv("RUNTIME_PASSWORD", RUNTIME_GOOD)
     monkeypatch.delenv("MIGRATOR_PASSWORD", raising=False)
+    monkeypatch.setenv("DJANGO_ALLOWED_HOSTS", "api.example.org")
+    monkeypatch.setenv("FRONTEND_BASE_URL", "https://app.example.org")
+    monkeypatch.delenv("CSRF_TRUSTED_ORIGINS", raising=False)
+    monkeypatch.delenv("TRUSTED_PROXIES", raising=False)
     for name, value in overrides.items():
         if value is None:
             monkeypatch.delenv(name, raising=False)
