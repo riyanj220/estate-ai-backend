@@ -525,6 +525,27 @@ def test_reason_with_seven_digits_in_total_is_refused(db, reason):
     assert codes(services.suspend, ADMIN, view.id, reason) == "validation_error"
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "ping @bob",  # bare handle
+        "call me at x@y",  # dotless address
+        "jane@gmail",  # dotless address
+        "1/2/3/4/5/6/7",  # slash-separated digits
+        "123 abc 4567 890",  # "4567 890" is seven digits grouped by a space (phone rule)
+    ],
+)
+def test_reason_rules_kept_from_the_interim_check_are_refused(db, reason):
+    view = create()
+    assert codes(services.suspend, ADMIN, view.id, reason) == "validation_error"
+
+
+@pytest.mark.parametrize("email", ["user@localhost", "a,b@c.de", 'a"b@c.de'])
+def test_shared_email_shape_refuses_dotless_domains_and_special_characters(db, email):
+    assert codes(create, email) == "validation_error"
+    assert not Account.objects.exists()
+
+
 def test_view_raises_runtime_error_when_row_is_missing(db):
     with pytest.raises(RuntimeError):
         services._view(uuid.uuid4())

@@ -124,6 +124,13 @@ def test_prod_mail_defaults(monkeypatch):
         ({"MAIL_FROM": "a@example.org\r\nBcc: x@example.org"}, "MAIL_FROM"),
         ({"MAIL_FROM": "not-an-address"}, "MAIL_FROM"),
         ({"MAIL_FROM": "a@example.org, b@example.org"}, "MAIL_FROM"),
+        ({"MAIL_FROM": "Name <a@b.co"}, "MAIL_FROM"),
+        ({"MAIL_FROM": "a@b.co>"}, "MAIL_FROM"),
+        ({"MAIL_FROM": "Na@me <a@b.co>"}, "MAIL_FROM"),
+        ({"MAIL_FROM": "<a@b.co>"}, "MAIL_FROM"),
+        ({"MAIL_FROM": "Name <a@b@c>"}, "MAIL_FROM"),
+        ({"MAIL_FROM": "Name <@b.co>"}, "MAIL_FROM"),
+        ({"MAIL_FROM": "Name <a@b.co>>"}, "MAIL_FROM"),
     ],
 )
 def test_prod_mail_refusals(monkeypatch, overrides, name):

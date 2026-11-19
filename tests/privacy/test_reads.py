@@ -60,7 +60,17 @@ def test_bad_reason_refused(db, reason):
 
 
 @pytest.mark.parametrize(
-    "reason", ["email jane@example.com now", "call 0712345678 please", "ref 1234567 checked"]
+    "reason",
+    [
+        "email jane@example.com now",
+        "call 0712345678 please",
+        "ref 1234567 checked",
+        "ping @bob please",
+        "call me at x@y please",
+        "mail jane@gmail now",
+        "ref 1/2/3/4/5/6/7 ok",
+        "ref 123 abc 4567 890 ok",  # "4567 890" is seven digits grouped by a space (phone rule)
+    ],
 )
 def test_reason_with_contact_details_refused(db, reason):
     with pytest.raises(ValueError):
