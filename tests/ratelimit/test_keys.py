@@ -88,3 +88,15 @@ def test_trusted_proxy_uses_forwarded_client(settings):
         visitor, req("10.0.0.5", HTTP_X_FORWARDED_FOR="9.9.9.9, 198.51.100.9, 10.0.0.3")
     )
     assert forged == direct
+
+
+def test_client_network_keeps_ipv4_and_folds_ipv6_to_the_64():
+    from django.test import RequestFactory
+
+    def net(address):
+        return ratelimit.client_network(RequestFactory().get("/", REMOTE_ADDR=address))
+
+    assert net("203.0.113.7") == "203.0.113.7"
+    assert net("203.0.113.8") != net("203.0.113.7")
+    assert net("2001:db8:1:2::1") == net("2001:db8:1:2:ffff::9") == "2001:db8:1:2::/64"
+    assert net("2001:db8:1:3::1") != net("2001:db8:1:2::1")

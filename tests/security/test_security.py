@@ -284,7 +284,9 @@ def test_prod_frontend_url_rejects_query_fragment_userinfo(monkeypatch, value):
 
 
 def test_prod_empty_origins_allowed(monkeypatch):
-    assert load_prod(monkeypatch, CSRF_TRUSTED_ORIGINS="").CSRF_TRUSTED_ORIGINS == []
+    # The frontend origin is always trusted, so the list is never empty.
+    prod = load_prod(monkeypatch, CSRF_TRUSTED_ORIGINS="")
+    assert prod.CSRF_TRUSTED_ORIGINS == [prod.FRONTEND_BASE_URL]
 
 
 def test_test_settings_always_allow_testserver(monkeypatch):
@@ -361,3 +363,46 @@ class TestCsrf:
         assert response.status_code == 200
         assert json.loads(response.content) == {"ok": True}
         assert_secure_headers(response)
+
+
+# --- CSRF trusted origins derive from FRONTEND_BASE_URL -------------------------------------
+
+
+def test_prod_trusts_a_non_default_frontend_origin_normalised(monkeypatch):
+    prod = load_prod(
+        monkeypatch,
+        FRONTEND_BASE_URL="https://Shop.Example.ORG",
+        CSRF_TRUSTED_ORIGINS="https://other.example.org",
+    )
+    assert prod.CSRF_TRUSTED_ORIGINS == ["https://other.example.org", "https://shop.example.org"]
+    assert prod.FRONTEND_BASE_URL == "https://Shop.Example.ORG"  # links keep the configured form
+
+
+def test_prod_does_not_duplicate_a_listed_frontend_origin(monkeypatch):
+    prod = load_prod(
+        monkeypatch,
+        FRONTEND_BASE_URL="https://app.example.org",
+        CSRF_TRUSTED_ORIGINS="https://app.example.org",
+    )
+    assert prod.CSRF_TRUSTED_ORIGINS == ["https://app.example.org"]
+
+
+@pytest.mark.parametrize("module", ["config.settings.test", "config.settings.local"])
+def test_local_and_test_settings_derive_trusted_origins(monkeypatch, module):
+    import config.env as env_module
+
+    monkeypatch.setenv("DJANGO_SECRET_KEY", "k" * 40)
+    monkeypatch.setenv("RUNTIME_PASSWORD", "r" * 40)
+    monkeypatch.setenv("MIGRATOR_PASSWORD", "m" * 40)
+    monkeypatch.setenv("FRONTEND_BASE_URL", "http://Front.Example.test:4000")
+    monkeypatch.delenv("CSRF_TRUSTED_ORIGINS", raising=False)
+    monkeypatch.setattr(env_module, "load_dotenv", lambda path=None: None)
+    saved = sys.modules.pop(module, None)
+    try:
+        loaded = importlib.import_module(module)
+        assert "http://front.example.test:4000" in loaded.CSRF_TRUSTED_ORIGINS
+        assert loaded.FRONTEND_BASE_URL == "http://Front.Example.test:4000"
+    finally:
+        sys.modules.pop(module, None)
+        if saved is not None:
+            sys.modules[module] = saved
