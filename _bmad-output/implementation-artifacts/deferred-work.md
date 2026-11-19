@@ -22,3 +22,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7-rate-limit-foundation.md`
   summary: Add a peek and reset (or failed-only counting) approach so the sign-in limit counts failed attempts only.
   evidence: `hit` counts every call; Story 1.17 owns the sign-in scope and must decide how to count failures.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-8-domain-events-and-idempotency.md`
+  summary: Delete expired idempotency records in bounded batches and add tests for the purge-between-insert-and-read retry branch.
+  evidence: `purge_expired` deletes in one statement and the retry branch in `claim` is unexercised; settle with the retention runner (Story 1.9).

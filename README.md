@@ -101,3 +101,7 @@ Note: `/api/v1/schema` is public and must be gated before any non-local deployme
 ## Rate limits
 
 Limits are policy rows with PostgreSQL fixed-window counters; see `docs/rate-limits.md` for the table, semantics and how an endpoint adopts a scope.
+
+## Domain events and idempotency
+
+Events dispatch after commit, one callback per subscriber registered in `AppConfig.ready`; mutating services claim an idempotency key inside their transaction. See `docs/events.md` for the conventions, a registration sample and when to use AD-23 instead of an event.
