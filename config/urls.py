@@ -5,6 +5,7 @@ from apps.presentation.api.health import health
 from apps.presentation.api.reference import CityView
 from apps.presentation.api.registrations import IndividualRegistrationView
 from apps.presentation.api.schema import PublicSchemaView
+from apps.presentation.api.verifications import ConfirmEmailView, VerificationRequestView
 
 handler400 = bad_request
 handler403 = forbidden
@@ -18,6 +19,16 @@ urlpatterns = [
         "api/v1/registrations/individuals",
         IndividualRegistrationView.as_view(),
         name="registrations-individuals",
+    ),
+    path(
+        "api/v1/email-verifications/confirm",
+        ConfirmEmailView.as_view(),
+        name="email-verifications-confirm",
+    ),
+    path(
+        "api/v1/email-verification-requests",
+        VerificationRequestView.as_view(),
+        name="email-verification-requests",
     ),
     path("api/v1/schema", PublicSchemaView.as_view(), name="schema"),
 ]

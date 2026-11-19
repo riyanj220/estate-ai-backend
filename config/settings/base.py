@@ -103,6 +103,10 @@ SPECTACULAR_SETTINGS = {
     "SERVE_AUTHENTICATION": [],
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "COMPONENT_SPLIT_REQUEST": True,
+    "ENUM_NAME_OVERRIDES": {
+        "RegistrationAcceptedStatusEnum": ["check_your_email"],
+        "EmailVerifiedStatusEnum": ["verified"],
+    },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",
         "apps.presentation.api.schema.add_error_contract",
