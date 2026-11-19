@@ -26,3 +26,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-8-domain-events-and-idempotency.md`
   summary: Delete expired idempotency records in bounded batches and add tests for the purge-between-insert-and-read retry branch.
   evidence: `purge_expired` deletes in one statement and the retry branch in `claim` is unexercised; settle with the retention runner (Story 1.9).
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-9-runtime-executor-flags-ai-log-and-retention.md`
+  summary: Add an overlap guard (advisory lock), bounded-batch deletes, a `--job NAME` option and a summary line to `run_retention` when the schedule is decided at deployment.
+  evidence: Each purge is one unbounded DELETE and overlapping scheduled runs are not prevented; documented as single-instance for now.

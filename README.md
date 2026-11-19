@@ -105,3 +105,7 @@ Limits are policy rows with PostgreSQL fixed-window counters; see `docs/rate-lim
 ## Domain events and idempotency
 
 Events dispatch after commit, one callback per subscriber registered in `AppConfig.ready`; mutating services claim an idempotency key inside their transaction. See `docs/events.md` for the conventions, a registration sample and when to use AD-23 instead of an event.
+
+## Runtime executor, flags, AI log and retention
+
+A bounded executor keeps capacity free for chat and sign-in (`RUNTIME_EXECUTOR_MAX_WORKERS`, default 4, and `RUNTIME_EXECUTOR_RESERVED_WORKERS`, default 1), feature flags are declared in code, the AI request log holds no content, and `run_retention [--dry-run]` runs every app-registered purge job. See `docs/runtime-and-retention.md` for usage, how an app registers a flag or a retention job, and the deployment schedule note.
