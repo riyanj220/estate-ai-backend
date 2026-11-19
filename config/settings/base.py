@@ -12,6 +12,7 @@ INSTALLED_APPS = [
     "config.apps.ConfigAppConfig",
     "apps.kernel",
     "apps.catalog",
+    "apps.identity",
 ]
 
 MIDDLEWARE = [

@@ -39,3 +39,6 @@ CSRF_COOKIE_SECURE = False
 DATABASES = {"default": build_database(MIGRATOR_DB_USER, env("MIGRATOR_PASSWORD"))}
 
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# Fast hashing keeps tests quick; production uses the default hashers.
+PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
