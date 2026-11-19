@@ -97,3 +97,7 @@ sign-in route gets 401 `unauthenticated`; a non-admin on an admin route and any 
 in `docs/authorisation-matrix.md` is generated (`uv run python scripts/authz_matrix.py`) and a test fails when stale.
 
 Note: `/api/v1/schema` is public and must be gated before any non-local deployment (tracked in `deferred-work.md`).
+
+## Rate limits
+
+Limits are policy rows with PostgreSQL fixed-window counters; see `docs/rate-limits.md` for the table, semantics and how an endpoint adopts a scope.

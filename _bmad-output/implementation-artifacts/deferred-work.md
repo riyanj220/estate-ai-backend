@@ -18,3 +18,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-6-actor-and-default-deny-authorisation.md`
   summary: Record actor kind and account id in audit and denial records.
   evidence: Request logs carry no actor; the audit trail arrives in Story 1.10.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-7-rate-limit-foundation.md`
+  summary: Add a peek and reset (or failed-only counting) approach so the sign-in limit counts failed attempts only.
+  evidence: `hit` counts every call; Story 1.17 owns the sign-in scope and must decide how to count failures.
