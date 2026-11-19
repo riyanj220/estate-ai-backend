@@ -27,6 +27,7 @@ whose permission is not explicit.
 | Route | Methods | Permission | View |
 | --- | --- | --- | --- |
 | `/api/v1/health` | GET, HEAD | public | `apps.presentation.api.health.WrappedAPIView` |
+| `/api/v1/reference/cities` | GET | public | `apps.presentation.api.reference.CityView` |
 | `/api/v1/schema` | GET | public | `apps.presentation.api.schema.PublicSchemaView` |
 <!-- END GENERATED ROUTES -->
 
