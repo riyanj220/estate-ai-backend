@@ -3,6 +3,7 @@ from config.env import (
     env_int,
     env_list,
     load_dotenv,
+    normalise_origin,
     validate_base_url,
     validate_hosts,
     validate_loopback_host,
@@ -33,6 +34,9 @@ CSRF_TRUSTED_ORIGINS = validate_origins(
 FRONTEND_BASE_URL = validate_base_url(
     "FRONTEND_BASE_URL", env("FRONTEND_BASE_URL", "http://localhost:3000"), require_https=False
 )
+# Requests through the frontend proxy carry the frontend origin, so it is always trusted.
+if normalise_origin(FRONTEND_BASE_URL) not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = [*CSRF_TRUSTED_ORIGINS, normalise_origin(FRONTEND_BASE_URL)]
 # Empty trusts no proxy. Entries are IPs or CIDR ranges; /0 is refused.
 TRUSTED_PROXIES = validate_proxies("TRUSTED_PROXIES", env_list("TRUSTED_PROXIES"))
 SESSION_COOKIE_SECURE = False

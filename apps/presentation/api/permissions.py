@@ -7,6 +7,7 @@ declares one of the other three explicitly. `label` feeds the authorisation matr
 from rest_framework.permissions import BasePermission
 
 from apps.kernel.actor import require_admin, require_signed_in
+from apps.kernel.errors import DomainError
 from apps.presentation.api.actors import get_actor
 
 
@@ -14,7 +15,9 @@ class DenyByDefault(BasePermission):
     label = "deny"
 
     def has_permission(self, request, view):
-        return False
+        # Raised, not returned False: with authentication classes installed DRF would turn a
+        # plain refusal for an unauthenticated caller into 401, and this answer is 403.
+        raise DomainError("forbidden")
 
 
 class AllowPublic(BasePermission):

@@ -1,3 +1,5 @@
+from django.core.exceptions import ImproperlyConfigured
+
 from apps.kernel.runtime import validate_limits
 from config.env import env, env_int
 
@@ -75,6 +77,20 @@ CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SECURE = True
 
+# Server-side sessions (Story 1.17). The cookie carries a random token; only its hash is stored.
+SESSION_ABSOLUTE_SECONDS = env_int("SESSION_ABSOLUTE_SECONDS", 14 * 24 * 3600)
+SESSION_IDLE_SECONDS = env_int("SESSION_IDLE_SECONDS", 24 * 3600)
+SESSION_TOUCH_SECONDS = env_int("SESSION_TOUCH_SECONDS", 300)
+SESSION_MAX_OPEN = env_int("SESSION_MAX_OPEN", 10)  # older open sessions end as `replaced`
+if not (
+    0 < SESSION_TOUCH_SECONDS < SESSION_IDLE_SECONDS <= SESSION_ABSOLUTE_SECONDS
+    and SESSION_MAX_OPEN > 0
+):
+    raise ImproperlyConfigured(
+        "Session settings must satisfy 0 < SESSION_TOUCH_SECONDS < SESSION_IDLE_SECONDS "
+        "<= SESSION_ABSOLUTE_SECONDS and SESSION_MAX_OPEN > 0."
+    )
+
 CSRF_FAILURE_VIEW = "apps.presentation.api.handlers.csrf_failure"
 SECURE_REFERRER_POLICY = "no-referrer"
 # TLS terminates at the proxy and X-Forwarded-Proto is never trusted from an
@@ -87,9 +103,11 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     # Default deny: every view declares its permission explicitly (Story 1.6).
-    # Throttling is opt-in per view (PolicyThrottle); authentication arrives in Story 1.17.
+    # Throttling is opt-in per view (PolicyThrottle). Cookie sessions authenticate (Story 1.17).
     "DEFAULT_PERMISSION_CLASSES": ["apps.presentation.api.permissions.DenyByDefault"],
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "apps.presentation.api.authentication.SessionAuthentication"
+    ],
     "UNAUTHENTICATED_USER": None,  # the auth app is not installed
     "EXCEPTION_HANDLER": "apps.presentation.api.exceptions.exception_handler",
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",

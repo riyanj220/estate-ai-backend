@@ -214,3 +214,9 @@ def validate_sender(name: str, value: str) -> str:
     if not _plausible_sender(value) or "," in value or ";" in value:
         raise _bad(name, "must be one address, optionally as Name <address>")
     return value
+
+
+def normalise_origin(value: str) -> str:
+    """Scheme and host lowercased, no trailing slash: the form Django compares origins in."""
+    parts = urlsplit(value.strip())
+    return f"{parts.scheme.lower()}://{parts.netloc.lower()}"

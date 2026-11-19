@@ -1,8 +1,8 @@
 """The one place a request becomes an Actor (AD-22).
 
-Authentication (Story 1.17) will set `request.authenticated_identity` from a verified
-session. Until then, and for anything unrecognised, the caller is a Visitor. No client
-header, cookie or body value is ever read here.
+`SessionAuthentication` (Story 1.17) sets `request.authenticated_identity` from a verified
+session; for anything unrecognised the caller is a Visitor. No client header, cookie or body
+value is ever read here.
 """
 
 from uuid import UUID
