@@ -66,6 +66,8 @@ FIELD_MESSAGES: dict[str, str] = {
     "password_too_long": "Use at most 1024 characters.",
     "password_too_common": "This password is too common. Choose a less guessable one.",
     "password_matches_email": "The password must not be the same as the email address.",
+    "incorrect": "The current password is incorrect.",
+    "password_same_as_current": "Choose a password different from your current one.",
     "invalid_phone": "Enter a Pakistani mobile number or a valid international number.",
 }
 DEFAULT_FIELD_MESSAGE = "Enter a valid value."
