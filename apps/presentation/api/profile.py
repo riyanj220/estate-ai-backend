@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.identity import services
-from apps.identity.selectors import ProfileView
+from apps.identity.selectors import AgencyProfileView, ProfileView
 from apps.presentation.api.actors import get_actor
 from apps.presentation.api.bodies import exact_fields, field_errors, single_field
 from apps.presentation.api.passwords import NoStoreMixin
@@ -32,12 +32,65 @@ class ProfileUpdateSerializer(serializers.Serializer):
     full_name = serializers.CharField(required=False, help_text="2 to 80 characters.")
     phone = serializers.CharField(
         required=False,
-        allow_null=True,
         help_text="Pakistani mobile or international number. Mandatory: blank or null is refused.",
     )
 
     def to_internal_value(self, data):
         values = exact_fields(data, ("full_name", "phone"))
+        if not values:
+            raise serializers.ValidationError(
+                {"non_field_errors": [ErrorDetail("empty", code="empty")]}
+            )
+        return values  # types and rules are judged by the service, all fields at once
+
+
+class AgencyProfileSerializer(serializers.Serializer):
+    agency_name = serializers.CharField(help_text="Public.")
+    description = serializers.CharField(help_text="Public. Empty when not set.")
+    city_id = serializers.UUIDField(help_text="Public. An active City reference id.")
+    business_phone = serializers.CharField(
+        help_text="The owner's own business phone in E.164. Private: returned only here."
+    )
+    office_address = serializers.CharField(
+        help_text="The owner's own office address. Private: returned only here."
+    )
+    email = serializers.CharField(help_text="The current sign-in address. Private.")
+    pending_email = serializers.CharField(
+        allow_null=True,
+        help_text="The address of the newest unused, unexpired email-change request, or null.",
+    )
+    verification_status = serializers.CharField(
+        help_text="Read-only Agency Verification status (`unverified` until a later story)."
+    )
+
+
+AGENCY_FIELDS = ("agency_name", "description", "city_id", "business_phone", "office_address")
+
+
+class AgencyProfileUpdateSerializer(serializers.Serializer):
+    agency_name = serializers.CharField(
+        required=False, help_text="2 to 100 characters, no phone numbers or email addresses."
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_null=True,
+        help_text=(
+            "Optional, up to 1000 characters, no phone numbers, email addresses or street "
+            "addresses. Blank or null clears it."
+        ),
+    )
+    city_id = serializers.UUIDField(required=False, help_text="An active City reference id.")
+    business_phone = serializers.CharField(
+        required=False,
+        help_text="Pakistani mobile or international number. Mandatory: blank or null is refused.",
+    )
+    office_address = serializers.CharField(
+        required=False,
+        help_text="5 to 300 characters. Mandatory: blank or null is refused.",
+    )
+
+    def to_internal_value(self, data):
+        values = exact_fields(data, AGENCY_FIELDS)
         if not values:
             raise serializers.ValidationError(
                 {"non_field_errors": [ErrorDetail("empty", code="empty")]}
@@ -121,6 +174,69 @@ class ProfileDetailView(NoStoreMixin, APIView):
         except services.FieldsInvalid as exc:
             raise field_errors(exc.fields) from None
         return Response(_profile_data(view))
+
+
+def _agency_profile_data(view: AgencyProfileView) -> dict:
+    return AgencyProfileSerializer(
+        {
+            "agency_name": view.agency_name,
+            "description": view.description,
+            "city_id": view.city_id,
+            "business_phone": view.business_phone,
+            "office_address": view.office_address,
+            "email": view.email,
+            "pending_email": view.pending_email,
+            "verification_status": view.verification_status,
+        }
+    ).data
+
+
+class AgencyProfileDetailView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="get_agency_profile",
+        summary="The signed-in Agency's business profile",
+        description=(
+            "Agency accounts only (any other type is `403 forbidden`). The business phone and "
+            "office address are private and appear only in this route's answers, to their "
+            "owner. Name, description and city are the public-class fields. Never cached."
+        ),
+        responses={
+            200: OpenApiResponse(AgencyProfileSerializer, description="The business profile")
+        },
+    )
+    def get(self, request):
+        return Response(_agency_profile_data(services.get_agency_profile(get_actor(request))))
+
+    @extend_schema(
+        operation_id="update_agency_profile",
+        summary="Change the signed-in Agency's business details",
+        description=(
+            "Needs `X-CSRFToken`. Only `agency_name`, `description`, `city_id`, `business_phone` "
+            "and `office_address` are accepted, at least one; any other field (the email and "
+            "verification status included) is `validation_error` (`unknown_field`). Name, "
+            "phone, address and city stay mandatory (blank or null is `required`); a blank or "
+            "null description clears it. A description with phone numbers, email addresses or "
+            "street addresses is `fields.description = contains_contact_details`. All failing "
+            "fields are reported at once. An unchanged submission succeeds and records nothing."
+        ),
+        request=AgencyProfileUpdateSerializer,
+        responses={
+            200: OpenApiResponse(
+                AgencyProfileSerializer, description="The updated business profile"
+            )
+        },
+    )
+    def patch(self, request):
+        services.require_agency(get_actor(request))  # type refusal (403) before body checks
+        serializer = AgencyProfileUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            view = services.update_agency_profile(get_actor(request), serializer.validated_data)
+        except services.FieldsInvalid as exc:
+            raise field_errors(exc.fields) from None
+        return Response(_agency_profile_data(view))
 
 
 class EmailChangeRequestView(NoStoreMixin, APIView):

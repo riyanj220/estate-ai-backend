@@ -8,6 +8,7 @@ from apps.presentation.api.passwords import (
     PasswordResetRequestView,
 )
 from apps.presentation.api.profile import (
+    AgencyProfileDetailView,
     EmailChangeConfirmView,
     EmailChangeRequestView,
     ProfileDetailView,
@@ -51,6 +52,11 @@ urlpatterns = [
     path("api/v1/me", MeView.as_view(), name="me"),
     path("api/v1/me/password", ChangePasswordView.as_view(), name="me-password"),
     path("api/v1/me/profile", ProfileDetailView.as_view(), name="me-profile"),
+    path(
+        "api/v1/me/agency-profile",
+        AgencyProfileDetailView.as_view(),
+        name="me-agency-profile",
+    ),
     path("api/v1/me/email-change", EmailChangeRequestView.as_view(), name="me-email-change"),
     path(
         "api/v1/email-changes/confirm",
