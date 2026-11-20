@@ -54,7 +54,7 @@ development_status:
   1-16-email-verification: review
   1-17-sign-in-and-sign-out-with-session-security: review
   1-18-password-reset-and-password-change: review
-  1-19-agency-registration: in-progress
+  1-19-agency-registration: in-progress  # backend merged, frontend pending
   1-20-individual-profile-management: backlog
   1-21-agency-business-profile: backlog
   1-22-administrator-provisioning-and-protected-admin-api: backlog

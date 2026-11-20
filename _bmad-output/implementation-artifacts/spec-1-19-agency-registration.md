@@ -2,7 +2,7 @@
 title: 'Story 1.19: Agency registration (backend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -92,6 +92,22 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, backend half (blind, edge-case, verification-gap).
+
+| # | Finding | Verdict | Route |
+|---|---------|---------|-------|
+| 1 | Office addresses with an inner ZWNJ or ZWJ were rejected by a stray `isprintable()` (blind, verification-gap) | high | patch; inner-joiner tests added |
+| 2 | City could be deactivated between validation and profile insert (edge) | medium | patch: re-check inside the transaction |
+| 3 | City lookup ran on every attempt before cheaper checks (edge) | low | patch: lookup only after the other fields pass (so `invalid_city` is the one error not reported alongside others) |
+| 4 | `/me` ran an extra profile query for every account and could show an agency name for a non-agency account (blind, edge) | medium | patch: query only the matching profile |
+| 5 | Name accepted any Unicode alphanumeric and stray marks; address accepted "1----" (edge) | low | patch: Nd digits, marks after letters, at least 3 alphanumerics |
+| 6 | `invalid_name` message claimed 2 to 80 letters (verification-gap) | low | patch: neutral wording |
+| 7 | A database error could carry private values into logs (blind) | low | verified: handler logs exception class only; test forces a DataError and checks logs and the 500 body |
+| 8 | Tests: canary covered one event type; capped responses compared by status only; Individual email used by an agency untested (verification-gap) | medium | patch |
+| 9 | No code catalogue of private fields exists, so convention tests do not cover them (edge, verification-gap) | low | defer: model docstring and `docs/registration.md` are the classification |
+| 10 | Duplicate public agency names, lookalikes (blind) | low | defer to the Agency verification story, documented |
+| 11 | Validation runs twice (serializer then service), API-level timing test, cascade role probes, `city_id` has no index or FK (blind, edge, verification-gap) | low | defer, same design as Individual registration |
 
 ## Design Notes
 
