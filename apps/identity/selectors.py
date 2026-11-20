@@ -9,8 +9,9 @@ from datetime import datetime
 
 from django.db import connection
 
+from apps.catalog import selectors as catalog
 from apps.identity import sessions
-from apps.identity.models import Account, AccountType, IndividualProfile, Session
+from apps.identity.models import Account, AccountType, AgencyProfile, IndividualProfile, Session
 from apps.identity.policy import capabilities_for
 from apps.identity.state import AccountState
 from apps.kernel.errors import DomainError
@@ -130,17 +131,23 @@ class ActorSummary:
     state: AccountState
     email: str
     full_name: str
+    agency_name: str  # public-class; empty for non-agency accounts
     capabilities: tuple[str, ...]
 
 
 def summarise(account: Account) -> ActorSummary:
-    profile = IndividualProfile.objects.filter(account_id=account.id).first()
+    profile = agency = None
+    if account.account_type == AccountType.INDIVIDUAL:
+        profile = IndividualProfile.objects.filter(account_id=account.id).first()
+    elif account.account_type == AccountType.AGENCY:
+        agency = AgencyProfile.objects.filter(account_id=account.id).only("agency_name").first()
     return ActorSummary(
         id=account.id,
         account_type=account.account_type,
         state=account.state,
         email=account.email,
         full_name=profile.full_name if profile else "",
+        agency_name=agency.agency_name if agency else "",
         capabilities=tuple(c.value for c in capabilities_for(account.account_type, account.state)),
     )
 
@@ -152,3 +159,8 @@ def get_actor_summary(account_id) -> ActorSummary | None:
     if account is None or account.state is AccountState.DEACTIVATED:
         return None
     return summarise(account)
+
+
+def city_is_active(city_id) -> bool:
+    """True when the id names an active city of the City reference list."""
+    return catalog.get_city(city_id) is not None
