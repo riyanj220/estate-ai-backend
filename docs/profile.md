@@ -25,9 +25,11 @@ are strict: an unknown field is `400 validation_error` (`non_field_errors`: `unk
 
 ## Profile read and update
 
-`pending_email` is the address of the newest email-change request whose link was actually issued and is still unused and
-unexpired, or `null`. A request that issued no link (taken, same or capped address, failed handler) never shows, so the
-profile read does not distinguish those cases from a free address that has not been processed yet.
+`pending_email` is the address of the newest accepted email-change request that is still unused and unexpired, or `null`.
+It is deliberately independent of whether a link was sent: free, taken, same-address, capped and failed-handler requests
+all show it identically, so the profile read cannot tell a free address from a registered one. `link_issued` only decides
+which row the handler supersedes and which row confirm accepts (an older issued link keeps working after a later request
+that issued none, even though `pending_email` then shows the newer address).
 
 `PATCH` accepts only `full_name` and `phone`. Both use the registration validators (`check_full_name`, `check_phone`), so
 the phone stays mandatory: a blank or `null` phone is `fields.phone = required`, never a way to remove it. All failing

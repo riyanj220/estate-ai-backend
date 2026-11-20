@@ -178,7 +178,9 @@ def test_request_creates_a_pending_row_with_a_throwaway_hash(
     assert (event.account_id, event.change_request_id) == (view.id, row.id)
     assert NEW not in repr(event) and EMAIL not in repr(event)
     assert row.link_issued is False
-    assert services.selectors.get_profile(view.id).pending_email is None  # no link yet
+    assert (
+        services.selectors.get_profile(view.id).pending_email == NEW
+    )  # shown even before any link
 
 
 def test_a_row_without_a_link_cannot_be_confirmed(db):
@@ -368,7 +370,7 @@ def test_handler_failure_is_logged_by_class_and_rolls_back_the_link(
     assert django_mail.outbox == []
     row = EmailChangeToken.objects.get()
     assert (row.token_hash, row.link_issued, row.used_at) == (original_hash, False, None)
-    assert services.selectors.get_profile(view.id).pending_email is None
+    assert services.selectors.get_profile(view.id).pending_email == NEW  # same as any branch
     logged = " ".join(str(r.__dict__) + r.getMessage() for r in caplog.records)
     assert NEW not in logged
 
@@ -385,8 +387,8 @@ def test_a_failed_handler_run_leaves_the_pending_link_alone(
         lambda *a: (_ for _ in ()).throw(OSError("x")),
     )
     ask(django_capture_on_commit_callbacks, view, "second@example.org")
-    assert services.selectors.get_profile(view.id).pending_email == NEW
-    services.confirm_email_change(Actor.visitor(), token)
+    assert services.selectors.get_profile(view.id).pending_email == "second@example.org"
+    services.confirm_email_change(Actor.visitor(), token)  # the older issued link still works
     assert Account.objects.get().email == NEW
 
 
@@ -398,7 +400,9 @@ def test_a_capped_request_leaves_the_pending_link_alone(db, django_capture_on_co
             "verification_email", services.ratelimit.derive_key("account", str(view.id))
         )
     ask(django_capture_on_commit_callbacks, view, "second@example.org")
-    assert services.selectors.get_profile(view.id).pending_email == NEW
+    assert services.selectors.get_profile(view.id).pending_email == "second@example.org"
+    services.confirm_email_change(Actor.visitor(), token_to(NEW))
+    assert Account.objects.get().email == NEW
 
 
 def test_request_query_shape_is_the_same_for_free_taken_and_same_addresses(db):

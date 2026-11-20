@@ -314,15 +314,33 @@ def test_every_branch_answers_identically(db, django_capture_on_commit_callbacks
     assert len({json.dumps(stable(a), sort_keys=True) for a in answers}) == 1
 
 
-def test_pending_shows_only_issued_links(owner, django_capture_on_commit_callbacks):
+def test_pending_is_identical_across_free_taken_same_and_capped(
+    db, django_capture_on_commit_callbacks
+):
+    from apps.kernel import ratelimit
+
+    make()
     make("taken@example.com")
-    for address in ("taken@example.com", EMAIL.upper()):
+    client = sign_in_browser()
+    seen = []
+
+    def check(address):
         with django_capture_on_commit_callbacks(execute=True):
-            request_change(owner, address)
-        assert owner.get(PROFILE).json()["pending_email"] is None
-    with django_capture_on_commit_callbacks(execute=True):
-        request_change(owner, NEW)
-    assert owner.get(PROFILE).json()["pending_email"] == NEW
+            assert request_change(client, address).status_code == 202
+        body = client.get(PROFILE).json()
+        seen.append(body)
+        assert body["pending_email"] == address
+
+    for address in ("free@example.org", "taken@example.com", EMAIL.upper()):
+        check(address)
+    account = Account.objects.get(email=EMAIL)
+    for _ in range(5):  # exhaust the silent mail cap: the next free address gets no link
+        ratelimit.hit("verification_email", ratelimit.derive_key("account", str(account.id)))
+    check("capped-free@example.org")
+    assert {tuple(sorted(b)) for b in seen} == {("email", "full_name", "pending_email", "phone")}
+    assert not EmailChangeToken.objects.filter(
+        new_email="capped-free@example.org", link_issued=True
+    ).exists()
 
 
 def test_a_request_that_issues_no_link_keeps_the_valid_pending_link(
@@ -335,8 +353,19 @@ def test_a_request_that_issues_no_link_keeps_the_valid_pending_link(
     for address in ("taken@example.com", EMAIL.upper()):
         with django_capture_on_commit_callbacks(execute=True):
             request_change(owner, address)
-    assert owner.get(PROFILE).json()["pending_email"] == NEW
+    # the profile shows the newest request, whatever its branch; the older link still confirms
+    assert owner.get(PROFILE).json()["pending_email"] == EMAIL.upper()
     assert post(Client(), CONFIRM, {"token": token}).status_code == 200
+
+
+def test_confirm_rejects_a_row_whose_link_was_never_issued(owner):
+    services.request_email_change(Actor.user(Account.objects.get().id), NEW, PASSWORD)
+    row = EmailChangeToken.objects.get()
+    assert owner.get(PROFILE).json()["pending_email"] == NEW
+    for guess in (row.token_hash, "never-issued-token"):
+        response = post(Client(), CONFIRM, {"token": guess})
+        assert (response.status_code, error_code(response)) == (400, "link_invalid")
+    assert Account.objects.get().email == EMAIL
 
 
 def test_pending_is_none_after_expiry(owner, django_capture_on_commit_callbacks):

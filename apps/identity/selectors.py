@@ -184,7 +184,6 @@ def profile_view(account: Account, profile: IndividualProfile) -> ProfileView:
         EmailChangeToken.objects.filter(
             account_id=account.id,
             used_at__isnull=True,
-            link_issued=True,
             expires_at__gt=timezone.now(),
         )
         .order_by("-created_at", "-id")
