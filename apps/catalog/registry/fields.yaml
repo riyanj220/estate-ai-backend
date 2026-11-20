@@ -1,0 +1,39 @@
+# The Field registry (AD-4). Every change needs a version bump and a new lock:
+#   uv run python scripts/registry_lock.py
+# Format and rules: docs/registry.md
+version: 1
+
+taxonomy:
+  purposes: [sale, rent]
+  categories:
+    - id: house
+      subtypes: [house]
+    - id: apartment
+      subtypes: [apartment]
+    - id: plot
+      subtypes: [residential_plot, commercial_plot, plot_file]
+    - id: commercial
+      subtypes: [shop, office]
+
+fields:
+  - id: purpose
+    type: enum
+    requirement: required_for_publication
+    applicability: {purposes: [], categories: [], subtypes: []}
+    allowed_values: [sale, rent]
+    class: public
+    quota_identity: true
+  - id: category
+    type: enum
+    requirement: required_for_publication
+    applicability: {purposes: [], categories: [], subtypes: []}
+    allowed_values: [house, apartment, plot, commercial]
+    class: public
+    quota_identity: true
+  - id: subtype
+    type: enum
+    requirement: required_for_publication
+    applicability: {purposes: [], categories: [], subtypes: []}
+    allowed_values: [house, apartment, residential_plot, commercial_plot, plot_file, shop, office]
+    class: public
+    quota_identity: true
