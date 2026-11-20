@@ -264,6 +264,7 @@ dependencies = [
     { name = "djangorestframework" },
     { name = "drf-spectacular" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -271,7 +272,6 @@ dev = [
     { name = "import-linter" },
     { name = "pytest" },
     { name = "pytest-django" },
-    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -282,6 +282,7 @@ requires-dist = [
     { name = "djangorestframework", specifier = ">=3.16,<4" },
     { name = "drf-spectacular", specifier = ">=0.28,<0.31" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [package.metadata.requires-dev]
@@ -289,7 +290,6 @@ dev = [
     { name = "import-linter", specifier = ">=2.17" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-django", specifier = ">=4.9" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", specifier = ">=0.6" },
 ]
 
