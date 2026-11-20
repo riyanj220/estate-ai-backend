@@ -103,9 +103,9 @@ def test_missing_or_blank_field_is_required(client, db, field):
 @pytest.mark.parametrize(
     ("override", "field", "message"),
     [
-        ({"full_name": "A"}, "full_name", "Enter a name of 2 to 80 letters"),
-        ({"full_name": "Call 0300 1234567"}, "full_name", "Enter a name of 2 to 80 letters"),
-        ({"full_name": "jane@example.com"}, "full_name", "Enter a name of 2 to 80 letters"),
+        ({"full_name": "A"}, "full_name", "Enter a valid name without phone"),
+        ({"full_name": "Call 0300 1234567"}, "full_name", "Enter a valid name without phone"),
+        ({"full_name": "jane@example.com"}, "full_name", "Enter a valid name without phone"),
         ({"email": "not-an-email"}, "email", "Enter a valid email address."),
         ({"email": "a" * 250 + "@x.co"}, "email", "Enter a valid email address."),
         ({"password": "short"}, "password", "Use at least 8 characters."),

@@ -121,6 +121,7 @@ def test_sign_in_returns_the_summary_and_a_hardened_cookie(db):
         "state": "active",
         "email": EMAIL,
         "full_name": "",
+        "agency_name": "",
         "capabilities": ["sign_in", "browse"],
     }
     cookie = client.cookies[COOKIE]
@@ -251,8 +252,45 @@ def test_me_returns_the_summary_with_full_name_and_no_store(db, django_capture_o
     assert response.headers["Cache-Control"] == "no-store"
     body = response.json()
     assert body["full_name"] == "Ayesha Khan" and body["email"] == "ayesha@example.com"
-    assert set(body) == {"id", "account_type", "state", "email", "full_name", "capabilities"}
+    assert set(body) == {
+        "id",
+        "account_type",
+        "state",
+        "email",
+        "full_name",
+        "agency_name",
+        "capabilities",
+    }
     assert "phone" not in json.dumps(body) and "password" not in json.dumps(body)
+
+
+def test_me_for_a_verified_agency_shows_its_name_and_nothing_private(
+    db, django_capture_on_commit_callbacks
+):
+    from apps.catalog.models import City
+
+    City.objects.all().delete()
+    city = City.objects.create(name="Karachi")
+    with django_capture_on_commit_callbacks(execute=True):
+        services.register_agency(
+            Actor.visitor("r"),
+            "Skyline Estates",
+            "office@skyline.example",
+            PASSWORD,
+            "0321-5550123",
+            "Suite 4, Harbour Tower, Karachi",
+            city.id,
+        )
+    services.mark_email_verified(SYSTEM, Account.objects.get().id)
+    response = signed_in("office@skyline.example").get(ME)
+    body = response.json()
+    assert (body["account_type"], body["agency_name"], body["full_name"]) == (
+        "agency",
+        "Skyline Estates",
+        "",
+    )
+    text = json.dumps(body)
+    assert "5550123" not in text and "Harbour" not in text and str(city.id) not in text
 
 
 def test_me_for_an_admin_account(db):
@@ -463,6 +501,7 @@ def test_openapi_documents_the_session_routes(tmp_path):
         "state",
         "email",
         "full_name",
+        "agency_name",
         "capabilities",
     }
 
