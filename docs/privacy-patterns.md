@@ -69,4 +69,4 @@ false-positive set and the long-input test still pass.
 
 ## Phone validation
 
-`normalise_phone(text)` returns the E.164 form of a valid Pakistani mobile (`03xx`, `+92 3xx`, `0092 3xx`) or international (`+`, 8 to 15 digits) number, else `None` (landlines are refused). It is for validating a phone field, not for finding phones in free text. Registration (`docs/registration.md`) is its caller.
+`normalise_phone(text)` returns the E.164 form of a valid Pakistani mobile (`03xx`, `+92 3xx`, `0092 3xx`) or international (`+`, 8 to 15 digits) number, else `None` (landlines are refused). It is for validating a phone field, not for finding phones in free text. Registration (`docs/registration.md`, Individual and Agency) is its caller.

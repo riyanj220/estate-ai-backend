@@ -2,6 +2,9 @@
 
 ## Flow
 
+Agency registration (Story 1.19) uses the same flow: it emits the same `account.registered` event, so an agency gets the
+same verification email and link, and confirming it makes the Agency account Active; the agency profile is unchanged.
+
 1. Registration emits `account.registered` (or, for a repeat registration of an unverified address,
    `account.verification_requested`). `identity.subscribers.send_verification_email` runs after commit, in a fresh
    transaction: it issues a token and queues the plain-text email (subject "Verify your EstateAI email address")

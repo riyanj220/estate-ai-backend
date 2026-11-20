@@ -12,9 +12,9 @@ SHA-256 hash, so a database read cannot be replayed as a login and sign-out take
 | `DELETE /api/v1/session` | signed in, CSRF | Sign out: ends only the current session, clears the cookie, `204`. |
 | `GET /api/v1/me` | signed in | The actor summary (`Cache-Control: no-store`). |
 
-The actor summary is `{id, account_type, state, email, full_name, capabilities}`. `state` is the derived account state,
+The actor summary is `{id, account_type, state, email, full_name, agency_name, capabilities}`. `state` is the derived account state,
 `email` is the account's own address (private: only the owner ever sees it), `full_name` is the Individual profile name
-or empty, and `capabilities` is what `identity.policy.can` grants that state and type (`identity.policy.capabilities_for`;
+or empty, `agency_name` is the Agency profile name (public-class) or empty (never the agency phone or address), and `capabilities` is what `identity.policy.can` grants that state and type (`identity.policy.capabilities_for`;
 capabilities whose features have not shipped are not listed). The session token and its hash never appear in a body.
 
 `/api/v1/session` is one route with two methods, so the authorisation matrix shows it as `public`; `DELETE` is gated by the
