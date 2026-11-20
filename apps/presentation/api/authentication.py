@@ -68,7 +68,11 @@ class SessionAuthentication(BaseAuthentication):
                     "session_touch_failure",
                     extra={"event": "session_touch_failure", "exception_class": type(exc).__name__},
                 )
-        kind = ActorKind.ADMIN if session.account_type == "admin" else ActorKind.USER
+        kind = (
+            ActorKind.ADMIN
+            if session.account_type == selectors.ADMIN_ACCOUNT_TYPE
+            else ActorKind.USER
+        )
         request._request.authenticated_identity = Identity(kind.value, session.account_id)
         return (None, session)
 

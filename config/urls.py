@@ -1,5 +1,6 @@
 from django.urls import path
 
+from apps.presentation.adminapi.me import AdminMeView
 from apps.presentation.api.handlers import bad_request, forbidden, not_found, server_error
 from apps.presentation.api.health import health
 from apps.presentation.api.passwords import (
@@ -16,7 +17,7 @@ from apps.presentation.api.profile import (
 from apps.presentation.api.reference import CityView
 from apps.presentation.api.registrations import AgencyRegistrationView, IndividualRegistrationView
 from apps.presentation.api.schema import PublicSchemaView
-from apps.presentation.api.sessions import CsrfView, MeView, SessionView
+from apps.presentation.api.sessions import AdminSessionView, CsrfView, MeView, SessionView
 from apps.presentation.api.verifications import ConfirmEmailView, VerificationRequestView
 
 handler400 = bad_request
@@ -49,6 +50,8 @@ urlpatterns = [
     ),
     path("api/v1/csrf", CsrfView.as_view(), name="csrf"),
     path("api/v1/session", SessionView.as_view(), name="session"),
+    path("api/v1/admin-session", AdminSessionView.as_view(), name="admin-session"),
+    path("api/v1/admin/me", AdminMeView.as_view(), name="admin-me"),
     path("api/v1/me", MeView.as_view(), name="me"),
     path("api/v1/me/password", ChangePasswordView.as_view(), name="me-password"),
     path("api/v1/me/profile", ProfileDetailView.as_view(), name="me-profile"),
