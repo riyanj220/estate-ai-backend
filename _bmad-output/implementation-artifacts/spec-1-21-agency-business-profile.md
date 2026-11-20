@@ -2,7 +2,7 @@
 title: 'Story 1.21: Agency business profile (backend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -92,6 +92,22 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, backend half (blind, edge-case, verification-gap).
+
+| # | Finding | Verdict | Route |
+|---|---------|---------|-------|
+| 1 | An agency whose stored city was later deactivated could not save any edit that resent that city (edge) | medium | patch: the city is looked up only when it differs from the stored one |
+| 2 | The in-transaction city recheck does not lock the City row, so a concurrent deactivation can still slip through (edge, blind) | low | patch: docs and docstring say so; no lock added |
+| 3 | A direct service call by an Individual with an invalid body got `validation_error` instead of `forbidden` (verification-gap) | low | patch: type and state checked before the body, plus a light `require_agency` check for the view |
+| 4 | Description rules: non-strings used the generic code, NEL/VT/FF were refused, orphan combining marks were accepted, dead length check (edge, blind) | low | patch |
+| 5 | Schema declared mandatory fields nullable (blind) | low | patch |
+| 6 | Contact-detail heuristics miss phones split by words or commas, long separator runs, "info at agency.com", Urdu digit words and Plot/Block/Sector addresses (blind) | medium | defer: shared patterns from Story 1.14, recorded as known gaps in `docs/privacy-patterns.md` and `docs/profile.md` |
+| 7 | Tests: agency `pending_email` for an existing address and expiry, NUL and joiner descriptions through HTTP (verification-gap) | medium | patch |
+| 8 | Suspended agencies can still edit public name and description (blind) | low | defer: consistent with Individuals |
+| 9 | Row-lock test is a spy plus parallel run, not a proof; Deactivated agency covered at service level only; agency name keeps `invalid_name` rather than the description's code (verification-gap, blind) | low | defer |
+
+Deviation recorded: the view keeps a light `require_agency` pre-check (one query, no profile view) because the serializer judges the body shape first.
 
 ## Design Notes
 
