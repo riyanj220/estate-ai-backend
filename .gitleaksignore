@@ -3,3 +3,8 @@
 # Test fixture passwords in the agency registration tests (not real secrets)
 cc64603523a592e209abbb911d3c91c50e4ac81f:tests/api/test_agency_registration_api.py:generic-api-key:46
 cc64603523a592e209abbb911d3c91c50e4ac81f:tests/identity/test_agency_registration.py:generic-api-key:23
+# Test fixture passwords in the profile tests (not real secrets)
+cfe5fd2ed116c03f27ca2c730deeb04140982211:tests/api/test_profile_api.py:generic-api-key:34
+cfe5fd2ed116c03f27ca2c730deeb04140982211:tests/identity/test_profile.py:generic-api-key:236
+cfe5fd2ed116c03f27ca2c730deeb04140982211:tests/identity/test_profile.py:generic-api-key:565
+cfe5fd2ed116c03f27ca2c730deeb04140982211:tests/identity/test_profile.py:generic-api-key:584
