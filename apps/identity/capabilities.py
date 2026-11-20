@@ -51,7 +51,12 @@ MATRIX: dict[AccountState, dict[Capability, Access]] = {
 
 # Capabilities whose features arrive in later stories. `can` denies them until the owning story
 # removes them from this set (in its own change, with its own test).
-PENDING_CAPABILITIES: frozenset[Capability] = _ALL - {_C.SIGN_IN, _C.BROWSE}
+PENDING_CAPABILITIES: frozenset[Capability] = _ALL - {
+    _C.SIGN_IN,
+    _C.BROWSE,
+    _C.VIEW_DRAFTS,  # Story 2.1
+    _C.EDIT_DRAFTS,  # Story 2.1
+}
 
 
 def matrix_access(state: AccountState, capability: Capability) -> Access:

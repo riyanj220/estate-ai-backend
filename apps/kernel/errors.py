@@ -59,6 +59,7 @@ FIELD_MESSAGES: dict[str, str] = {
     "date": "Enter a valid date.",
     "datetime": "Enter a valid date and time.",
     "does_not_exist": "The referenced item does not exist.",
+    "subtype_not_in_category": "This subtype does not belong to the selected category.",
     "unknown_field": "The request contains fields that are not accepted.",
     "invalid_name": "Enter a valid name without phone numbers or email addresses.",
     "invalid_email": "Enter a valid email address.",

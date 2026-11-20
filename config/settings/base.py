@@ -15,6 +15,7 @@ INSTALLED_APPS = [
     "apps.kernel",
     "apps.catalog",
     "apps.identity",
+    "apps.listings",
 ]
 
 MIDDLEWARE = [
@@ -137,6 +138,9 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "RegistrationAcceptedStatusEnum": ["check_your_email"],
         "EmailVerifiedStatusEnum": ["verified"],
+        "FieldClassEnum": ["public", "private"],
+        "FieldTypeEnum": ["enum", "text", "money", "integer", "decimal", "boolean"],
+        "FieldRequirementEnum": ["required_for_publication", "recommended", "optional"],
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",

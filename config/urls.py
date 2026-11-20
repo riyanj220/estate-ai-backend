@@ -3,6 +3,7 @@ from django.urls import path
 from apps.presentation.adminapi.me import AdminMeView
 from apps.presentation.api.handlers import bad_request, forbidden, not_found, server_error
 from apps.presentation.api.health import health
+from apps.presentation.api.listings import DraftCreateView, ListingDetailView, MyListingsView
 from apps.presentation.api.notifications import (
     MarkAllReadView,
     MarkReadView,
@@ -22,6 +23,7 @@ from apps.presentation.api.profile import (
 )
 from apps.presentation.api.reference import CityView
 from apps.presentation.api.registrations import AgencyRegistrationView, IndividualRegistrationView
+from apps.presentation.api.registry import RegistryView
 from apps.presentation.api.schema import PublicSchemaView
 from apps.presentation.api.sessions import AdminSessionView, CsrfView, MeView, SessionView
 from apps.presentation.api.verifications import ConfirmEmailView, VerificationRequestView
@@ -92,5 +94,9 @@ urlpatterns = [
         MarkReadView.as_view(),
         name="notifications-read",
     ),
+    path("api/v1/registry", RegistryView.as_view(), name="registry"),
+    path("api/v1/listings", DraftCreateView.as_view(), name="listings"),
+    path("api/v1/listings/<str:listing_id>", ListingDetailView.as_view(), name="listing"),
+    path("api/v1/me/listings", MyListingsView.as_view(), name="me-listings"),
     path("api/v1/schema", PublicSchemaView.as_view(), name="schema"),
 ]
