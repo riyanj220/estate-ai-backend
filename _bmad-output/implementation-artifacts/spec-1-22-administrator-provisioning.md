@@ -2,7 +2,7 @@
 title: 'Story 1.22: Administrator provisioning and protected admin API'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -109,6 +109,23 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1 (blind, edge-case, verification-gap).
+
+| # | Finding | Verdict | Route |
+|---|---------|---------|-------|
+| 1 | Admin failure throttle was per email and network only, so a distributed attacker got 5 guesses per address against one administrator (blind) | high | patch: second silent per-account counter (`admin_sign_in_account`, 20 per hour); either cap gives the generic 401 |
+| 2 | `confirm_email_change` did not refuse administrator accounts, so a stray link-issued row could swap an administrator's address (edge) | high | patch: `link_invalid` for administrators, route tests |
+| 3 | Disable had no last-administrator guard and no shared lock, so concurrent disable and remove could leave zero active administrators; no way back from a disabled account (blind, edge) | high | patch: same ordered lock and `--force-last` guard on disable; new `enable` action |
+| 4 | Throttled attempts skipped the hash (speed oracle); the failure audit write could roll back the throttle count or turn the 401 into a 500, and could flood (blind, edge) | medium | patch: dummy hash on the throttled branch, audit written after the count commits, skipped past the per-account cap |
+| 5 | `--force-last` not recorded; admin lifetimes not bounded by the ordinary ones; purge cutoff ignored account type; two sources for the absolute expiry; string `"admin"` comparisons (blind, edge) | medium | patch |
+| 6 | Strong policy accepted non-ASCII letters and digits; whitespace gave a misleading message; stdin handling (empty, CR, over-long, TTY) and unhandled domain errors in the command (edge, blind) | low | patch |
+| 7 | Tests: success consuming the budget, HTTP-level policy messages, token cascade on remove, verification tokens on reset, suspended `/admin/me`, no-op assertion (verification-gap) | medium | patch: about 40 tests |
+| 8 | Admin and ordinary sessions share the `estate_session` cookie (blind) | medium | defer, documented: a sign-in on one ends the other; separate cookie name or `SameSite=Strict` is a follow-up |
+| 9 | Audit has no operator identity, refusals, throttled attempts or sign-outs (blind) | low | defer, documented: accountability relies on OS and SSH logs |
+| 10 | `_attempt` takes many arguments; source-text tests are not behavioural; no subprocess test of `manage.py` (blind, verification-gap) | low | defer |
+
+Deviation recorded: the throttled-branch dummy hash also applies to the ordinary sign-in door (one existing test changed).
 
 ## Design Notes
 
