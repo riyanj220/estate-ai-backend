@@ -2,7 +2,7 @@
 title: 'Story 1.21: Agency business profile (frontend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -87,6 +87,19 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, frontend half (blind, edge-case, verification-gap).
+
+**Patched:**
+- The details form never re-synced with re-reads (focus, visibility, unreadable 2xx), so a stale tab could report "No changes to save" while the server held another value: untouched fields and the baseline now follow the server, edited fields keep their text, and an unreadable 2xx waits for the re-read instead of trusting the client-trimmed body.
+- Announcements: repeated "no changes" re-announces, a city dropped by a reload is announced, field errors clear on edit.
+- Description: no silent paste truncation, counter by code points after whitespace collapse with an over-limit hint.
+- `use-profile-load` no longer steals focus after a failed retry; lint is clean at zero warnings; `contains_contact_details` mapped for the agency name; 403 handling commented.
+- Tests (8 new): silent re-read failure waits for the failing request, stale-tab reconcile, inactive stored city through Retry and `invalid_city`, deterministic privacy scan plus click-through navigation, repeated announcement, dropped-city announcement, error clear, code-point counter.
+
+**Deferred:** empty-city-list Retry wording (matches the registration form), unknown account type test, dashboard link in the click-through privacy test (dashboard markup covered by the existing `goto` test), code-point versus UTF-16 mismatch beyond the counter.
+
+Notes: a single earlier run failed once in the sign-in helper (hydration race, passes alone and in the full run); the dropped-city announcement fires only in the agency form.
 
 ## Design Notes
 
