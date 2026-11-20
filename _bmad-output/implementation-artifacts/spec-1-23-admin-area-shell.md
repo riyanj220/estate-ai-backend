@@ -2,7 +2,7 @@
 title: 'Story 1.23: Admin area shell (frontend)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -89,6 +89,21 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1 (blind, edge-case, verification-gap).
+
+**Patched:**
+- A page restored from the browser's back/forward cache after sign-out could show the admin dashboard to the next person: `pageshow` with `persisted` resets the pause and reloads through the guard; real Back and simulated persisted tests added.
+- The admin door distinguished credential failures: 403 and 429 showed different wording from a wrong password; all three now show the one generic message (no lockout or rate-limit wording).
+- Shared server fetch timeout (`src/lib/api.ts`, outside the spec): the timer was never cleared and the caller's signal was dropped; now cleared on settle, signals combined, timeout errors recognised; slow-success and hang tests added.
+- An expired administrator on the shared `/account/password` page landed on the ordinary sign-in (a dead end) and saw the public header: the page now routes an administrator back to the admin sign-in and shows the admin chrome.
+- `/admin/me` 403 treated as not an administrator, an admin unavailable state with Sign out and a working retry, a watcher that does not treat a missing `account_type` or a still-loading provider as lost, a slow post-sign-in navigation re-checks the session.
+- Guard rule enforced by a test that every page under `(protected)` calls `requireAdmin`, layout `noindex` and a neutral title, valid disabled-nav markup, sign-out keeps focus.
+- Tests: page-level guard independent of the watcher (`denied_*` modes), hard-navigation marker, public header absent on 404 and unavailable states, watcher keeps deep path and query, and an automated production-build check (`npm run check:prod-admin`, run once: visitor and ordinary cookie get 307 with no admin markup and no-store).
+
+**Deferred:** a single page data-access helper (the enumeration test enforces the rule instead), fail-closed after repeated provider errors, the shared `estate_session` cookie between admin and ordinary sessions (backend follow-up), per-page titles beyond the neutral default.
+
+Notes: one known flaky agency-profile test failed once in a full run and passed alone and in its whole file; the final full run was 572 of 572. Intermediate commits keep the old admin placeholder page until the last commit removes it (history only; HEAD builds).
 
 ## Design Notes
 
