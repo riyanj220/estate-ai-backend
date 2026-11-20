@@ -9,6 +9,7 @@ SHA-256 hash, so a database read cannot be replayed as a login and sign-out take
 |---|---|---|
 | `GET /api/v1/csrf` | public | Sets the CSRF cookie and returns `{"csrf_token": "..."}` (`Cache-Control: no-store`). |
 | `POST /api/v1/session` | public, CSRF | Sign in with `{"email", "password"}`. `200` with the actor summary and the session cookie. |
+| `POST /api/v1/admin-session` | public, CSRF | Administrator sign-in (Story 1.22); the only door to an administrator session. See `docs/administrators.md`. |
 | `DELETE /api/v1/session` | signed in, CSRF | Sign out: ends only the current session, clears the cookie, `204`. |
 | `GET /api/v1/me` | signed in | The actor summary (`Cache-Control: no-store`). |
 
@@ -28,6 +29,13 @@ sign-out service (`unauthenticated` without a session) and by the CSRF check in 
 - **Lifetimes** (settings, env overridable): absolute `SESSION_ABSOLUTE_SECONDS` = 14 days from sign-in, idle
   `SESSION_IDLE_SECONDS` = 24 hours since `last_seen_at`. `last_seen_at` is refreshed at most once per
   `SESSION_TOUCH_SECONDS` = 5 minutes. A session past either limit, or with `ended_at` set, is invalid.
+- **Administrator sessions** (Story 1.22): absolute `ADMIN_SESSION_ABSOLUTE_SECONDS` = 8 hours (stored on the row at
+  creation, stored once as `expires_at`), idle `ADMIN_SESSION_IDLE_SECONDS` = 30 minutes. The idle
+  limit follows the account type at resolution time (`identity.selectors.live_session`), so an administrator session never
+  outlives 30 idle minutes even if the row was stored under longer limits. The touch interval is unchanged (5 minutes).
+  Settings check: `0 < SESSION_TOUCH_SECONDS < ADMIN_SESSION_IDLE_SECONDS <= ADMIN_SESSION_ABSOLUTE_SECONDS`, neither above
+  its ordinary `SESSION_*` counterpart. The stored `expires_at` is the one absolute limit. Retention purges administrator rows by the administrator idle limit. The cookie
+  `Max-Age` of an administrator session is the 8 hours.
 - **Fixation**: sign-in always creates a new session; a session cookie the request already carried is ended with reason
   `replaced`.
 - **Open-session cap**: at most `SESSION_MAX_OPEN` (default 10) open sessions per account; a new sign-in beyond it ends the
@@ -43,8 +51,8 @@ sign-out service (`unauthenticated` without a session) and by the CSRF check in 
   password). The sign-in address changes at confirmation; open sessions are tied to the account, not the address. See
   `docs/profile.md`.
 - **Retention**: job `identity.sessions` purges sessions ended, expired or idled out more than 7 days ago.
-- No audit record is written by sign-in or sign-out, and a failed attempt writes nothing: a successful-login log would hold
-  private data.
+- No audit record is written by the ordinary sign-in or sign-out, and a failed attempt writes nothing: a successful-login
+  log would hold private data. Administrator sign-in is the exception and is audited (`docs/administrators.md`).
 
 ## Authentication
 
@@ -59,6 +67,8 @@ Actor. An unknown, expired or ended cookie is a Visitor, never an error. No head
 
 - The strict body is exactly `email` and `password`, both strings; anything else is `400 validation_error`. The email is
   trimmed and matched case-insensitively.
+- Administrator accounts are refused here like a wrong password (they hash against the dummy hash and count a failure);
+  they sign in at `POST /api/v1/admin-session`, which mirrors these rules for administrators only.
 - Wrong password, unknown email, a Deactivated account and a throttled attempt all return the same
   `401 invalid_credentials` (generic message) with the same headers and body. Unknown emails and Deactivated accounts still
   check the password against a dummy hash, so timing does not separate them.

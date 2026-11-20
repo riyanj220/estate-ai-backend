@@ -48,7 +48,10 @@ audit record of the reactivation remains (moderation history lives in audit and,
 - Visitor: `browse` only. System actor: everything.
 - Administrator (an ADMIN actor, or a USER actor whose account type is `admin`): `sign_in` and `browse` only, since
   administrators own no listings and send no messages. The account is read: a missing or deactivated administrator is denied
-  everything; a suspended one keeps `sign_in` and `browse`.
+  everything; a suspended one keeps `sign_in` and `browse`. Administrators are never an eligible Listing owner
+  (`identity.selectors.is_active_owner`) in any state, and neither `publish` nor `edit_drafts` is ever granted to one.
+  Administrator accounts are created, disabled (state Deactivated), removed and password-reset by the provisioning command
+  only (`docs/administrators.md`).
 - Other user actors: the account's state is read once (one query) and looked up in the matrix. A missing account is denied.
 - A capability in `PENDING_CAPABILITIES` is denied for user actors even where the table says yes. An unknown capability
   name raises `ValueError`.
@@ -71,7 +74,7 @@ A later story activates a capability by removing it from that one set, in its ow
 | `deactivate(actor, account_id)` | administrator | `account.deactivated` | emits `account.session_ended` (reason `deactivated`) after commit |
 
 `suspend`, `reactivate` and `deactivate` refuse (`validation_error`, nothing written) when the target is the actor's own
-account or any `admin` account; administrator accounts are managed by a later provisioning command. Visitors get
+account or any `admin` account; administrator accounts are managed only by the `provision_admin` platform command (Story 1.22, `docs/administrators.md`). Visitors get
 `unauthenticated`, other callers `not_found`; an unknown account id, and any change to a deactivated
 account, is `not_found`. Audit metadata holds only the account type on creation. Email, password hash and the suspension
 reason (kept on the row; digit characters of any script are counted, seven or more are refused) never reach audit metadata or logs.

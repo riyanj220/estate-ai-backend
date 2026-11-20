@@ -26,6 +26,8 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | `email_change_request` | 5 | 1 hour | account | `POST /api/v1/me/email-change` (Story 1.20); only requests with the right password count; 429 with `Retry-After`; the wrong-password check itself uses `password_change_failed` and never answers 429 |
 | `email_change_confirm` | 20 | 1 hour | client | `POST /api/v1/email-changes/confirm` (Story 1.20); 429 with `Retry-After` |
 | `sign_in` | 5 | 15 minutes | client | `POST /api/v1/session` (Story 1.17); keyed by lowercased email plus client network; failures only; see `docs/sessions.md` |
+| `admin_sign_in` | 5 | 15 minutes | client | `POST /api/v1/admin-session` (Story 1.22); keyed by lowercased email plus client network; failures only; silent generic 401 at the cap, never 429; see `docs/administrators.md` |
+| `admin_sign_in_account` | 20 | 1 hour | account | `POST /api/v1/admin-session` (Story 1.22); per-account ceiling keyed by the lowercased email only (any network); failures only; silent generic 401 |
 
 A null window marks a cap: `limit_for(scope)` returns it for the owning story to count against; `hit` refuses it.
 Each owning story attaches its scope.

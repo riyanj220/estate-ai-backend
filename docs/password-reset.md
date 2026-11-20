@@ -11,6 +11,12 @@
 All three bodies are strict: any other field is `400 validation_error`. Confirm is POST so link prefetchers cannot consume
 the token.
 
+**Administrators are excluded (Story 1.22).** The request and the confirmation treat an administrator account as unknown:
+the request answers the same `202` and sends nothing, and a confirm with any token of an administrator is `link_invalid`.
+A forgotten administrator password is recovered only with `provision_admin reset-password` (`docs/administrators.md`).
+A signed-in administrator can still change their own password at `POST /api/v1/me/password`, under the strong
+administrator policy.
+
 ## Reset flow
 
 1. The request emits `account.password_reset_requested` (account id only) for an existing account that is not

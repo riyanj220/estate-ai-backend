@@ -26,6 +26,8 @@ whose permission is not explicit.
 <!-- BEGIN GENERATED ROUTES -->
 | Route | Methods | Permission | View |
 | --- | --- | --- | --- |
+| `/api/v1/admin-session` | POST | public | `apps.presentation.api.sessions.AdminSessionView` |
+| `/api/v1/admin/me` | GET | admin | `apps.presentation.adminapi.me.AdminMeView` |
 | `/api/v1/csrf` | GET | public | `apps.presentation.api.sessions.CsrfView` |
 | `/api/v1/email-changes/confirm` | POST | public | `apps.presentation.api.profile.EmailChangeConfirmView` |
 | `/api/v1/email-verification-requests` | POST | public | `apps.presentation.api.verifications.VerificationRequestView` |

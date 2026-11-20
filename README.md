@@ -150,6 +150,10 @@ Registration queues a single-use, 24-hour verification link (after commit, throu
 
 `GET`/`PATCH /api/v1/me/agency-profile` (Agency only, `PATCH` with CSRF) read and update the agency name, a new optional public `description`, city, business phone and office address; name, phone, address and city stay mandatory, the phone and address are private to the owner, and phone numbers, email addresses or street addresses in the description are refused (`contains_contact_details`). The email change above works unchanged for agencies. See `docs/profile.md`.
 
+## Administrators
+
+Administrators exist only through `python manage.py provision_admin <create|disable|remove|reset-password> --email <address>`; the password is read from a hidden prompt or `--password-stdin`, never an argument, and every action is audited (`admin.provisioned`, `admin.disabled`, `admin.removed`, `admin.password_reset`). No default credential exists anywhere. They sign in at `POST /api/v1/admin-session` (strong 12-character password policy, own failure throttle `admin_sign_in`, 30 minutes idle and 8 hours absolute sessions, `admin.signed_in` and `admin.sign_in_failed` audit records) and the protected base is `/api/v1/admin/*` (`GET /api/v1/admin/me` today). A forgotten administrator password is recovered only with the command. See `docs/administrators.md`.
+
 ## Mail
 
 Features send email only through `apps.kernel.mail.send(MailMessage(...))` inside their transaction; it is delivered after commit, off the request thread, never retried, and links come from `email_link` (`FRONTEND_BASE_URL`). Local mail goes to Mailpit only. See `docs/mail.md`.
