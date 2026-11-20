@@ -148,6 +148,8 @@ Registration queues a single-use, 24-hour verification link (after commit, throu
 
 `GET`/`PATCH /api/v1/me/profile` (Individual only, `PATCH` with CSRF) read and update the name and phone; the phone stays mandatory and is returned only there, to its owner, and an update that changes something writes `account.profile_updated`. `POST /api/v1/me/email-change` (signed in, CSRF, not Admin) needs the current password under the shared password-change failure throttle and always answers the same `202`; a single-use 24-hour link goes only to a free new address (a registered one gets the "already registered" notice instead) and the old address is notified. `POST /api/v1/email-changes/confirm` (public) swaps the address, verifies it, ends no session and writes `account.email_changed`. Tokens are stored hashed and purged after 7 days by the `identity.email_change_tokens` retention job. See `docs/profile.md`.
 
+`GET`/`PATCH /api/v1/me/agency-profile` (Agency only, `PATCH` with CSRF) read and update the agency name, a new optional public `description`, city, business phone and office address; name, phone, address and city stay mandatory, the phone and address are private to the owner, and phone numbers, email addresses or street addresses in the description are refused (`contains_contact_details`). The email change above works unchanged for agencies. See `docs/profile.md`.
+
 ## Mail
 
 Features send email only through `apps.kernel.mail.send(MailMessage(...))` inside their transaction; it is delivered after commit, off the request thread, never retried, and links come from `email_link` (`FRONTEND_BASE_URL`). Local mail goes to Mailpit only. See `docs/mail.md`.

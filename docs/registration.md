@@ -118,7 +118,7 @@ once the rest is valid; the service re-checks the city inside the transaction, s
 ## What a new registration writes (one transaction)
 
 - `Account` of type `agency`, Email-unverified; audit `account.created` (metadata `account_type` only).
-- `AgencyProfile` (`agency_name`, `business_phone`, `office_address`, `city_id`, `verification_status` = `unverified`).
+- `AgencyProfile` (`agency_name`, `business_phone`, `office_address`, `city_id`, `verification_status` = `unverified`, and `description`, optional public text that registration leaves empty and the profile route of Story 1.21 sets; see `docs/profile.md`).
   A CHECK constraint allows only `unverified` today; the verification-evidence story (Story 21) extends the set.
   `city_id` is a plain UUID column, not a foreign key into catalog.
 - Event `account.registered` (account id only), dispatched after commit; Story 1.16 sends the verification email.
@@ -127,7 +127,7 @@ once the rest is valid; the service re-checks the city inside the transaction, s
 
 | Data | Class |
 | --- | --- |
-| `agency_name`, `city_id` | public (exposed by later profile stories; `agency_name` is in `GET /api/v1/me` for the owner) |
+| `agency_name`, `city_id`, `description` | public (exposed by later profile stories; `agency_name` is in `GET /api/v1/me` for the owner) |
 | `business_phone`, `office_address` | private: never in a public or registration response, error body, log record, audit metadata, event payload or email |
 | business email | private (the account email, owner only) |
 

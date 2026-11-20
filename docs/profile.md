@@ -9,7 +9,7 @@
 | `POST /api/v1/me/email-change` | signed in (Individual or Agency, not Admin), CSRF | `{"new_email","current_password"}`. Always `202 {"status":"check_your_email"}`. |
 | `POST /api/v1/email-changes/confirm` | public | `{"token"}`. `200 {"status":"email_changed"}` (`no-store`). |
 
-Any other account type on the profile routes is `403 forbidden` (Agency profile management is Story 1.21); an
+Any other account type on the profile routes is `403 forbidden` (the Agency has its own sibling route, below); an
 Administrator on the email change is `403 forbidden`. No session is `401 unauthenticated`, a missing CSRF token on
 PATCH/POST `403 forbidden`. Every answer of these routes, errors included, carries `Cache-Control: no-store`. All bodies
 are strict: an unknown field is `400 validation_error` (`non_field_errors`: `unknown_field`).
@@ -131,3 +131,81 @@ becomes `link_invalid`, never a 500. Parallel confirms of one link yield exactly
   `Referrer-Policy: no-referrer`, never log or store it, POST it; on `200` refresh `/api/v1/me` and the profile; on
   `link_invalid`, `link_expired`, `link_used` offer a new request. Operations: `get_profile`, `update_profile`,
   `request_email_change`, `confirm_email_change`.
+
+# Agency business profile (Story 1.21, backend half)
+
+A sibling of the Individual profile, built the same way: the account type is checked first (an Individual or
+Administrator gets `403 forbidden` before any body check), the account row and then the profile row are locked for an
+update, `account.profile_updated` (no metadata) is audited only when a stored value really changed, bodies are strict and
+all failing fields are reported at once with stable codes (values never echoed). Every answer carries `Cache-Control:
+no-store`. A Suspended agency may read and update; a Deactivated one has no session.
+
+| Route | Who | Purpose |
+| --- | --- | --- |
+| `GET /api/v1/me/agency-profile` | signed in, Agency only | the eight fields below (`no-store`). |
+| `PATCH /api/v1/me/agency-profile` | signed in, Agency only, CSRF | any of `agency_name`, `description`, `city_id`, `business_phone`, `office_address`, at least one. `200` with the same body as the read. |
+
+Read body: `agency_name`, `description`, `city_id`, `business_phone`, `office_address`, `email`, `pending_email`,
+`verification_status`. `email` and `pending_email` are exactly as for the Individual profile; `verification_status` is
+the read-only Agency Verification status (`unverified` until the later verification story). `email` and
+`verification_status` are NOT updatable: sending them (or any other field) is `400 validation_error` with
+`non_field_errors: unknown_field` and nothing changes. An empty body is a `400 validation_error`.
+
+## Privacy classes
+
+| Field | Class |
+| --- | --- |
+| `agency_name`, `description`, `city_id` | public (for the later public agency profile) |
+| `business_phone` (E.164), `office_address` | private: returned only by this route, to the owning agency |
+| `email`, `pending_email` | private |
+
+`GET /api/v1/me` is unchanged (it carries `agency_name` only: no phone, address, city or description). Neither private
+value, nor the email, appears in a log, audit record, event or error body, and the profile view dataclass hides them from
+`repr`. Canary tests cover logs, audit metadata, events, error bodies and the mail outbox.
+
+## Fields and codes
+
+| Field | Rule | Codes |
+| --- | --- | --- |
+| `agency_name` | as registration; contact details refused | `required`, `invalid`, `invalid_name` |
+| `business_phone` | as registration; mandatory (blank or `null` is `required`) | `required`, `invalid`, `invalid_phone` |
+| `office_address` | as registration; mandatory | `required`, `invalid`, `invalid_address` |
+| `city_id` | an ACTIVE City reference id; mandatory | `required`, `invalid`, `invalid_city` |
+| `description` | optional | `invalid`, `invalid_description`, `contains_contact_details` |
+
+`description`: blank, whitespace-only or `null` clears it to `""` (the only field that can be cleared). Otherwise it is
+NFC-normalised with all whitespace, paragraph breaks included, collapsed to single spaces, then 1 to 1000 characters,
+no control or other invisible characters (NUL, bell, bidi overrides; ZWNJ/ZWJ inside Urdu text are fine, but not at
+either end), at least one letter or digit, and it must pass the shared public-text check `reject_contact_details`:
+phone numbers, email addresses or street addresses give `contains_contact_details` ("Descriptions cannot contain phone
+numbers, email addresses or street addresses."). A wrong shape gives `invalid_description`; a non-string gives `invalid`.
+The agency name keeps `invalid_name`, whose message already says no phone numbers or email addresses.
+
+The city is looked up (through `catalog.selectors`, never the catalog models) only when `city_id` was sent, differs from
+the stored city and every other field passed. The lookup runs inside the transaction under the row locks, which narrows
+but does not eliminate a race with a concurrent deactivation (nothing locks the City row), so a city deactivated at that
+exact moment can still be saved. Resending the stored city is never looked up: an agency whose city was deactivated can
+still edit its name, description, phone and address. A changed city that is unknown or inactive is `invalid_city`.
+Non-string descriptions are `invalid_description`; a combining mark must follow a letter or another mark, as for the
+agency name. The account type is checked before the body in the service too (an Individual gets `forbidden` even with
+an empty or invalid body).
+
+## Known gaps in the contact-detail check
+
+The check on `description` (and the agency name) uses the shared patterns of Story 1.14, which are best-effort. Known
+gaps: phone numbers split by words or commas, very long separator runs, "info at agency.com", Urdu digit words, and
+"Plot/Block/Sector/Phase" addresses (deliberately allowed as public location). Public text can therefore still carry
+contact details that evade the heuristics; hardening the shared patterns is a separate story (see
+`docs/privacy-patterns.md`).
+
+## Email change
+
+The routes of Story 1.20 (`POST /api/v1/me/email-change`, `POST /api/v1/email-changes/confirm`) already work for Agency
+accounts and are unchanged. While a request is pending `pending_email` shows in the agency profile, computed exactly as
+for the Individual profile.
+
+## Frontend hand-off
+
+Operations `get_agency_profile` and `update_agency_profile`. Show `fields.<name>` per input; `description` may be cleared
+by sending an empty string; send only the changed fields; show the verification status read-only; show `pending_email` as
+"waiting for confirmation of ...". The email is changed through the existing change-email form, not here.

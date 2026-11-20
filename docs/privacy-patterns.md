@@ -55,6 +55,11 @@ links (`wa.me`, `t.me`), phrasing such as "WhatsApp me", social handles other th
 words, letter-for-digit substitutions (`O3OO`), and landmark-style addresses ("behind the blue mosque"). Exact-value
 scrubbing of an actor's known values belongs to `redact()`.
 
+Further known gaps, also affecting the Agency description and name check of Story 1.21: a phone number split by words or
+commas, very long separator runs, "info at agency.com", Urdu digit words, and `Plot`/`Block`/`Sector`/`Phase` style
+addresses (allowed as public location). Public text can still carry contact details that evade the heuristics;
+hardening the shared patterns is a separate story.
+
 ## Related constants
 
 - `LONG_DIGIT_RUN` (seven or more digits): the stricter rule for audit metadata, which has no legitimate long numbers;
