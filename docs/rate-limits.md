@@ -7,7 +7,7 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | Scope | Limit | Window | Key | Applied by |
 |---|---|---|---|---|
 | `registration` | 10 | 1 hour | client | registration stories |
-| `verification_email` | 5 | 1 hour | account | verification story (shared by the resend and the existing-address notice) |
+| `verification_email` | 5 | 1 hour | account | verification story (shared by the resend and the existing-address notice); Story 1.20 also counts email-change mail per requesting account and per target address (key `address`) |
 | `password_reset_email` | 5 | 1 hour | account | password reset (Story 1.18); silent per-account cap; also counts unknown and ineligible addresses under an address key |
 | `messages` | 60 | 1 minute | account | messaging |
 | `conversations_new` | 20 | 1 day | account | messaging |
@@ -22,7 +22,9 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | `verification_resend` | 5 | 1 hour | client | `POST /api/v1/email-verification-requests` (Story 1.16); 429 for every address alike |
 | `password_reset_request` | 5 | 1 hour | client | `POST /api/v1/password-reset-requests` (Story 1.18); 429 for every address alike; the per-account `password_reset_email` cap is silent; see `docs/password-reset.md` |
 | `password_reset_confirm` | 20 | 1 hour | client | `POST /api/v1/password-resets/confirm` (Story 1.18); 429 with `Retry-After` |
-| `password_change_failed` | 5 | 15 minutes | account | `POST /api/v1/me/password` (Story 1.18); failures only; at the cap the same `incorrect` error is returned, never 429 |
+| `password_change_failed` | 5 | 15 minutes | account | `POST /api/v1/me/password` (Story 1.18) and the current-password check of `POST /api/v1/me/email-change` (Story 1.20), one shared counter; failures only; at the cap the same `incorrect` error is returned, never 429 |
+| `email_change_request` | 5 | 1 hour | account | `POST /api/v1/me/email-change` (Story 1.20); only requests with the right password count; 429 with `Retry-After`; the wrong-password check itself uses `password_change_failed` and never answers 429 |
+| `email_change_confirm` | 20 | 1 hour | client | `POST /api/v1/email-changes/confirm` (Story 1.20); 429 with `Retry-After` |
 | `sign_in` | 5 | 15 minutes | client | `POST /api/v1/session` (Story 1.17); keyed by lowercased email plus client network; failures only; see `docs/sessions.md` |
 
 A null window marks a cap: `limit_for(scope)` returns it for the owning story to count against; `hit` refuses it.

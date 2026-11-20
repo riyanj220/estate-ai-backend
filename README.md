@@ -144,6 +144,10 @@ Registration queues a single-use, 24-hour verification link (after commit, throu
 
 `POST /api/v1/password-reset-requests` always answers the same `202` (unknown, unverified, suspended, deactivated and capped addresses alike; the 429 is per client, the per-account cap is silent) and queues a single-use, 1-hour link after commit. `POST /api/v1/password-resets/confirm` sets a new password with that link, ends every session of the account and writes `account.password_reset`; a bad password is a field error that leaves the link usable. `POST /api/v1/me/password` (signed in, CSRF) changes the password with the current one, ends the other sessions, keeps the current one and writes `account.password_changed`; wrong current passwords are throttled silently (never 429). Tokens are stored hashed and purged after 7 days by the `identity.password_reset_tokens` retention job. See `docs/password-reset.md`.
 
+## Profile and email change
+
+`GET`/`PATCH /api/v1/me/profile` (Individual only, `PATCH` with CSRF) read and update the name and phone; the phone stays mandatory and is returned only there, to its owner, and an update that changes something writes `account.profile_updated`. `POST /api/v1/me/email-change` (signed in, CSRF, not Admin) needs the current password under the shared password-change failure throttle and always answers the same `202`; a single-use 24-hour link goes only to a free new address (a registered one gets the "already registered" notice instead) and the old address is notified. `POST /api/v1/email-changes/confirm` (public) swaps the address, verifies it, ends no session and writes `account.email_changed`. Tokens are stored hashed and purged after 7 days by the `identity.email_change_tokens` retention job. See `docs/profile.md`.
+
 ## Mail
 
 Features send email only through `apps.kernel.mail.send(MailMessage(...))` inside their transaction; it is delivered after commit, off the request thread, never retried, and links come from `email_link` (`FRONTEND_BASE_URL`). Local mail goes to Mailpit only. See `docs/mail.md`.

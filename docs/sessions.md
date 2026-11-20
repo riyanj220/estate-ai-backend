@@ -39,6 +39,9 @@ sign-out service (`unauthenticated` without a session) and by the CSRF check in 
   carries one (a password change keeps the session it came from); `sign_out` events end nothing more. A
   Deactivated account is also refused at authentication time, so there is no window before the event runs. A Suspended
   account keeps its session; it is restricted by capability.
+- **Email change**: confirming an email change does not end any session (the request already required the current
+  password). The sign-in address changes at confirmation; open sessions are tied to the account, not the address. See
+  `docs/profile.md`.
 - **Retention**: job `identity.sessions` purges sessions ended, expired or idled out more than 7 days ago.
 - No audit record is written by sign-in or sign-out, and a failed attempt writes nothing: a successful-login log would hold
   private data.
