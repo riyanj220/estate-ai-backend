@@ -82,6 +82,9 @@ SESSION_ABSOLUTE_SECONDS = env_int("SESSION_ABSOLUTE_SECONDS", 14 * 24 * 3600)
 SESSION_IDLE_SECONDS = env_int("SESSION_IDLE_SECONDS", 24 * 3600)
 SESSION_TOUCH_SECONDS = env_int("SESSION_TOUCH_SECONDS", 300)
 SESSION_MAX_OPEN = env_int("SESSION_MAX_OPEN", 10)  # older open sessions end as `replaced`
+# Administrator sessions are short (Story 1.22): 30 minutes idle, 8 hours absolute.
+ADMIN_SESSION_ABSOLUTE_SECONDS = env_int("ADMIN_SESSION_ABSOLUTE_SECONDS", 8 * 3600)
+ADMIN_SESSION_IDLE_SECONDS = env_int("ADMIN_SESSION_IDLE_SECONDS", 30 * 60)
 if not (
     0 < SESSION_TOUCH_SECONDS < SESSION_IDLE_SECONDS <= SESSION_ABSOLUTE_SECONDS
     and SESSION_MAX_OPEN > 0
@@ -89,6 +92,16 @@ if not (
     raise ImproperlyConfigured(
         "Session settings must satisfy 0 < SESSION_TOUCH_SECONDS < SESSION_IDLE_SECONDS "
         "<= SESSION_ABSOLUTE_SECONDS and SESSION_MAX_OPEN > 0."
+    )
+if not (
+    0 < SESSION_TOUCH_SECONDS < ADMIN_SESSION_IDLE_SECONDS <= ADMIN_SESSION_ABSOLUTE_SECONDS
+    and ADMIN_SESSION_IDLE_SECONDS <= SESSION_IDLE_SECONDS
+    and ADMIN_SESSION_ABSOLUTE_SECONDS <= SESSION_ABSOLUTE_SECONDS
+):
+    raise ImproperlyConfigured(
+        "Administrator session settings must satisfy 0 < SESSION_TOUCH_SECONDS < "
+        "ADMIN_SESSION_IDLE_SECONDS <= ADMIN_SESSION_ABSOLUTE_SECONDS, with neither above its "
+        "ordinary SESSION_* counterpart."
     )
 
 CSRF_FAILURE_VIEW = "apps.presentation.api.handlers.csrf_failure"

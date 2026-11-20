@@ -25,6 +25,7 @@ from apps.identity.state import AccountState
 from apps.kernel.errors import DomainError
 
 ACCOUNT_TYPES = tuple(t.value for t in AccountType)
+ADMIN_ACCOUNT_TYPE = AccountType.ADMIN.value
 
 
 @dataclass(frozen=True)
@@ -123,7 +124,13 @@ def live_session(token, now: datetime) -> LiveSession | None:
         .filter(token_hash=sessions.hash_token(token), ended_at__isnull=True, expires_at__gt=now)
         .first()
     )
-    if row is None or row.last_seen_at + sessions.idle_lifetime() <= now:
+    if row is None:
+        return None
+    # The absolute limit is the stored `expires_at` (set per account type at creation); the idle
+    # limit follows the account type now, so an administrator session never outlives 30 idle
+    # minutes even if it was stored under longer limits.
+    account_type = row.account.account_type
+    if row.last_seen_at + sessions.idle_lifetime_for(account_type) <= now:
         return None
     if row.account.state is AccountState.DEACTIVATED:
         return None

@@ -33,6 +33,20 @@ class IdentityConfig(AppConfig):
         for action in ("account.profile_updated", "account.email_changed"):
             audit.register_action(action, {})  # no metadata: never a phone, name or email
 
+        for action in (
+            "admin.provisioned",
+            "admin.enabled",
+            "admin.password_reset",
+            "admin.signed_in",
+            "admin.sign_in_failed",
+        ):
+            audit.register_action(action, {})  # no metadata: never an email, password or hash
+
+        for action in ("admin.disabled", "admin.removed"):
+            audit.register_action(
+                action, {"forced": ["yes", "no"]}
+            )  # whether --force-last was needed
+
         subscribers.register()
         retention.register("identity.email_verification_tokens", verification.purge_expired)
         retention.register("identity.password_reset_tokens", password_reset.purge_expired)

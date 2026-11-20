@@ -4,6 +4,7 @@ Every state change and its audit record share one transaction.
 """
 
 import hashlib
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -73,6 +74,7 @@ from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.kernel.privacy.patterns import LONG_DIGIT_RUN, reject_contact_details
 
+logger = logging.getLogger("estate.identity")
 EMAIL_CONSTRAINT = "identity_account_email_ci_uniq"
 
 
@@ -459,15 +461,58 @@ def _cap_open_sessions(account_id, now) -> None:
         Session.objects.filter(id__in=excess).update(ended_at=now, ended_reason="replaced")
 
 
-def _attempt(key: str, email: str, password: str, current_token, now) -> SignedIn | None:
+ADMIN_ACCOUNT_SCOPE = "admin_sign_in_account"
+
+
+def _count_failure(scope: str, key: str, account_key: str | None, now) -> bool:
+    """Count one failed attempt; for the administrator door also against the per-account ceiling.
+    True while the per-account ceiling has not been passed (an audit record is still wanted)."""
+    ratelimit.hit(scope, key, now)
+    if account_key is None:
+        return True
+    return ratelimit.hit(ADMIN_ACCOUNT_SCOPE, account_key, now).allowed
+
+
+def _audit_failed_admin_sign_in(account_id, request_id: str) -> None:
+    """Written after the failure count has committed, so an audit fault can neither undo the
+    count nor turn the generic 401 into a 500. Logged by exception class only."""
+    try:
+        with transaction.atomic():
+            audit.record(Actor.visitor(request_id), "admin.sign_in_failed", "account", account_id)
+    except Exception as exc:
+        logger.warning(
+            "admin_sign_in_audit_failure",
+            extra={"event": "admin_sign_in_audit_failure", "exception_class": type(exc).__name__},
+        )
+
+
+# The two doors share this one function on purpose: the only differences are the account-type
+# test, the extra per-account ceiling and the audit records, all keyed off `admin`.
+def _attempt(
+    scope: str, key: str, email: str, password: str, current_token, now, admin: bool, request_id=""
+) -> SignedIn | None:
     """One sign-in attempt under the per-key lock. None means failed; a failure has been counted
-    and committed (nothing here raises out of the transaction after counting)."""
+    and committed (nothing here raises out of the transaction after counting).
+
+    `admin` selects the door: the ordinary one refuses administrator accounts and the
+    administrator one refuses everyone else, both as an ordinary wrong password (the dummy hash
+    is checked instead, so timing does not tell them apart). The administrator door also keeps a
+    per-account failure ceiling (by email only, any network) that answers silently like the
+    per-(email, network) cap. A throttled attempt still costs one dummy-hash comparison.
+    """
+    account_key = ratelimit.derive_key(ADMIN_ACCOUNT_SCOPE, email.lower()) if admin else None
+    failed_admin_id = None
     with transaction.atomic():
+        if account_key is not None:  # fixed lock order: account, then (email, network)
+            _lock_key(account_key)
         _lock_key(key)
-        if ratelimit.peek("sign_in", key, now):
+        if ratelimit.peek(scope, key, now) or (
+            account_key is not None and ratelimit.peek(ADMIN_ACCOUNT_SCOPE, account_key, now)
+        ):
+            check_password("throttled", passwords.dummy_hash())  # same cost as a real attempt
             return None
         if len(password) > PASSWORD_MAX:
-            ratelimit.hit("sign_in", key, now)
+            _count_failure(scope, key, account_key, now)
             return None
         account = (
             Account.objects.annotate(lowered=Lower("email")).filter(lowered=email.lower()).first()
@@ -475,37 +520,63 @@ def _attempt(key: str, email: str, password: str, current_token, now) -> SignedI
         verified = None
         if (
             account is not None
+            and (account.account_type == AccountType.ADMIN) is admin
             and account.state is not AccountState.DEACTIVATED
             and is_password_usable(account.password)
         ):
             verified = account.password
         matches = check_password(password, verified or passwords.dummy_hash())
         if verified is None or not matches:
-            ratelimit.hit("sign_in", key, now)
-            return None
-        locked = Account.objects.select_for_update().filter(id=account.id).first()
-        if (
-            locked is None
-            or locked.state is AccountState.DEACTIVATED
-            or locked.password != verified
-            or locked.email.lower() != email.lower()
-        ):
-            ratelimit.hit("sign_in", key, now)  # changed under us: the checked password is stale
-            return None
-        if sessions.well_formed(current_token):
-            Session.objects.filter(
-                token_hash=sessions.hash_token(current_token), ended_at__isnull=True
-            ).update(ended_at=now, ended_reason="replaced")
-        token = sessions.new_token()
-        Session.objects.create(
-            account=locked,
-            token_hash=sessions.hash_token(token),
-            created_at=now,
-            last_seen_at=now,
-            expires_at=now + sessions.absolute_lifetime(),
-        )
-        _cap_open_sessions(locked.id, now)
-        return SignedIn(token=token, summary=summarise(locked))
+            wanted = _count_failure(scope, key, account_key, now)
+            if admin and verified is not None and wanted:  # an existing active administrator
+                failed_admin_id = account.id
+        else:
+            locked = Account.objects.select_for_update().filter(id=account.id).first()
+            if (
+                locked is None
+                or locked.state is AccountState.DEACTIVATED
+                or locked.password != verified
+                or locked.email.lower() != email.lower()
+            ):
+                _count_failure(scope, key, account_key, now)  # changed under us: stale password
+                return None
+            if sessions.well_formed(current_token):
+                Session.objects.filter(
+                    token_hash=sessions.hash_token(current_token), ended_at__isnull=True
+                ).update(ended_at=now, ended_reason="replaced")
+            token = sessions.new_token()
+            Session.objects.create(
+                account=locked,
+                token_hash=sessions.hash_token(token),
+                created_at=now,
+                last_seen_at=now,
+                expires_at=now + sessions.absolute_lifetime_for(locked.account_type),
+            )
+            _cap_open_sessions(locked.id, now)
+            if admin:
+                audit.record(
+                    Actor.admin(locked.id, request_id), "admin.signed_in", "account", locked.id
+                )
+            return SignedIn(token=token, summary=summarise(locked))
+    if failed_admin_id is not None:
+        _audit_failed_admin_sign_in(failed_admin_id, request_id)
+    return None
+
+
+def _sign_in(
+    scope: str, actor: Actor, email, password, network: str, current_token, admin: bool
+) -> SignedIn:
+    if not isinstance(email, str) or not isinstance(password, str):
+        raise DomainError("validation_error")
+    email = email.strip()
+    if not email or len(email) > 254 or "\x00" in email:
+        raise DomainError("invalid_credentials")
+    now = timezone.now()
+    key = ratelimit.derive_key(scope, email.lower(), network)
+    result = _attempt(scope, key, email, password, current_token, now, admin, actor.request_id)
+    if result is None:
+        raise DomainError("invalid_credentials")
+    return result
 
 
 def sign_in(actor: Actor, email, password, network: str, current_token=None) -> SignedIn:
@@ -517,19 +588,22 @@ def sign_in(actor: Actor, email, password, network: str, current_token=None) -> 
     Deactivated and unusable-password accounts still check the password against a dummy hash so
     timing does not separate them. Any session the caller already held (`current_token`) is ended
     as `replaced`. Email-unverified and Suspended accounts can sign in; their restrictions come
-    from the capability matrix.
+    from the capability matrix. Administrator accounts are refused here like any wrong password:
+    they sign in through `admin_sign_in` only.
     """
-    if not isinstance(email, str) or not isinstance(password, str):
-        raise DomainError("validation_error")
-    email = email.strip()
-    if not email or len(email) > 254 or "\x00" in email:
-        raise DomainError("invalid_credentials")
-    now = timezone.now()
-    key = ratelimit.derive_key("sign_in", email.lower(), network)
-    result = _attempt(key, email, password, current_token, now)
-    if result is None:
-        raise DomainError("invalid_credentials")
-    return result
+    return _sign_in("sign_in", actor, email, password, network, current_token, admin=False)
+
+
+def admin_sign_in(actor: Actor, email, password, network: str, current_token=None) -> SignedIn:
+    """Start an administrator session (Story 1.22), or raise the same `invalid_credentials`.
+
+    The mirror of `sign_in`: only an administrator account that is not Deactivated can succeed;
+    every other outcome (stranger, wrong password, disabled, throttled) is identical. Failures
+    are throttled under `admin_sign_in` and counted only; the cap answers silently. A success is
+    audited as `admin.signed_in`, a failure against an existing active administrator as
+    `admin.sign_in_failed`; unknown emails and non-administrators write nothing.
+    """
+    return _sign_in("admin_sign_in", actor, email, password, network, current_token, admin=True)
 
 
 def sign_out(actor: Actor, session_id) -> None:
@@ -607,9 +681,11 @@ class PasswordInvalid(DomainError):
 
 
 def _eligible_for_reset(account: Account | None) -> bool:
-    """Only an existing, non-deactivated account with a usable password can be reset."""
+    """Only an existing, non-deactivated, non-administrator account with a usable password can be
+    reset: an administrator's forgotten password is recovered by the provisioning command only."""
     return (
         account is not None
+        and account.account_type != AccountType.ADMIN
         and account.state is not AccountState.DEACTIVATED
         and is_password_usable(account.password)
     )
@@ -689,7 +765,12 @@ def confirm_password_reset(actor: Actor, token, password) -> None:
         # confirmation. A purge or cascade after the lookup makes the link invalid.
         account = Account.objects.select_for_update().filter(id=found.account_id).first()
         row = PasswordResetToken.objects.select_for_update().filter(id=found.id).first()
-        if account is None or row is None or account.state is AccountState.DEACTIVATED:
+        if (
+            account is None
+            or row is None
+            or account.state is AccountState.DEACTIVATED
+            or account.account_type == AccountType.ADMIN
+        ):
             raise DomainError("link_invalid")
         now = timezone.now()
         if row.used_at is not None:
@@ -742,7 +823,7 @@ def _change_attempt(key: str, actor: Actor, session_id, current: str, new: str, 
         if not matches:
             ratelimit.hit("password_change_failed", key, now)
             return False
-        code = passwords.password_error(new, account.email)
+        code = passwords.policy_error(account.account_type, new, account.email)
         if code:
             raise PasswordInvalid({"new_password": code})
         if new == current:
@@ -1089,8 +1170,8 @@ def confirm_email_change(actor: Actor, token) -> None:
         # Lock order is account then token, as in the other confirmations and `issue_email_change`.
         account = Account.objects.select_for_update().filter(id=found.account_id).first()
         row = EmailChangeToken.objects.select_for_update().filter(id=found.id).first()
-        if account is None or row is None:
-            raise DomainError("link_invalid")
+        if account is None or row is None or account.account_type == AccountType.ADMIN:
+            raise DomainError("link_invalid")  # an administrator's address never changes by link
         now = timezone.now()
         if row.used_at is not None:
             raise DomainError("link_used")
@@ -1118,3 +1199,174 @@ def confirm_email_change(actor: Actor, token) -> None:
         _record_verified(system, account)
         audit.record(system, "account.email_changed", "account", account.id)
         notices.send_email_changed(old_email)
+
+
+# --- administrator provisioning (Story 1.22) ----------------------------------------------------
+
+
+class AdminRefused(DomainError):
+    """A provisioning request was refused. `reason` is a stable key the command turns into a
+    one-line message; it never carries the email or the password."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__("validation_error")
+        self.reason = reason
+
+
+def _find_admin(email) -> Account:
+    """The administrator account for an address, locked. Anything else is refused: an unknown
+    address and an Individual or Agency account give the same `not_an_administrator`."""
+    if not isinstance(email, str) or "\x00" in email:
+        raise AdminRefused("invalid_email")
+    cleaned, code = check_email(email)
+    if code:
+        raise AdminRefused("invalid_email")
+    account = (
+        Account.objects.select_for_update()
+        .annotate(lowered=Lower("email"))
+        .filter(lowered=cleaned.lower())
+        .first()
+    )
+    if account is None or account.account_type != AccountType.ADMIN:
+        raise AdminRefused("not_an_administrator")
+    return account
+
+
+def _void_account_tokens(account: Account, now) -> None:
+    PasswordResetToken.objects.filter(account=account, used_at__isnull=True).update(used_at=now)
+    EmailVerificationToken.objects.filter(account=account, used_at__isnull=True).update(used_at=now)
+    _void_email_change_links(account, now)
+
+
+def provision_admin(actor: Actor, email, password) -> AccountView:
+    """Create an administrator: type `admin`, email verified, Active, no profile.
+
+    System only (the platform command). The address needs the usual email rules and no account of
+    any kind may hold it; the password must pass the strong administrator policy
+    (`PasswordInvalid` otherwise). Writes one `admin.provisioned` record and nothing on refusal.
+    """
+    _require_system(actor)
+    cleaned, code = check_email(email) if isinstance(email, str) else ("", "invalid")
+    if code or "\x00" in cleaned:
+        raise AdminRefused("invalid_email")
+    code = passwords.admin_password_error(password, cleaned)
+    if code:
+        raise PasswordInvalid({"password": code})
+    hashed = make_password(password)
+    with transaction.atomic():
+        if _email_taken(cleaned):
+            raise AdminRefused("email_taken")
+        try:
+            with transaction.atomic():
+                account = Account.objects.create(
+                    email=cleaned,
+                    password=hashed,
+                    account_type=AccountType.ADMIN.value,
+                    email_verified_at=timezone.now(),
+                )
+        except IntegrityError as exc:
+            diag = getattr(exc.__cause__, "diag", None)
+            if getattr(diag, "constraint_name", None) != EMAIL_CONSTRAINT:
+                raise
+            raise AdminRefused("email_taken") from None
+        audit.record(actor, "admin.provisioned", "account", account.id)
+        return _view(account.id)
+
+
+def _lock_active_admins() -> list:
+    """Lock every active administrator in id order and return their ids. Every action that
+    changes which administrators are active takes this lock first (then the target row), so
+    concurrent disable, enable and remove calls cannot deadlock or leave nobody active."""
+    return list(
+        Account.objects.select_for_update()
+        .filter(account_type=AccountType.ADMIN, deactivated_at__isnull=True)
+        .order_by("id")
+        .values_list("id", flat=True)
+    )
+
+
+def disable_admin(actor: Actor, email, force_last: bool = False) -> bool:
+    """Deactivate an administrator so it cannot sign in, and end every open session now.
+
+    True when something changed; False (nothing else written, no second audit record) when the
+    administrator was already disabled. The last active administrator is kept unless
+    `force_last`; `admin.disabled` records whether the flag was needed (`forced`). Non-
+    administrators and unknown addresses are refused.
+    """
+    _require_system(actor)
+    with transaction.atomic():
+        active = _lock_active_admins()
+        account = _find_admin(email)
+        now = timezone.now()
+        _end_open_sessions(account.id, "deactivated", now=now)
+        if account.deactivated_at is not None:
+            return False
+        last = active == [account.id]
+        if last and not force_last:
+            raise AdminRefused("last_administrator")
+        account.deactivated_at = now
+        account.save(update_fields=["deactivated_at", "updated_at"])
+        _void_account_tokens(account, now)
+        audit.record(
+            actor, "admin.disabled", "account", account.id, {"forced": "yes" if last else "no"}
+        )
+        return True
+
+
+def enable_admin(actor: Actor, email) -> bool:
+    """Clear the Deactivated state of a disabled administrator (its sessions stay ended).
+
+    True when something changed; False when it was already enabled. Non-administrators and
+    unknown addresses are refused. Audit `admin.enabled`.
+    """
+    _require_system(actor)
+    with transaction.atomic():
+        _lock_active_admins()
+        account = _find_admin(email)
+        if account.deactivated_at is None:
+            return False
+        account.deactivated_at = None
+        account.save(update_fields=["deactivated_at", "updated_at"])
+        audit.record(actor, "admin.enabled", "account", account.id)
+        return True
+
+
+def remove_admin(actor: Actor, email, force_last: bool = False) -> None:
+    """Delete an administrator account (its sessions and tokens cascade).
+
+    The last active administrator is kept unless `force_last`; `admin.removed` records whether
+    the flag was needed (`forced`). The target is the former account id (the audit table keeps
+    no foreign key to accounts).
+    """
+    _require_system(actor)
+    with transaction.atomic():
+        active = _lock_active_admins()
+        account = _find_admin(email)
+        last = active == [account.id]
+        if last and not force_last:
+            raise AdminRefused("last_administrator")
+        account_id = account.id
+        account.delete()
+        audit.record(
+            actor, "admin.removed", "account", account_id, {"forced": "yes" if last else "no"}
+        )
+
+
+def reset_admin_password(actor: Actor, email, password) -> None:
+    """Set a new administrator password, end every open session and void outstanding tokens.
+
+    The only recovery for a forgotten administrator password. The strong policy applies
+    (`PasswordInvalid`); a non-administrator is refused before the password is judged.
+    """
+    _require_system(actor)
+    with transaction.atomic():
+        account = _find_admin(email)
+        code = passwords.admin_password_error(password, account.email)
+        if code:
+            raise PasswordInvalid({"password": code})
+        now = timezone.now()
+        account.password = make_password(password)
+        account.save(update_fields=["password", "updated_at"])
+        _end_open_sessions(account.id, "password_changed", now=now)
+        _void_account_tokens(account, now)
+        audit.record(actor, "admin.password_reset", "account", account.id)
