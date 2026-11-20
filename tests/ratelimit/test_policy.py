@@ -25,6 +25,8 @@ EXPECTED = {
     "password_reset_request": (5, H, "client"),
     "password_reset_confirm": (20, H, "client"),
     "password_change_failed": (5, 900, "account"),
+    "email_change_request": (5, H, "account"),
+    "email_change_confirm": (20, H, "client"),
 }
 
 
