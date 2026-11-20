@@ -1,2 +1,5 @@
 # Test fixture password in an API test (not a real secret)
 0d8f880651881da2a25394205addb6e8976b8eda:tests/api/test_password_api.py:generic-api-key:404
+# Test fixture passwords in the agency registration tests (not real secrets)
+cc64603523a592e209abbb911d3c91c50e4ac81f:tests/api/test_agency_registration_api.py:generic-api-key:46
+cc64603523a592e209abbb911d3c91c50e4ac81f:tests/identity/test_agency_registration.py:generic-api-key:23
