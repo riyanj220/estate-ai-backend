@@ -2,7 +2,7 @@
 title: 'Story 2.1: Start a Draft (frontend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -92,6 +92,22 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, frontend half (blind, edge-case, verification-gap).
+
+**Patched:**
+- Create flow: after a 201 the form stays locked with a "Draft created" state and a My listings link (an unreadable 201 id could otherwise re-enable it and create duplicate Drafts against the 20 cap); a hung redirect shows the link after 8 seconds; a page restored from the back/forward cache resets and re-checks the session.
+- Error semantics: the real backend answers a CSRF rejection with the same `forbidden` code as a suspended account, so the suspended message is now shown only when the session says the account is suspended (found by checking the real backend, not the stub); the cap message needs the throttled code and no `Retry-After`, and no longer hard-codes 20.
+- Draft page: unknown, foreign, malformed and forbidden ids give identical not-found copy; non-UUID ids never reach the API; `key={id}`; 429 shows the wait.
+- My listings: empty state only without a `next` link, dedupe inside a page, bounded auto-continue over repeated pages, focus kept when Load more unmounts, neutral copy for forbidden owner accounts.
+- Accessibility: the Subtype summary link never targets a disabled control, field errors clear on edit, aria-disabled instead of disabled while pending.
+- Registry hook: skips empty-subtype categories and non-token ids, treats a 401 as session gone, refetches once after a stale-registry 400.
+- Listing pages re-check the session on a persisted `pageshow` so Back after sign-out cannot show the previous account's listings.
+- Tests (about 40 new, 781 in total): production-build `no-store` check for the listing routes (`npm run check:prod-listings`), Retry mounted while in flight, one live region, server `required` mapping, settled anchors for negative assertions, shared-subtype taxonomy, repeated cursor, bfcache, privacy including the URL hash.
+
+**Deferred:** a shared list hook for notifications and listings (README tech debt), ownership filtering tests (server-owned), registry `version`-based refetch beyond the stale 400 case, acronym handling in `label()`.
+
+Deviation recorded: the Listing wire shape has no timestamp, so My listings shows no created time; it arrives with Story 2.13.
 
 ## Design Notes
 
