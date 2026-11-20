@@ -57,6 +57,9 @@ class ActorSummarySerializer(serializers.Serializer):
     state = serializers.ChoiceField(choices=[s.value for s in AccountState])
     email = serializers.CharField(help_text="The account's own email. Private: owner only.")
     full_name = serializers.CharField(help_text="Individual profile name; empty when none.")
+    agency_name = serializers.CharField(
+        help_text="Agency name (public); empty for non-agency accounts."
+    )
     capabilities = serializers.ListField(child=serializers.ChoiceField(choices=list(Capability)))
 
 
@@ -72,6 +75,7 @@ def _summary_data(summary: selectors.ActorSummary) -> dict:
             "state": summary.state.value,
             "email": summary.email,
             "full_name": summary.full_name,
+            "agency_name": summary.agency_name,
             "capabilities": list(summary.capabilities),
         }
     ).data

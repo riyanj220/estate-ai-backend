@@ -8,7 +8,7 @@ from apps.presentation.api.passwords import (
     PasswordResetRequestView,
 )
 from apps.presentation.api.reference import CityView
-from apps.presentation.api.registrations import IndividualRegistrationView
+from apps.presentation.api.registrations import AgencyRegistrationView, IndividualRegistrationView
 from apps.presentation.api.schema import PublicSchemaView
 from apps.presentation.api.sessions import CsrfView, MeView, SessionView
 from apps.presentation.api.verifications import ConfirmEmailView, VerificationRequestView
@@ -25,6 +25,11 @@ urlpatterns = [
         "api/v1/registrations/individuals",
         IndividualRegistrationView.as_view(),
         name="registrations-individuals",
+    ),
+    path(
+        "api/v1/registrations/agencies",
+        AgencyRegistrationView.as_view(),
+        name="registrations-agencies",
     ),
     path(
         "api/v1/email-verifications/confirm",

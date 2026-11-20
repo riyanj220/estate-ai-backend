@@ -8,8 +8,8 @@ from rest_framework.exceptions import ErrorDetail
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.identity import services
-from apps.identity.validation import validate_individual
+from apps.identity import selectors, services
+from apps.identity.validation import validate_agency, validate_individual
 from apps.kernel.errors import DomainError
 from apps.presentation.api.actors import get_actor
 from apps.presentation.api.bodies import field_errors
@@ -57,6 +57,54 @@ class IndividualRegistrationSerializer(serializers.Serializer):
         }
 
 
+class AgencyRegistrationSerializer(serializers.Serializer):
+    """Strict allowlist of the six fields; the account type and verification status are never
+    client-chosen. Rules come from `identity.validation`; every failing field is reported at
+    once."""
+
+    agency_name = serializers.CharField(
+        help_text="2 to 100 letters, digits, spaces and & , . - ' ( ) /. Shown publicly."
+    )
+    email = serializers.CharField(help_text="The business email. At most 254 characters.")
+    phone = serializers.CharField(
+        help_text="Business phone (private): Pakistani mobile or international number."
+    )
+    office_address = serializers.CharField(help_text="5 to 300 characters. Private.")
+    city_id = serializers.CharField(help_text="Id of an active city from the City reference list.")
+    password = serializers.CharField(
+        help_text="8 to 1024 characters, not a common password, not the email address."
+    )
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError(
+                {"non_field_errors": [ErrorDetail("not_a_dict", code="not_a_dict")]}
+            )
+        if set(data) - set(self.fields):
+            raise serializers.ValidationError(
+                {"non_field_errors": [ErrorDetail("unknown_field", code="unknown_field")]}
+            )
+        details, errors = validate_agency(
+            agency_name=data.get("agency_name"),
+            email=data.get("email"),
+            password=data.get("password"),
+            phone=data.get("phone"),
+            office_address=data.get("office_address"),
+            city_id=data.get("city_id"),
+            city_is_active=selectors.city_is_active,
+        )
+        if details is None:
+            raise field_errors(errors)
+        return {
+            "agency_name": details.agency_name,
+            "email": details.email,
+            "password": details.password,
+            "phone": details.phone,
+            "office_address": details.office_address,
+            "city_id": details.city_id,
+        }
+
+
 class RegistrationAcceptedSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=["check_your_email"])
 
@@ -89,6 +137,41 @@ class IndividualRegistrationView(APIView):
         serializer.is_valid(raise_exception=True)
         try:
             services.register_individual(actor, **serializer.validated_data)
+        except services.RegistrationInvalid as exc:
+            raise field_errors(exc.fields) from None
+        return Response({"status": "check_your_email"}, status=status.HTTP_202_ACCEPTED)
+
+
+class AgencyRegistrationView(APIView):
+    permission_classes = [AllowPublic]
+    authentication_classes: list = []
+    throttle_classes = [PolicyThrottle]
+    rate_limit_scope = "registration"  # shared with Individual registration
+
+    @extend_schema(
+        operation_id="register_agency",
+        summary="Register an Agency account",
+        description=(
+            "The answer is the same whether or not the email is already registered; an existing "
+            "address receives an 'already registered' notice by email instead. The account starts "
+            "Email-unverified with agency verification status 'unverified'. All six fields are "
+            "mandatory; the business phone and office address are private."
+        ),
+        request=AgencyRegistrationSerializer,
+        responses={
+            202: OpenApiResponse(
+                RegistrationAcceptedSerializer, description="Check your email to continue"
+            )
+        },
+    )
+    def post(self, request):
+        actor = get_actor(request)
+        if not actor.is_visitor:  # refuse before reading the body
+            raise DomainError("forbidden")
+        serializer = AgencyRegistrationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            services.register_agency(actor, **serializer.validated_data)
         except services.RegistrationInvalid as exc:
             raise field_errors(exc.fields) from None
         return Response({"status": "check_your_email"}, status=status.HTTP_202_ACCEPTED)
