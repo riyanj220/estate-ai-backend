@@ -114,6 +114,8 @@ A bounded executor keeps capacity free for chat and sign-in (`RUNTIME_EXECUTOR_M
 
 Security-sensitive actions are recorded in an append-only table through `kernel.audit`, in the caller's transaction, with allow-listed metadata; administrator reads of private data call `record_private_read` first with a per-read reason. See `docs/audit.md`. Stories 1.12 and 1.18 write the account-state and password-change records through this writer.
 
+Signed-in accounts read their own in-app notifications at `GET /api/v1/notifications` (newest first, cursor pagination, `state=unread|all`), `GET /api/v1/notifications/unread-count`, `POST /api/v1/notifications/{id}/read` and `POST /api/v1/notifications/read-all` (CSRF; another account's id is `404`). Features raise them with `kernel.notifications.notify(account_id, kind, payload)` for a kind registered in `AppConfig.ready` with a strict payload schema; the row is stored after commit and never when the transaction rolls back. Password and email changes ship as the first two kinds; read notifications are purged after 90 days and any after 180 by the `kernel.notifications` retention job. See `docs/notifications.md`.
+
 ## Reference data
 
 Cities live in the `catalog` app (seeded with Karachi) and are served as plain strings at `GET /api/v1/reference/cities`, never as OpenAPI enums. See `docs/reference-data.md` for how they are managed and where localities arrive.

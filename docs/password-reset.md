@@ -128,3 +128,8 @@ the only place a token appears is the email link, and no email other than the re
 - Change form (signed in): fetch the CSRF token, send `X-CSRFToken`; show `fields.current_password` and
   `fields.new_password`; stay signed in on `200`. Operations: `request_password_reset`, `confirm_password_reset`,
   `change_password`.
+
+## In-app notification
+
+A completed password reset and a completed password change each raise the `account.password_changed` in-app
+notification (empty payload, stored after commit, only if the change commits). See `docs/notifications.md`.

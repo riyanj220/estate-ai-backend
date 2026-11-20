@@ -209,3 +209,8 @@ for the Individual profile.
 Operations `get_agency_profile` and `update_agency_profile`. Show `fields.<name>` per input; `description` may be cleared
 by sending an empty string; send only the changed fields; show the verification status read-only; show `pending_email` as
 "waiting for confirmation of ...". The email is changed through the existing change-email form, not here.
+
+## In-app notification (email change)
+
+Confirming an email change raises the `account.email_changed` in-app notification for the account (empty payload,
+stored after commit, only if the change commits). The mail notice to the old address stays. See `docs/notifications.md`.

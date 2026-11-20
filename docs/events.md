@@ -54,6 +54,12 @@ A subscriber that emits registers new on-commit callbacks; outside a transaction
 they wait for that commit. The registry is a module-level dict written only at start-up (`AppConfig.ready`); it is
 not thread-safe for registration after start-up.
 
+### Events or notifications?
+
+An event tells other parts of the system that something happened; `kernel.notifications.notify` tells an account
+holder. `notify` follows the same after-commit rule (`on_commit(robust=True)`, nothing stored on rollback, a failure
+never reaches the caller) but is a direct call with a registered schema, not a subscription. See `docs/notifications.md`.
+
 ### Events or AD-23?
 
 Use an event only for a derived, repairable consequence (an estimate, a notification, a socket close): if it is

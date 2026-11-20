@@ -38,6 +38,10 @@ whose permission is not explicit.
 | `/api/v1/me/email-change` | POST | signed_in | `apps.presentation.api.profile.EmailChangeRequestView` |
 | `/api/v1/me/password` | POST | signed_in | `apps.presentation.api.passwords.ChangePasswordView` |
 | `/api/v1/me/profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.ProfileDetailView` |
+| `/api/v1/notifications` | GET | signed_in | `apps.presentation.api.notifications.NotificationListView` |
+| `/api/v1/notifications/<str:notification_id>/read` | POST | signed_in | `apps.presentation.api.notifications.MarkReadView` |
+| `/api/v1/notifications/read-all` | POST | signed_in | `apps.presentation.api.notifications.MarkAllReadView` |
+| `/api/v1/notifications/unread-count` | GET | signed_in | `apps.presentation.api.notifications.UnreadCountView` |
 | `/api/v1/password-reset-requests` | POST | public | `apps.presentation.api.passwords.PasswordResetRequestView` |
 | `/api/v1/password-resets/confirm` | POST | public | `apps.presentation.api.passwords.PasswordResetConfirmView` |
 | `/api/v1/reference/cities` | GET | public | `apps.presentation.api.reference.CityView` |
