@@ -91,3 +91,18 @@ def emit_password_reset_requested(account_id: UUID) -> None:
     if not isinstance(account_id, UUID):
         raise ValueError("account_id must be a UUID")
     emit(AccountPasswordResetRequested(account_id=account_id))
+
+
+@dataclass(frozen=True)
+class AccountEmailChangeRequested(DomainEvent):
+    """A signed-in owner asked to change the sign-in email. Ids only: never either address."""
+
+    name: ClassVar[str] = "account.email_change_requested"
+    account_id: UUID
+    change_request_id: UUID
+
+
+def emit_email_change_requested(account_id: UUID, change_request_id: UUID) -> None:
+    if not isinstance(account_id, UUID) or not isinstance(change_request_id, UUID):
+        raise ValueError("account_id and change_request_id must be UUIDs")
+    emit(AccountEmailChangeRequested(account_id=account_id, change_request_id=change_request_id))

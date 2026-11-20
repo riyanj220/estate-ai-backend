@@ -7,7 +7,14 @@ class IdentityConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):
-        from apps.identity import password_reset, passwords, sessions, subscribers, verification
+        from apps.identity import (
+            email_change,
+            password_reset,
+            passwords,
+            sessions,
+            subscribers,
+            verification,
+        )
         from apps.identity.models import AccountType
         from apps.kernel import audit, retention
 
@@ -23,8 +30,12 @@ class IdentityConfig(AppConfig):
         for action in ("account.password_reset", "account.password_changed"):
             audit.register_action(action, {})  # no metadata: never a password, token or email
 
+        for action in ("account.profile_updated", "account.email_changed"):
+            audit.register_action(action, {})  # no metadata: never a phone, name or email
+
         subscribers.register()
         retention.register("identity.email_verification_tokens", verification.purge_expired)
         retention.register("identity.password_reset_tokens", password_reset.purge_expired)
+        retention.register("identity.email_change_tokens", email_change.purge_expired)
         retention.register("identity.sessions", sessions.purge_stale)
         passwords.dummy_hash()

@@ -4,14 +4,22 @@ Also home of the two primitives other apps use: `lock_account` and `is_active_ow
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from django.db import connection
+from django.utils import timezone
 
 from apps.catalog import selectors as catalog
 from apps.identity import sessions
-from apps.identity.models import Account, AccountType, AgencyProfile, IndividualProfile, Session
+from apps.identity.models import (
+    Account,
+    AccountType,
+    AgencyProfile,
+    EmailChangeToken,
+    IndividualProfile,
+    Session,
+)
 from apps.identity.policy import capabilities_for
 from apps.identity.state import AccountState
 from apps.kernel.errors import DomainError
@@ -159,6 +167,48 @@ def get_actor_summary(account_id) -> ActorSummary | None:
     if account is None or account.state is AccountState.DEACTIVATED:
         return None
     return summarise(account)
+
+
+@dataclass(frozen=True)
+class ProfileView:
+    """An Individual's own details. `phone` and both addresses are private: owner only."""
+
+    full_name: str
+    phone: str = field(repr=False)
+    email: str = field(repr=False)
+    pending_email: str | None = field(repr=False)
+
+
+def profile_view(account: Account, profile: IndividualProfile) -> ProfileView:
+    pending = (
+        EmailChangeToken.objects.filter(
+            account_id=account.id,
+            used_at__isnull=True,
+            link_issued=True,
+            expires_at__gt=timezone.now(),
+        )
+        .order_by("-created_at", "-id")
+        .values_list("new_email", flat=True)
+        .first()
+    )
+    return ProfileView(profile.full_name, profile.phone, account.email, pending)
+
+
+def get_profile(actor_account_id) -> ProfileView:
+    """The signed-in Individual's profile. Other account types are `forbidden`, unknown or
+    Deactivated accounts `unauthenticated`."""
+    key = parse_id(actor_account_id)
+    account = Account.objects.filter(id=key).first() if key else None
+    if account is None or account.state is AccountState.DEACTIVATED:
+        raise DomainError("unauthenticated")
+    profile = (
+        IndividualProfile.objects.filter(account_id=account.id).first()
+        if account.account_type == AccountType.INDIVIDUAL
+        else None
+    )
+    if profile is None:
+        raise DomainError("forbidden")
+    return profile_view(account, profile)
 
 
 def city_is_active(city_id) -> bool:

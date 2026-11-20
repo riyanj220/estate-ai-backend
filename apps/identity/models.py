@@ -139,6 +139,33 @@ class PasswordResetToken(models.Model):
         ]
 
 
+class EmailChangeToken(models.Model):
+    """A single-use email-change link. Only the SHA-256 hash of the token is ever stored.
+
+    `new_email` is private: it is the address as typed and goes only to that address's mailbox.
+    The row is created by the request with a throwaway hash; the after-commit handler replaces the
+    hash with the real token's only when the address is free, so a row can exist whose link was
+    never issued (a taken or unchanged address) and nothing tells the owner apart.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="email_change_tokens"
+    )
+    new_email = models.CharField(max_length=254)
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)  # set on use or when superseded
+    link_issued = models.BooleanField(default=False)  # True once the handler made a real token
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["expires_at"], name="identity_ect_expires_idx"),
+            models.Index(fields=["used_at"], name="identity_ect_used_idx"),
+        ]
+
+
 # The one definition of why a session ends; events and services derive their sets from it.
 SESSION_END_REASONS = ["sign_out", "password_changed", "deactivated", "replaced"]
 

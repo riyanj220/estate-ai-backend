@@ -4,6 +4,7 @@ from django.db import transaction
 
 from apps.identity import notices, services
 from apps.identity.events import (
+    AccountEmailChangeRequested,
     AccountPasswordResetRequested,
     AccountRegistered,
     AccountSessionEnded,
@@ -29,6 +30,21 @@ def send_password_reset_email(event: AccountPasswordResetRequested) -> None:
             notices.send_password_reset(*issued)
 
 
+def send_email_change_mail(event: AccountEmailChangeRequested) -> None:
+    """Decide and queue the mail for a change request, in a transaction of its own."""
+    with transaction.atomic():
+        delivery = services.issue_email_change(
+            Actor.system(), event.account_id, event.change_request_id
+        )
+        if delivery is None:
+            return
+        notices.send_email_change_requested(delivery.current_email)  # every branch, alike
+        if delivery.kind == "confirm":
+            notices.send_email_change_confirmation(delivery.target, delivery.token)
+        elif delivery.kind == "taken":
+            notices.send_already_registered(delivery.target)
+
+
 def end_sessions(event: AccountSessionEnded) -> None:
     """A password change or deactivation ends every session (except the one a change came from);
     a sign-out ended its own already."""
@@ -49,5 +65,7 @@ def register() -> None:
             events.subscribe(event_type, send_verification_email)
     if not events.is_subscribed(AccountPasswordResetRequested, send_password_reset_email):
         events.subscribe(AccountPasswordResetRequested, send_password_reset_email)
+    if not events.is_subscribed(AccountEmailChangeRequested, send_email_change_mail):
+        events.subscribe(AccountEmailChangeRequested, send_email_change_mail)
     if not events.is_subscribed(AccountSessionEnded, end_sessions):
         events.subscribe(AccountSessionEnded, end_sessions)

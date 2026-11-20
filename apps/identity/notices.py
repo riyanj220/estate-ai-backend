@@ -95,3 +95,65 @@ def send_password_reset_done(email: str) -> None:
 def send_password_changed(email: str) -> None:
     """Queue the notice after a change. Fixed copy: no password, no link."""
     mail.send(mail.MailMessage(to=email, subject=_CHANGED_SUBJECT, body=_CHANGED_BODY))
+
+
+CONFIRM_EMAIL_CHANGE_PATH = "/confirm-email-change"
+
+_CHANGE_CONFIRM_SUBJECT = "Confirm your new EstateAI sign-in email"
+_CHANGE_CONFIRM_BODY = """\
+Someone asked to use this email address to sign in to an EstateAI account.
+To confirm the change, open this link:
+{link}
+
+This link works once and expires in 24 hours.
+If you did not ask for this, you can ignore this message; nothing has changed.
+"""
+
+
+def send_email_change_confirmation(new_email: str, token: str) -> None:
+    """Queue the confirmation link to the NEW address after commit. Call inside a transaction."""
+    mail.send(
+        mail.MailMessage(
+            to=new_email,
+            subject=_CHANGE_CONFIRM_SUBJECT,
+            body=_CHANGE_CONFIRM_BODY.format(
+                link=mail.email_link(CONFIRM_EMAIL_CHANGE_PATH, {"token": token})
+            ),
+        )
+    )
+
+
+_CHANGE_REQUESTED_SUBJECT = "A change of your EstateAI sign-in email was requested"
+_CHANGE_REQUESTED_BODY = """\
+A change of the sign-in email of your EstateAI account was requested.
+Nothing changes until the new address confirms it, and you can keep signing in with this address.
+
+If this was not you, change your password now.
+"""
+
+
+def send_email_change_requested(current_email: str) -> None:
+    """Queue the heads-up to the CURRENT address. Fixed copy: no new address, no link."""
+    mail.send(
+        mail.MailMessage(
+            to=current_email,
+            subject=_CHANGE_REQUESTED_SUBJECT,
+            body=_CHANGE_REQUESTED_BODY,
+        )
+    )
+
+
+_CHANGED_EMAIL_SUBJECT = "Your EstateAI sign-in email was changed"
+_CHANGED_EMAIL_BODY = """\
+The sign-in email of your EstateAI account was changed to a new address.
+This address no longer signs in to that account.
+
+If this was not you, contact support.
+"""
+
+
+def send_email_changed(old_email: str) -> None:
+    """Queue the notice to the OLD address after a change. Fixed copy: no new address."""
+    mail.send(
+        mail.MailMessage(to=old_email, subject=_CHANGED_EMAIL_SUBJECT, body=_CHANGED_EMAIL_BODY)
+    )
