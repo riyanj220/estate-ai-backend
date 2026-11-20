@@ -255,9 +255,9 @@ def test_runtime_can_write_agency_profiles_but_not_ddl(runtime_conn, django_db_b
         )
         runtime_conn.execute(
             "INSERT INTO identity_agencyprofile (id, account_id, agency_name, business_phone, "
-            "office_address, city_id, verification_status, created_at, updated_at) "
+            "office_address, city_id, description, verification_status, created_at, updated_at) "
             "SELECT gen_random_uuid(), id, 'Probe', '+923001234567', 'Probe street 1', "
-            "gen_random_uuid(), 'unverified', now(), now() FROM identity_account "
+            "gen_random_uuid(), '', 'unverified', now(), now() FROM identity_account "
             "WHERE email = 'agency.probe@example.com'"
         )
         runtime_conn.execute(
