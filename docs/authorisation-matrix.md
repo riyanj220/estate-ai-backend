@@ -33,9 +33,12 @@ whose permission is not explicit.
 | `/api/v1/email-verification-requests` | POST | public | `apps.presentation.api.verifications.VerificationRequestView` |
 | `/api/v1/email-verifications/confirm` | POST | public | `apps.presentation.api.verifications.ConfirmEmailView` |
 | `/api/v1/health` | GET, HEAD | public | `apps.presentation.api.health.WrappedAPIView` |
+| `/api/v1/listings` | POST | signed_in | `apps.presentation.api.listings.DraftCreateView` |
+| `/api/v1/listings/<str:listing_id>` | GET | signed_in | `apps.presentation.api.listings.ListingDetailView` |
 | `/api/v1/me` | GET | signed_in | `apps.presentation.api.sessions.MeView` |
 | `/api/v1/me/agency-profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.AgencyProfileDetailView` |
 | `/api/v1/me/email-change` | POST | signed_in | `apps.presentation.api.profile.EmailChangeRequestView` |
+| `/api/v1/me/listings` | GET | signed_in | `apps.presentation.api.listings.MyListingsView` |
 | `/api/v1/me/password` | POST | signed_in | `apps.presentation.api.passwords.ChangePasswordView` |
 | `/api/v1/me/profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.ProfileDetailView` |
 | `/api/v1/notifications` | GET | signed_in | `apps.presentation.api.notifications.NotificationListView` |
@@ -47,6 +50,7 @@ whose permission is not explicit.
 | `/api/v1/reference/cities` | GET | public | `apps.presentation.api.reference.CityView` |
 | `/api/v1/registrations/agencies` | POST | public | `apps.presentation.api.registrations.AgencyRegistrationView` |
 | `/api/v1/registrations/individuals` | POST | public | `apps.presentation.api.registrations.IndividualRegistrationView` |
+| `/api/v1/registry` | GET | public | `apps.presentation.api.registry.RegistryView` |
 | `/api/v1/schema` | GET | public | `apps.presentation.api.schema.PublicSchemaView` |
 | `/api/v1/session` | DELETE, POST | public | `apps.presentation.api.sessions.SessionView` |
 <!-- END GENERATED ROUTES -->

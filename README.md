@@ -73,6 +73,12 @@ touching `listings.models`. `tests/architecture/` proves each rule fails on a de
 New apps are added to `INSTALLED_APPS` only when they own models.
 `scripts/asgi_thread_spike.py` re-runs the AD-14 sync-view concurrency spike; results are in `docs/architecture-notes.md`.
 
+## Listings and the Field registry
+
+`apps/listings` owns the canonical `PropertyListing` (Story 2.1: start a Draft) and `apps/catalog` owns the Field
+registry, `apps/catalog/registry/fields.yaml`, validated at start-up and served at `GET /api/v1/registry`. Editing the
+registry needs a version bump and `uv run python scripts/registry_lock.py`. See `docs/listings.md` and `docs/registry.md`.
+
 ## API contract
 
 The contract is the committed `openapi.yaml` (drf-spectacular, served at `/api/v1/schema`). After changing any

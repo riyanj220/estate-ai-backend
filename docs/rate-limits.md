@@ -14,7 +14,7 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | `favourites` | 500 | cap | account | favourites |
 | `reports` | 10 | 1 day | account | reporting |
 | `support_requests` | 5 | 1 day | account | support |
-| `open_drafts` | 20 | cap | account | listings |
+| `open_drafts` | 20 | cap | account | `listings.services.create_draft` (Story 2.1); see below |
 | `assistant_messages` | 30 | 1 hour | account | assistant |
 | `ai_search_visitor` | 10 | 1 minute | client | search |
 | `ai_search_account` | 30 | 1 hour | account | search |
@@ -31,6 +31,15 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 
 A null window marks a cap: `limit_for(scope)` returns it for the owning story to count against; `hit` refuses it.
 Each owning story attaches its scope.
+
+## The open Drafts cap
+
+`open_drafts` is a cap (no window), so it is not counted with `hit`. `create_draft` reads the limit with
+`ratelimit.limit_for("open_drafts")` (never a constant) and counts the owner's Listings in status `draft` inside the
+transaction that already holds `identity.selectors.lock_account(owner)`, so parallel creations by one owner cannot
+overshoot. At the cap the request is `429 throttled` in the standard envelope **without `Retry-After`**: a cap clears
+when the owner removes a Draft, not after a time. Other accounts are unaffected, and an Agency's Drafts count against
+the Agency account. A windowed or missing policy is `ImproperlyConfigured`.
 
 ## Semantics
 

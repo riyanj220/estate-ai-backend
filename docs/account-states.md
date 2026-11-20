@@ -58,10 +58,14 @@ audit record of the reactivation remains (moderation history lives in audit and,
 
 ### Pending capabilities
 
-Every capability except `sign_in` and `browse` depends on a later story and is in `PENDING_CAPABILITIES`
-(`identity/capabilities.py`), so `can` answers false for it today while the table still reads as FR-74.
+Every capability except `sign_in`, `browse`, `view_drafts` and `edit_drafts` depends on a later story and is in
+`PENDING_CAPABILITIES` (`identity/capabilities.py`), so `can` answers false for it today while the table still reads
+as FR-74. Story 2.1 activated `view_drafts` and `edit_drafts` (Draft creation and reads, `docs/listings.md`): `can`
+now follows the table for them, so a session's `capabilities` list includes them (an Email-unverified or Active
+account gets both, a Suspended one `view_drafts` only, a Deactivated one neither, administrators neither).
 A later story activates a capability by removing it from that one set, in its own change, together with a test that
-`can` now follows the table for it (see `test_activated_capability_follows_the_table`, which patches the set).
+`can` now follows the table for it (see `test_activated_capability_follows_the_table`, which patches the set, and
+`test_draft_capabilities_are_live_and_follow_fr74`).
 
 ## Services (system or administrator actor first, all audited in the same transaction)
 
