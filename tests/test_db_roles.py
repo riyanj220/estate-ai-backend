@@ -157,6 +157,19 @@ def test_runtime_can_use_flags_ai_log_and_purges_but_not_ddl(runtime_conn):
             runtime_conn.execute(f"ALTER TABLE {table} ADD COLUMN nope int")
 
 
+def test_runtime_can_store_update_and_purge_notifications_but_not_ddl(runtime_conn):
+    runtime_conn.execute(
+        "INSERT INTO kernel_notification (id, account_id, kind, payload, created_at) "
+        "VALUES (gen_random_uuid(), gen_random_uuid(), 'role.probed', '{}', now())"
+    )
+    runtime_conn.execute(
+        "UPDATE kernel_notification SET read_at = now() WHERE kind = 'role.probed'"
+    )
+    runtime_conn.execute("DELETE FROM kernel_notification WHERE kind = 'role.probed'")
+    with pytest.raises(errors.InsufficientPrivilege):
+        runtime_conn.execute("ALTER TABLE kernel_notification ADD COLUMN nope int")
+
+
 def test_runtime_audit_table_is_append_only(runtime_conn, django_db_blocker):
     try:
         _audit_probe(runtime_conn)
