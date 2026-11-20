@@ -179,8 +179,10 @@ class ProfileView:
     pending_email: str | None = field(repr=False)
 
 
-def profile_view(account: Account, profile: IndividualProfile) -> ProfileView:
-    pending = (
+def _pending_email(account: Account) -> str | None:
+    """The newest accepted, unused, unexpired email-change request, whether or not a link was
+    sent, so the answer never reveals the address's status."""
+    return (
         EmailChangeToken.objects.filter(
             account_id=account.id,
             used_at__isnull=True,
@@ -190,7 +192,10 @@ def profile_view(account: Account, profile: IndividualProfile) -> ProfileView:
         .values_list("new_email", flat=True)
         .first()
     )
-    return ProfileView(profile.full_name, profile.phone, account.email, pending)
+
+
+def profile_view(account: Account, profile: IndividualProfile) -> ProfileView:
+    return ProfileView(profile.full_name, profile.phone, account.email, _pending_email(account))
 
 
 def get_profile(actor_account_id) -> ProfileView:
@@ -208,6 +213,50 @@ def get_profile(actor_account_id) -> ProfileView:
     if profile is None:
         raise DomainError("forbidden")
     return profile_view(account, profile)
+
+
+@dataclass(frozen=True)
+class AgencyProfileView:
+    """An Agency's own details. Phone, address and both emails are private: owner only."""
+
+    agency_name: str
+    description: str
+    city_id: uuid.UUID
+    business_phone: str = field(repr=False)
+    office_address: str = field(repr=False)
+    email: str = field(repr=False)
+    pending_email: str | None = field(repr=False)
+    verification_status: str
+
+
+def agency_profile_view(account: Account, profile: AgencyProfile) -> AgencyProfileView:
+    return AgencyProfileView(
+        agency_name=profile.agency_name,
+        description=profile.description,
+        city_id=profile.city_id,
+        business_phone=profile.business_phone,
+        office_address=profile.office_address,
+        email=account.email,
+        pending_email=_pending_email(account),
+        verification_status=profile.verification_status,
+    )
+
+
+def get_agency_profile(actor_account_id) -> AgencyProfileView:
+    """The signed-in Agency's profile. Other account types are `forbidden`, unknown or
+    Deactivated accounts `unauthenticated`."""
+    key = parse_id(actor_account_id)
+    account = Account.objects.filter(id=key).first() if key else None
+    if account is None or account.state is AccountState.DEACTIVATED:
+        raise DomainError("unauthenticated")
+    profile = (
+        AgencyProfile.objects.filter(account_id=account.id).first()
+        if account.account_type == AccountType.AGENCY
+        else None
+    )
+    if profile is None:
+        raise DomainError("forbidden")
+    return agency_profile_view(account, profile)
 
 
 def city_is_active(city_id) -> bool:

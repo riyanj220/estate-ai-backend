@@ -76,8 +76,9 @@ AGENCY_VERIFICATION_STATUSES = ["unverified"]  # the verification-evidence story
 class AgencyProfile(models.Model):
     """Profile of an Agency account. Written only by `identity.services`.
 
-    Privacy classes: `agency_name` and `city_id` are public; `business_phone` (E.164) and
-    `office_address` are private and never returned by any public or registration response.
+    Privacy classes: `agency_name`, `description` and `city_id` are public; `business_phone`
+    (E.164) and `office_address` are private and never returned by any public or registration
+    response.
     `city_id` is a plain id checked against the City reference list in the service, not a foreign
     key, because identity never imports catalog models. The business email is the account email.
     """
@@ -88,6 +89,7 @@ class AgencyProfile(models.Model):
     business_phone = models.CharField(max_length=16)  # private
     office_address = models.CharField(max_length=300)  # private
     city_id = models.UUIDField()  # public
+    description = models.CharField(max_length=1000, blank=True, default="")  # public
     verification_status = models.CharField(max_length=16, default="unverified")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

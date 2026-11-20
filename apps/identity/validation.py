@@ -25,6 +25,7 @@ _NAME_PUNCTUATION = frozenset(" -'’.")
 AGENCY_NAME_MIN = 2
 AGENCY_NAME_MAX = 100
 _AGENCY_NAME_PUNCTUATION = frozenset(" &,.-'’()/")
+DESCRIPTION_MAX = 1000
 ADDRESS_MIN = 5
 ADDRESS_MAX = 300
 _JOINERS = frozenset("\u200c\u200d")  # ZWNJ and ZWJ, part of Urdu and Persian spelling
@@ -166,6 +167,37 @@ def check_agency_name(value) -> tuple[str, str | None]:
     if reject_contact_details(name) is not None:
         return "", "invalid_name"
     return name, None
+
+
+def check_description(value) -> tuple[str, str | None]:
+    """The optional public agency description: blank or null clears it to an empty string.
+
+    Whitespace (paragraph breaks, NEL, VT and FF included) collapses to single spaces. Other
+    control and invisible characters are refused before the collapse could hide them, and the
+    shared public-text check rejects phone numbers, email addresses and street addresses.
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return "", None
+    if not isinstance(value, str):
+        return "", "invalid_description"
+    if any(
+        unicodedata.category(char)[0] == "C" and char not in _JOINERS and not char.isspace()
+        for char in value
+    ):
+        return "", "invalid_description"
+    text = " ".join(unicodedata.normalize("NFC", value).split())
+    if text[:1] in _JOINERS or text[-1:] in _JOINERS:
+        return "", "invalid_description"
+    # The cap comes first: the contact finder refuses input beyond its size limit.
+    if len(text) > DESCRIPTION_MAX:
+        return "", "invalid_description"
+    if not any(char.isalpha() or unicodedata.category(char) == "Nd" for char in text):
+        return "", "invalid_description"
+    if not _marks_follow_a_letter_or_mark(text):
+        return "", "invalid_description"
+    if reject_contact_details(text) is not None:
+        return "", "contains_contact_details"
+    return text, None
 
 
 def check_office_address(value) -> tuple[str, str | None]:

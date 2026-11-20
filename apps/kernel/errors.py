@@ -71,6 +71,10 @@ FIELD_MESSAGES: dict[str, str] = {
     "invalid_phone": "Enter a Pakistani mobile number or a valid international number.",
     "invalid_address": "Enter an office address of 5 to 300 characters, without line breaks.",
     "invalid_city": "Choose a city from the list.",
+    "invalid_description": "Enter a description of up to 1000 characters, or leave it empty.",
+    "contains_contact_details": (
+        "Descriptions cannot contain phone numbers, email addresses or street addresses."
+    ),
 }
 DEFAULT_FIELD_MESSAGE = "Enter a valid value."
 
