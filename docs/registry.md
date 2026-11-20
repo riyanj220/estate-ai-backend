@@ -11,7 +11,7 @@ The Field registry (AD-4) is the one definition of which Listing fields exist. I
 ## File format
 
 ```yaml
-version: 1                     # positive integer
+version: 2                     # positive integer
 taxonomy:
   purposes: [sale, rent]       # code-defined, snake_case ids
   categories:
@@ -25,7 +25,41 @@ fields:
     class: public              # public | private
     quota_identity: true       # flags, all default false: searchable, sortable, ai_extractable,
                                # valuation_input, quota_identity
+  - id: title
+    type: text                 # text: max_length (required), min_length (default 0)
+    max_length: 100
+    min_length: 10
+    ...
+  - id: asking_price
+    type: money                # money: min, max (decimal strings, at most 2 decimals), currency PKR
+    min: "0.01"
+    max: "999999999999.99"
+    currency: PKR
+    ...
+  - id: price_basis
+    type: enum
+    allowed_values: [total, per_unit, rental_period]
+    allowed_values_by_purpose:   # optional, enums only: every purpose, each a non-empty subset
+      sale: [total, per_unit]
+      rent: [rental_period]
 ```
+
+Field types: `enum` (`allowed_values`), `text` (`max_length` 1 to 20 000, optional `min_length`; lengths count
+characters after normalisation), `money` (`min`, `max` as quoted decimal strings, never YAML numbers, at most two
+decimals and at most 999 999 999 999.99, `currency` must be `PKR`; the column is NUMERIC(14,2)), and the declared but
+not yet editable `integer`, `decimal`, `boolean`. A length key on a non-text field, a money key on a non-money field and
+`allowed_values_by_purpose` on a non-enum are refused. `applicability` decides whether a field applies to a Listing
+(`rental_period` applies only to purpose `rent`); `FieldDef.applies_to(purpose, category, subtype)` and
+`FieldDef.values_for(purpose)` answer it, and `listings.validation` enforces both from the registry.
+
+`requirement` states when a value is needed, not when it may be saved: `required_for_publication` fields (and cross-field
+completeness such as a rental priced per rental period naming its period) are checked by publication (Story 2.15);
+`listings.services.apply_updates` accepts partial data.
+
+Version 2 (Story 2.2) adds `title`, `description`, `asking_price`, `price_basis` and `rental_period`. `asking_price` is
+not a `valuation_input`; no shipped field is yet, and the `listing.model_inputs_changed` behaviour is proven with a
+registry fixture. `title`, `description` and `asking_price` are `ai_extractable`; the price basis and rental period are
+not (the owner states them).
 
 Only these keys are allowed. A Subtype belongs to exactly one Category; Plot File is a Subtype of Plot, distinct from
 Residential Plot.
@@ -52,7 +86,9 @@ tells the developer to bump the version and run the script.
 ## Serving
 
 `GET /api/v1/registry` is public: `{version, taxonomy: {categories: [{id, subtypes}], purposes}, fields: [...]}`, each
-field with `id, type, requirement, applicability, allowed_values (null unless an enum), class` and the five flags.
+field with `id, type, requirement, applicability, allowed_values (null unless an enum), allowed_values_by_purpose (null
+unless narrowed), min_length and max_length (text only), min, max and currency (money only), class` and the five flags
+(`RESPONSE_SHAPE_VERSION` is 2).
 `Cache-Control: public, max-age=300` and a strong `ETag` (`"<version>-<content hash>"`); `If-None-Match` gets `304`.
 OpenAPI enums for purpose, category and subtype are generated from the registry (`PurposeEnum`, `CategoryEnum`,
 `SubtypeEnum`), never copied by hand. Cities, localities and amenities are database reference data, not registry values.
@@ -69,7 +105,9 @@ OpenAPI enums for purpose, category and subtype are generated from the registry 
   version, and a changed file at an unchanged version).
 - **The taxonomy is also in the database.** Purpose, category and subtype are frozen into the CHECK constraints of
   `listings_propertylisting`, so a taxonomy change needs a `listings` migration as well as a version bump
-  (`tests/listings/test_constraints.py` fails when the migration and the registry disagree).
+  (`tests/listings/test_constraints.py` fails when the migration and the registry disagree). The same holds for the
+  generated CHECKs on `title`, `description` and `ListingTerms` (price range, basis and period values): changing those
+  registry bounds or values needs a migration.
 - **Private fields are listed.** Private-class fields appear in the public registry response by design: it is field
   metadata for owner forms, never values. `ai_extractable` and `quota_identity` are allowed on private fields; only
   `searchable`, `sortable` and `valuation_input` are refused.
@@ -77,3 +115,7 @@ OpenAPI enums for purpose, category and subtype are generated from the registry 
   `apps/presentation/api/registry.py` when the serializer changes without a registry change.
 - **Open-Draft cap policy.** A `limit` of 0 would block all Draft creation (the table's check currently requires
   `limit > 0`); a missing `open_drafts` row is a configuration error (`ImproperlyConfigured`, a 500).
+- **Bounds are frozen into migrations.** Tightening or loosening any text length, money bound or enum value changes
+  generated CHECK constraints, so it needs a data-safe migration (check existing rows first: a tighter bound can
+  fail on stored data) plus a version bump. `tests/listings/test_constraints.py` fails when migration 0002 and the
+  constraints generated from the current registry differ, and has a test proving a changed bound is detected.

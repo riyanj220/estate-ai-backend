@@ -177,8 +177,7 @@ value, nor the email, appears in a log, audit record, event or error body, and t
 NFC-normalised with all whitespace, paragraph breaks included, collapsed to single spaces, then 1 to 1000 characters,
 no control or other invisible characters (NUL, bell, bidi overrides; ZWNJ/ZWJ inside Urdu text are fine, but not at
 either end), at least one letter or digit, and it must pass the shared public-text check `reject_contact_details`:
-phone numbers, email addresses or street addresses give `contains_contact_details` ("Descriptions cannot contain phone
-numbers, email addresses or street addresses."). A wrong shape gives `invalid_description`; a non-string gives `invalid`.
+phone numbers, email addresses or street addresses give `contains_contact_details` ("This text cannot contain phone numbers, email addresses or street addresses."; the code and message are shared with Listing text, Story 2.2). A wrong shape gives `invalid_description`; a non-string gives `invalid`.
 The agency name keeps `invalid_name`, whose message already says no phone numbers or email addresses.
 
 The city is looked up (through `catalog.selectors`, never the catalog models) only when `city_id` was sent, differs from

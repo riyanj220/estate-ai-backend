@@ -14,8 +14,11 @@ reject_contact_details(text)   # None if clean, else "The text appears to contai
 find_contact_details(text)     # tuple of Finding(kind, start, end), offsets into the original text, for redaction
 ```
 
-Listing text validation, Agency profile text and AI redaction (`redact()`) are planned callers (their own stories) and
-will call these and nothing else; none exists yet. The explanation
+Listing text validation (title and description, `listings.validation.check_text`, Story 2.2) and the Agency profile
+description call `reject_contact_details` and nothing else; AI redaction (`redact()`) is a planned caller (its own story).
+Listing text is rejected with the field code `contains_contact_details` ("This text cannot contain phone numbers, email addresses or street addresses."), the input is bounded to 20 000 characters before any scan, and
+`tests/listings/test_text_rules.py` keeps a false-positive set of realistic prices, areas and counts. Unit and house
+numbers ("Apartment 1204", "House 12") are private addresses and are refused in listing text. The explanation
 names kinds only and never echoes any part of the text; never log the text, matches or offsets alongside the text.
 A non-string raises `TypeError`, text longer than 100 000 characters raises `ValueError` (callers enforce their own,
 much smaller field limits first), and an empty string is clean.
@@ -35,6 +38,12 @@ folded.
   underscores, parentheses and newlines, never the comma. Invisible, combining and blank characters are ignored. Dates
   (also inside longer text), year ranges and ranges or lists followed by a unit (`1200-1800 sq ft`) are not phones, nor
   are spaced prices after `Rs`/`PKR`.
+- Split phone: digit groups (up to five, `+` allowed on the first) joined by short runs of any of space, comma, colon,
+  semicolon, pipe, bullet, middle dot, asterisk, tilde, hash, slash, dash, dot, underscore or parentheses are
+  concatenated and refused when they form a Pakistani mobile (`03xxxxxxxxx`, `923xxxxxxxxx`, `00923...`) or any 10 to
+  13 digit number led by `0` or `92` (`0300,1234567`, `0300 | 123 | 4567`, `03-00-12-34-567`, Arabic-Indic digits too,
+  after the NFKC digit folding). Dates are masked first, and a 2 or 3 digit group right after a lone comma (thousands
+  grouping, `4,500,000`) cannot start a window, so prices, areas, counts, years and floor numbers pass.
 - Email: ordinary addresses (underscores and non-ASCII letters allowed), dotless `jane@gmail`, a bare `@handle`,
   `[at]`/`(at)` with `[dot]`/`(dot)` or `.`, and `name at domain dot com` (a bare "at" only counts when the dots are
   spelled out too). `meet @ 5pm` is clean.
@@ -59,6 +68,9 @@ Further known gaps, also affecting the Agency description and name check of Stor
 commas, very long separator runs, "info at agency.com", Urdu digit words, and `Plot`/`Block`/`Sector`/`Phase` style
 addresses (allowed as public location). Public text can still carry contact details that evade the heuristics;
 hardening the shared patterns is a separate story.
+
+Also not detected: digit words in other languages (Urdu, Hindi, Arabic words for numbers) and look-alike scripts or
+glyph substitutions beyond NFKC folding. Listing text and the Epic 1 agency name and description share these gaps.
 
 ## Related constants
 
