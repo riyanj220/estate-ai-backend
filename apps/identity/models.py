@@ -70,6 +70,37 @@ class IndividualProfile(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+AGENCY_VERIFICATION_STATUSES = ["unverified"]  # the verification-evidence story extends this
+
+
+class AgencyProfile(models.Model):
+    """Profile of an Agency account. Written only by `identity.services`.
+
+    Privacy classes: `agency_name` and `city_id` are public; `business_phone` (E.164) and
+    `office_address` are private and never returned by any public or registration response.
+    `city_id` is a plain id checked against the City reference list in the service, not a foreign
+    key, because identity never imports catalog models. The business email is the account email.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account = models.OneToOneField(Account, on_delete=models.CASCADE, related_name="agency_profile")
+    agency_name = models.CharField(max_length=100)  # public
+    business_phone = models.CharField(max_length=16)  # private
+    office_address = models.CharField(max_length=300)  # private
+    city_id = models.UUIDField()  # public
+    verification_status = models.CharField(max_length=16, default="unverified")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(verification_status__in=AGENCY_VERIFICATION_STATUSES),
+                name="identity_agency_verification_status_valid",
+            ),
+        ]
+
+
 class EmailVerificationToken(models.Model):
     """A single-use verification link. Only the SHA-256 hash of the token is ever stored."""
 

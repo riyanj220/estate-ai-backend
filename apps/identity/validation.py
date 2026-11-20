@@ -1,11 +1,14 @@
 """Field rules for registration, as one pure set of validators.
 
 Each returns the cleaned value and an error code (None when valid). Codes are stable
-(`required`, `invalid_name`, `invalid_email`, `password_*`, `invalid_phone`; `invalid` for a value
-of the wrong type) and the values themselves are never put in an error. No request or model state.
+(`required`, `invalid_name`, `invalid_email`, `password_*`, `invalid_phone`, `invalid_address`,
+`invalid_city`; `invalid` for a value of the wrong type) and the values themselves are never put in
+an error. No request or model state.
 """
 
 import unicodedata
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from apps.identity.passwords import password_error
@@ -19,6 +22,11 @@ EMAIL_MAX = 254
 NAME_MIN = 2
 NAME_MAX = 80
 _NAME_PUNCTUATION = frozenset(" -'’.")
+AGENCY_NAME_MIN = 2
+AGENCY_NAME_MAX = 100
+_AGENCY_NAME_PUNCTUATION = frozenset(" &,.-'’()/")
+ADDRESS_MIN = 5
+ADDRESS_MAX = 300
 _JOINERS = frozenset("\u200c\u200d")  # ZWNJ and ZWJ, part of Urdu and Persian spelling
 
 
@@ -28,6 +36,16 @@ class IndividualDetails:
     email: str
     password: str
     phone: str  # E.164
+
+
+@dataclass(frozen=True)
+class AgencyDetails:
+    agency_name: str
+    email: str
+    password: str
+    phone: str  # E.164, private
+    office_address: str  # private
+    city_id: uuid.UUID
 
 
 def _blank(value) -> bool:
@@ -110,3 +128,115 @@ def validate_individual(
     if errors:
         return None, errors
     return IndividualDetails(name, address, secret, number), {}
+
+
+def _marks_follow_a_letter_or_mark(text: str) -> bool:
+    """A combining mark must follow a letter or another mark (not punctuation or the start)."""
+    previous = ""
+    for char in text:
+        if unicodedata.category(char).startswith("M") and not (
+            previous and (previous.isalpha() or unicodedata.category(previous).startswith("M"))
+        ):
+            return False
+        previous = char
+    return True
+
+
+def check_agency_name(value) -> tuple[str, str | None]:
+    """The agency name is shown publicly, so it gets the same contact-detail check as a name."""
+    if _blank(value):
+        return "", "required"
+    if not isinstance(value, str):
+        return "", "invalid"
+    name = " ".join(unicodedata.normalize("NFC", value).split())
+    if name[:1] in _JOINERS or name[-1:] in _JOINERS:
+        return "", "invalid_name"
+    if not AGENCY_NAME_MIN <= len(name) <= AGENCY_NAME_MAX:
+        return "", "invalid_name"
+    for char in name:
+        category = unicodedata.category(char)
+        if (
+            char not in _AGENCY_NAME_PUNCTUATION
+            and char not in _JOINERS
+            and not (char.isalpha() or category == "Nd" or category.startswith("M"))
+        ):
+            return "", "invalid_name"
+    if not any(char.isalpha() for char in name) or not _marks_follow_a_letter_or_mark(name):
+        return "", "invalid_name"
+    if reject_contact_details(name) is not None:
+        return "", "invalid_name"
+    return name, None
+
+
+def check_office_address(value) -> tuple[str, str | None]:
+    """Private, so only sanity checks: digits and phone-looking runs are fine in an address."""
+    if _blank(value):
+        return "", "required"
+    if not isinstance(value, str):
+        return "", "invalid"
+    # Control and format characters (NUL, newlines, tabs, invisibles) are refused before the
+    # whitespace collapse could hide them. ZWNJ and ZWJ stay valid inside Urdu text.
+    if any(unicodedata.category(char)[0] == "C" and char not in _JOINERS for char in value):
+        return "", "invalid_address"
+    address = " ".join(unicodedata.normalize("NFC", value).split())
+    if address[:1] in _JOINERS or address[-1:] in _JOINERS:
+        return "", "invalid_address"
+    if not ADDRESS_MIN <= len(address) <= ADDRESS_MAX:
+        return "", "invalid_address"
+    if sum(1 for char in address if char.isalpha() or unicodedata.category(char) == "Nd") < 3:
+        return "", "invalid_address"
+    return address, None
+
+
+def check_city_id(value) -> tuple[uuid.UUID | None, str | None]:
+    """Shape only: a canonical hyphenated UUID. Whether the city exists is the caller's lookup."""
+    if _blank(value):
+        return None, "required"
+    if isinstance(value, uuid.UUID):
+        return value, None
+    if not isinstance(value, str):
+        return None, "invalid"
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError:
+        return None, "invalid"
+    return (parsed, None) if str(parsed) == value.lower() else (None, "invalid")
+
+
+def validate_agency(
+    agency_name,
+    email,
+    password,
+    phone,
+    office_address,
+    city_id,
+    city_is_active: Callable[[uuid.UUID], bool],
+) -> tuple[AgencyDetails | None, dict[str, str]]:
+    """Every failing field with its code, or the cleaned details.
+
+    `city_is_active` is the caller's lookup (the validators stay free of database state).
+    """
+    name, name_error = check_agency_name(agency_name)
+    address, email_error = check_email(email)
+    secret, password_code = check_password(password, address or email)
+    number, phone_error = check_phone(phone)
+    office, office_error = check_office_address(office_address)
+    city, city_error = check_city_id(city_id)
+    cheap = (name_error, email_error, password_code, phone_error, office_error, city_error)
+    if city is not None and not any(cheap) and not city_is_active(city):
+        city_error = "invalid_city"  # the database lookup runs only once everything else passes
+    errors = {
+        field: code
+        for field, code in (
+            ("agency_name", name_error),
+            ("email", email_error),
+            ("password", password_code),
+            ("phone", phone_error),
+            ("office_address", office_error),
+            ("city_id", city_error),
+        )
+        if code
+    }
+    if errors:
+        return None, errors
+    return AgencyDetails(name, address, secret, number, office, city), {}
