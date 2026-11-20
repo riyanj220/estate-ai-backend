@@ -1,7 +1,7 @@
 # The Field registry (AD-4). Every change needs a version bump and a new lock:
 #   uv run python scripts/registry_lock.py
 # Format and rules: docs/registry.md
-version: 1
+version: 2
 
 taxonomy:
   purposes: [sale, rent]
@@ -37,3 +37,48 @@ fields:
     allowed_values: [house, apartment, residential_plot, commercial_plot, plot_file, shop, office]
     class: public
     quota_identity: true
+  - id: title
+    type: text
+    requirement: required_for_publication
+    applicability: {purposes: [], categories: [], subtypes: []}
+    min_length: 10
+    max_length: 100
+    class: public
+    searchable: true
+    ai_extractable: true
+  - id: description
+    type: text
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: []}
+    max_length: 5000
+    class: public
+    searchable: true
+    ai_extractable: true
+  - id: asking_price
+    type: money
+    requirement: required_for_publication
+    applicability: {purposes: [], categories: [], subtypes: []}
+    min: "0.01"
+    max: "999999999999.99"
+    currency: PKR
+    class: public
+    searchable: true
+    sortable: true
+    ai_extractable: true
+  - id: price_basis
+    type: enum
+    requirement: required_for_publication
+    applicability: {purposes: [], categories: [], subtypes: []}
+    allowed_values: [total, per_unit, rental_period]
+    allowed_values_by_purpose:
+      sale: [total, per_unit]
+      rent: [rental_period]
+    class: public
+    searchable: true
+  - id: rental_period
+    type: enum
+    requirement: required_for_publication
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    allowed_values: [day, week, month, year]
+    class: public
+    searchable: true

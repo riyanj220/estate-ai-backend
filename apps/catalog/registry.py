@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -31,7 +32,19 @@ _TOP_KEYS = {"version", "taxonomy", "fields"}
 _TAXONOMY_KEYS = {"purposes", "categories"}
 _CATEGORY_KEYS = {"id", "subtypes"}
 _REQUIRED_FIELD_KEYS = {"id", "type", "requirement", "applicability", "class"}
-_FIELD_KEYS = _REQUIRED_FIELD_KEYS | {"allowed_values", *FLAGS}
+_TEXT_KEYS = {"min_length", "max_length"}
+_MONEY_KEYS = {"min", "max", "currency"}
+_FIELD_KEYS = (
+    _REQUIRED_FIELD_KEYS
+    | {"allowed_values", "allowed_values_by_purpose", *FLAGS}
+    | _TEXT_KEYS
+    | _MONEY_KEYS
+)
+CURRENCY = "PKR"  # the only currency; money columns are NUMERIC(14,2)
+MONEY_DECIMALS = 2
+MONEY_CEILING = Decimal("999999999999.99")  # what NUMERIC(14,2) holds
+TEXT_LENGTH_CEILING = 20_000  # a text field longer than this is a different kind of field
+_MONEY_VALUE = re.compile(r"^\d{1,12}(?:\.\d{1,2})?$", re.ASCII)
 _APPLICABILITY_KEYS = ("purposes", "categories", "subtypes")
 
 
@@ -63,6 +76,30 @@ class FieldDef:
     ai_extractable: bool
     valuation_input: bool
     quota_identity: bool
+    # text: length bounds in characters after normalisation (`min_length` 0 means no minimum)
+    min_length: int | None = None
+    max_length: int | None = None
+    # money: inclusive bounds (the minimum is the smallest amount allowed), currency PKR
+    minimum: Decimal | None = None
+    maximum: Decimal | None = None
+    currency: str | None = None
+    # enum narrowed by Listing purpose: ((purpose, (value, ...)), ...); None means no narrowing
+    allowed_values_by_purpose: tuple[tuple[str, tuple[str, ...]], ...] | None = None
+
+    def values_for(self, purpose: str | None) -> tuple[str, ...] | None:
+        """The enum values allowed for a Listing of this purpose (all of them without a map)."""
+        if self.allowed_values_by_purpose is not None:
+            return dict(self.allowed_values_by_purpose).get(purpose, ())
+        return self.allowed_values
+
+    def applies_to(self, purpose: str, category: str, subtype: str) -> bool:
+        """Whether the field applies to a Listing with this purpose, Category and Subtype."""
+        scope = self.applicability
+        return (
+            (not scope.purposes or purpose in scope.purposes)
+            and (not scope.categories or category in scope.categories)
+            and (not scope.subtypes or subtype in scope.subtypes)
+        )
 
 
 @dataclass(frozen=True)
@@ -163,6 +200,68 @@ def _flag(entry: dict, name: str) -> bool:
     return value
 
 
+def _by_purpose(entry: dict, values, purposes) -> tuple | None:
+    if "allowed_values_by_purpose" not in entry:
+        return None
+    if entry["type"] != "enum":
+        _fail("only an enum has allowed_values_by_purpose")
+    raw = entry["allowed_values_by_purpose"]
+    if not isinstance(raw, dict) or set(raw) != set(purposes):
+        _fail("allowed_values_by_purpose must list every purpose and only purposes")
+    pairs = []
+    for purpose in purposes:
+        subset = _id_list(raw[purpose], "allowed_values_by_purpose", _VALUE)
+        if not subset or set(subset) - set(values):
+            _fail("allowed_values_by_purpose must be a non-empty subset of allowed_values")
+        pairs.append((purpose, subset))
+    return tuple(pairs)
+
+
+def _int_bound(entry: dict, key: str, low: int, high: int) -> int | None:
+    if key not in entry:
+        return None
+    value = entry[key]
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        _fail(f"{key} must be an integer from {low} to {high}")
+    return value
+
+
+def _text_rules(entry: dict) -> dict:
+    present = _TEXT_KEYS & set(entry)
+    if entry["type"] != "text":
+        if present:
+            _fail("only a text field has min_length or max_length")
+        return {}
+    if "max_length" not in entry:
+        _fail("a text field needs max_length")
+    maximum = _int_bound(entry, "max_length", 1, TEXT_LENGTH_CEILING)
+    minimum = _int_bound(entry, "min_length", 0, maximum) or 0
+    return {"min_length": minimum, "max_length": maximum}
+
+
+def _money_amount(entry: dict, key: str) -> Decimal:
+    value = entry.get(key)
+    if not isinstance(value, str) or not _MONEY_VALUE.fullmatch(value):
+        _fail(f"{key} must be a decimal string with at most {MONEY_DECIMALS} decimals")
+    return Decimal(value)
+
+
+def _money_rules(entry: dict) -> dict:
+    present = _MONEY_KEYS & set(entry)
+    if entry["type"] != "money":
+        if present:
+            _fail("only a money field has min, max or currency")
+        return {}
+    if present != _MONEY_KEYS:
+        _fail("a money field needs min, max and currency")
+    if entry["currency"] != CURRENCY:
+        _fail(f"currency must be {CURRENCY}")
+    minimum, maximum = _money_amount(entry, "min"), _money_amount(entry, "max")
+    if minimum > maximum:
+        _fail("min is above max")
+    return {"minimum": minimum, "maximum": maximum, "currency": CURRENCY}
+
+
 def _field(entry, purposes, categories) -> FieldDef:
     entry = _mapping(entry, _FIELD_KEYS, "a field", _REQUIRED_FIELD_KEYS)
     if not _is_id(entry["id"]):
@@ -207,6 +306,9 @@ def _field(entry, purposes, categories) -> FieldDef:
             _fail("an enum's allowed values do not match the taxonomy")
     elif "allowed_values" in entry:
         _fail("only an enum has allowed values")
+    by_purpose = _by_purpose(entry, values, purposes)
+    text_rules = _text_rules(entry)
+    money_rules = _money_rules(entry)
     return FieldDef(
         id=entry["id"],
         type=entry["type"],
@@ -215,6 +317,9 @@ def _field(entry, purposes, categories) -> FieldDef:
         allowed_values=values,
         field_class=entry["class"],
         **flags,
+        **text_rules,
+        **money_rules,
+        allowed_values_by_purpose=by_purpose,
     )
 
 
