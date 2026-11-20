@@ -2,7 +2,7 @@
 title: 'Story 2.2: Conflict-safe editing (frontend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -91,6 +91,10 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Three reviewers (blind, edge-case, verification-gap). Patched in one batch: commas in prices (the real backend rejects them; stub made strict, priceKey no longer strips them, clearer message, plain-digit hint); revision safety (200 or 409 `current` needs same id and an integer revision, 409 must be newer, else reload by GET); text comparison now NFC + whitespace collapse like the server; "already saved" only when nothing else moved; conflict banner clears after every row is resolved; dead helper removed; seven added tests.
+Deferred: in-app navigation guard (needs storage or a router interceptor; accepted limit, documented), keeping typed input across a bfcache restore (restore remounts from server data), admin-401 test (administrators get 404 on Drafts), `not_editable` has its own text instead of generic, timeout copy does not say a save may have landed, stub gaps (punctuation-only text, negative price code).
+Verification: lint, typecheck, build, api:check, full Playwright 833 passed.
 
 ## Design Notes
 
