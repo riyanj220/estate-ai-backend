@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from rest_framework import serializers
 from rest_framework.exceptions import ErrorDetail
 
+from apps.kernel.errors import DomainError
+
 
 def field_errors(fields: Mapping[str, str]) -> serializers.ValidationError:
     """Field errors keyed by field name, carrying only stable codes (never submitted values)."""
@@ -33,3 +35,15 @@ def single_field(data, name: str):
     if name not in values:
         raise serializers.ValidationError({name: [ErrorDetail("required", code="required")]})
     return values[name]
+
+
+class ConflictWithCurrent(DomainError):
+    """`409 stale_revision` whose body also carries the current resource under `current`.
+
+    Raised by a view with the already serialised resource; the shared exception handler adds
+    it to the standard envelope, so request id, logging and headers behave as for any error.
+    """
+
+    def __init__(self, current: dict) -> None:
+        super().__init__("stale_revision")
+        self.extra = {"current": current}

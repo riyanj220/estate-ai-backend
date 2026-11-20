@@ -97,10 +97,11 @@ def build_envelope(code: str, request_id: str, fields: dict | None = None) -> di
     ).data
 
 
-def error_response(code: str, request, fields=None, headers=None) -> Response:
+def error_response(code: str, request, fields=None, headers=None, extra=None) -> Response:
     request_id = getattr(request, "request_id", "")
+    body = {**build_envelope(code, request_id, fields), **(extra or {})}
     return Response(
-        build_envelope(code, request_id, fields),
+        body,
         status=get_error(code).status,
         headers=headers,
     )
@@ -118,4 +119,5 @@ def exception_handler(exc, context):
     elif isinstance(exc, RateLimited):
         headers["Retry-After"] = str(exc.retry_after)
     set_rollback()
-    return error_response(code, request, fields, headers)
+    extra = getattr(exc, "extra", None) if isinstance(exc, DomainError) else None
+    return error_response(code, request, fields, headers, extra)

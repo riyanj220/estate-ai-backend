@@ -12,7 +12,7 @@ from apps.presentation.api.permissions import AllowPublic
 MAX_AGE = 300
 # Bump when the response shape (serializers) changes without a registry change, so client
 # caches are invalidated.
-RESPONSE_SHAPE_VERSION = 1
+RESPONSE_SHAPE_VERSION = 2
 FIELD_TYPES = registry.FIELD_TYPES
 
 
@@ -30,6 +30,26 @@ class RegistryFieldSerializer(serializers.Serializer):
     allowed_values = serializers.ListField(
         child=serializers.CharField(), allow_null=True, help_text="Enums only; null otherwise."
     )
+    allowed_values_by_purpose = serializers.DictField(
+        child=serializers.ListField(child=serializers.CharField()),
+        allow_null=True,
+        help_text="Enums narrowed by Listing purpose (purpose -> allowed values); else null.",
+    )
+    min_length = serializers.IntegerField(
+        allow_null=True, help_text="Text only: minimum characters after normalisation."
+    )
+    max_length = serializers.IntegerField(
+        allow_null=True, help_text="Text only: maximum characters after normalisation."
+    )
+    min = serializers.CharField(
+        source="minimum",
+        allow_null=True,
+        help_text="Money only: smallest amount, a decimal string.",
+    )
+    max = serializers.CharField(
+        source="maximum", allow_null=True, help_text="Money only: largest amount, a decimal string."
+    )
+    currency = serializers.CharField(allow_null=True, help_text="Money only: `PKR`.")
     class_ = serializers.ChoiceField(choices=registry.CLASSES, source="field_class")
     searchable = serializers.BooleanField()
     sortable = serializers.BooleanField()
@@ -94,6 +114,16 @@ def _body() -> dict:
                         "subtypes": list(f.applicability.subtypes),
                     },
                     "allowed_values": None if f.allowed_values is None else list(f.allowed_values),
+                    "allowed_values_by_purpose": (
+                        None
+                        if f.allowed_values_by_purpose is None
+                        else {p: list(v) for p, v in f.allowed_values_by_purpose}
+                    ),
+                    "min_length": f.min_length,
+                    "max_length": f.max_length,
+                    "minimum": None if f.minimum is None else str(f.minimum),
+                    "maximum": None if f.maximum is None else str(f.maximum),
+                    "currency": f.currency,
                     "field_class": f.field_class,
                     "searchable": f.searchable,
                     "sortable": f.sortable,

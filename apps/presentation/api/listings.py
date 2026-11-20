@@ -1,8 +1,10 @@
-"""Listing endpoints (Story 2.1): start a Draft, read an owned Listing, list own Listings.
+"""Listing endpoints: start a Draft, read an owned Listing, list own Listings (Story 2.1) and
+edit one with a revision check (Story 2.2).
 
 Rules live in `listings`; enums come from the Field registry, never hand-copied.
 """
 
+from django.core.exceptions import ImproperlyConfigured
 from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiResponse,
@@ -15,13 +17,16 @@ from rest_framework.views import APIView
 
 from apps.catalog import registry
 from apps.listings import selectors, services
-from apps.listings.lifecycle import ListingStatus, Visibility
+from apps.listings.fields import EDITABLE_FIELDS, WIRE_FIELDS
+from apps.listings.lifecycle import ListingStatus, Origin, Visibility
 from apps.presentation.api.actors import get_actor
-from apps.presentation.api.bodies import exact_fields, field_errors
+from apps.presentation.api.bodies import ConflictWithCurrent, exact_fields, field_errors
 from apps.presentation.api.passwords import NoStoreMixin
 from apps.presentation.api.permissions import RequireSignedIn
+from apps.presentation.api.serializers import ErrorBodySerializer
 
 CREATE_FIELDS = ("purpose", "category", "subtype")
+UPDATE_BODY = ("base_revision", "fields")
 PAGE_SIZE = selectors.DEFAULT_LIMIT
 MAX_PAGE_SIZE = selectors.MAX_LIMIT
 
@@ -35,12 +40,53 @@ CATEGORIES = _choices(c.id for c in registry.categories())
 SUBTYPES = _choices(registry.all_subtypes())
 
 
-class ListingFieldsSerializer(serializers.Serializer):
-    """Flat registry ids. Null means unknown."""
+ORIGINS = _choices(o.value for o in Origin)
 
-    purpose = serializers.ChoiceField(choices=PURPOSES, allow_null=True)
-    category = serializers.ChoiceField(choices=CATEGORIES, allow_null=True)
-    subtype = serializers.ChoiceField(choices=SUBTYPES, allow_null=True)
+
+def _help(definition) -> str:
+    if definition.type == "money":
+        return f"Decimal string in {definition.currency} with two decimals, e.g. `1500000.00`."
+    if definition.type == "text":
+        low = f"{definition.min_length} to " if definition.min_length else "Up to "
+        return f"{low}{definition.max_length} characters."
+    return ""
+
+
+def _serializer_field(definition, update: bool):
+    """The documented field for a registry definition (the service judges every value)."""
+    options = {"allow_null": True, "help_text": _help(definition)}
+    if update:
+        options["required"] = False
+    if definition.type == "enum":
+        return serializers.ChoiceField(choices=_choices(definition.allowed_values), **options)
+    return serializers.CharField(**options)  # text, and money as a decimal string
+
+
+def _field_serializer(name: str, names, update: bool, doc: str):
+    declared = {}
+    for field_id in names:
+        definition = registry.field(field_id)
+        if definition is None:  # a mapped field must be defined (tests/listings/test_fields.py)
+            raise ImproperlyConfigured(f"registry field {field_id} is missing")
+        declared[field_id] = _serializer_field(definition, update)
+    return type(name, (serializers.Serializer,), {**declared, "__doc__": doc})
+
+
+# Built from the registry and the single field map (`listings.fields`), never hand-listed.
+ListingFieldsSerializer = _field_serializer(
+    "ListingFieldsSerializer", WIRE_FIELDS, False, "Flat registry ids. Null means unknown."
+)
+ListingFieldsUpdateSerializer = _field_serializer(
+    "ListingFieldsUpdateSerializer",
+    EDITABLE_FIELDS,
+    True,
+    "The editable fields; the service judges every value (null clears a field).",
+)
+
+
+class ProvenanceEntrySerializer(serializers.Serializer):
+    origin = serializers.ChoiceField(choices=ORIGINS)
+    confirmed = serializers.BooleanField()
 
 
 class ListingSerializer(serializers.Serializer):
@@ -50,6 +96,10 @@ class ListingSerializer(serializers.Serializer):
     revision = serializers.IntegerField(min_value=1)
     registry_version = serializers.IntegerField(min_value=1)
     fields = ListingFieldsSerializer()
+    provenance = serializers.DictField(
+        child=ProvenanceEntrySerializer(),
+        help_text="Registry field id -> where the value came from; set fields only.",
+    )
     media = serializers.ListField(
         child=serializers.DictField(), help_text="Empty until Story 2.10."
     )
@@ -70,6 +120,36 @@ class DraftCreateSerializer(serializers.Serializer):
         return exact_fields(data, CREATE_FIELDS)
 
 
+class ListingUpdateSerializer(serializers.Serializer):
+    base_revision = serializers.IntegerField(
+        min_value=1, help_text="The `revision` of the Listing the client last read."
+    )
+    fields = ListingFieldsUpdateSerializer()
+
+    # Both keys are always required, also on PATCH: keep the schema generator from publishing
+    # a partial "Patched" body with optional keys.
+    @property
+    def partial(self):
+        return False
+
+    @partial.setter
+    def partial(self, value):
+        pass
+
+    def to_internal_value(self, data):
+        # Only the two keys are accepted (`origin` and `confirmed` are never client input);
+        # shapes and values are judged by the service, in its order, all failures at once.
+        values = exact_fields(data, UPDATE_BODY)
+        return {name: values.get(name) for name in UPDATE_BODY}
+
+
+class ListingConflictSerializer(serializers.Serializer):
+    """`409 stale_revision`: the error envelope plus the Listing as it is now."""
+
+    error = ErrorBodySerializer()
+    current = ListingSerializer(help_text="The current Listing, to reload and reapply the edit.")
+
+
 class ListingPageSerializer(serializers.Serializer):
     next = serializers.CharField(allow_null=True)
     previous = serializers.CharField(allow_null=True)
@@ -85,6 +165,7 @@ def _data(view: selectors.ListingView) -> dict:
             "revision": view.revision,
             "registry_version": view.registry_version,
             "fields": dict(view.fields),
+            "provenance": {name: dict(entry) for name, entry in view.provenance.items()},
             "media": list(view.media),
             "amenities": list(view.amenities),
         }
@@ -139,6 +220,53 @@ class ListingDetailView(NoStoreMixin, APIView):
     )
     def get(self, request, listing_id):
         return Response(_data(selectors.get_owned_listing(get_actor(request), listing_id)))
+
+    @extend_schema(
+        operation_id="update_listing",
+        summary="Edit one of the signed-in account's own Listings",
+        description=(
+            "Needs `X-CSRFToken`. Body: `{base_revision, fields}` and nothing else (any other "
+            "key, `origin` and `confirmed` included, is `validation_error` `unknown_field`). "
+            "`fields` holds registry ids: `title`, `description`, `asking_price` (a decimal "
+            "string in PKR, at most two decimals), `price_basis` and `rental_period`; `null` "
+            "clears a field. Saving never needs complete data. Every saved field is recorded "
+            "as `manual` and confirmed; the client never chooses provenance. A `base_revision` "
+            "that is not the current `revision` is `409 stale_revision` with the current "
+            "Listing under `current` and nothing written (a retried PATCH after it succeeded "
+            "is also a 409: reload). An edit that changes nothing is `200` and keeps the "
+            "revision. `400` carries codes keyed by registry field id (`invalid`, `too_short`, "
+            "`too_long`, `invalid_price`, `invalid_choice`, `not_applicable`, "
+            "`contains_contact_details`, `not_editable`; unknown ids are "
+            "`unknown_field` under `non_field_errors`) and never echoes a value. Another "
+            "account's, an unknown or a malformed id is `404 not_found`; an account that may "
+            "not edit (Suspended, Deactivated) is `403 forbidden`. Never cached."
+        ),
+        request=ListingUpdateSerializer,
+        responses={
+            200: OpenApiResponse(ListingSerializer, description="The updated Listing"),
+            409: OpenApiResponse(
+                ListingConflictSerializer,
+                description="Stale revision: the Listing changed; `current` holds it",
+            ),
+        },
+    )
+    def patch(self, request, listing_id):
+        serializer = ListingUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        body = serializer.validated_data
+        try:
+            view = services.apply_updates(
+                get_actor(request),
+                listing_id,
+                body["base_revision"],
+                body["fields"],
+                origin=Origin.MANUAL,  # fixed here, never read from the request
+            )
+        except services.FieldsInvalid as exc:
+            raise field_errors(exc.fields) from None
+        except services.StaleRevision as exc:
+            raise ConflictWithCurrent(_data(exc.current)) from None
+        return Response(_data(view))
 
 
 def _page_size(request) -> int:
