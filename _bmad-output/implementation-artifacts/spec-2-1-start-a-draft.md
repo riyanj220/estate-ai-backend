@@ -2,7 +2,7 @@
 title: 'Story 2.1: Start a Draft with purpose, Category and Subtype (backend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -104,6 +104,23 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, backend half (blind, edge-case, verification-gap).
+
+| # | Finding | Verdict | Route |
+|---|---------|---------|-------|
+| 1 | The eligibility re-check after `lock_account` reused the stale actor, so an account suspended or deactivated between the first check and the lock could still create a Draft (edge) | high | patch: decided from the locked account snapshot, with tests that change the state between the two checks |
+| 2 | Crafted cursors (non-string fields, extreme datetimes, status mismatch) and huge `page_size` or non-canonical ids could 500 or alias a listing (edge, blind) | high | patch: every malformed shape is `InvalidCursor` (400), the status filter is bound into the cursor, canonical ids only, 1 to 3 digit page sizes |
+| 3 | Registry ids up to 48 characters could overflow the 32-character columns; loader accepted unhashable keys, merge keys and contradictory applicability (edge, blind) | medium | patch: loader limits and rules, tests per rule |
+| 4 | The version lock was advisory and the script allowed a lower version (blind) | medium | patch: script refuses a lower version; documented that reviewers must read `fields.yaml` and `fields.lock` together |
+| 5 | ETag ignored serializer changes (blind) | low | patch: response-shape version mixed into the tag |
+| 6 | The database CHECK constraints had no direct tests; `subtype_not_in_category` showed the generic message; deactivated and cursor tests were loose; the cap race test was timing-based (verification-gap) | high | patch: constraint tests, distinct message, exact assertions, deterministic lock-ordering test and repeated rounds |
+| 7 | Taxonomy frozen into database constraints means a taxonomy change needs a migration (blind, edge) | medium | accept, documented, with a drift test (matches the spec; taxonomy changes rarely) |
+| 8 | Private-class fields are listed in the public registry response; `ai_extractable` and `quota_identity` allowed on private fields (blind) | low | accept, documented (metadata, never values) |
+| 9 | Own-list returns 403 for administrators while the detail route returns 404; hand-rolled cursor instead of the shared pagination class (blind, edge) | low | accept, documented: presentation cannot hold listing models, so listings does keyset paging |
+| 10 | Index shape for the unfiltered own list (blind) | low | patch: two composite indexes |
+
+Deviations recorded: cap counted after `lock_account` with `DomainError("throttled")` and no `Retry-After` (kernel.ratelimit has no cap counter); cursor datetimes must fall between years 2000 and 9000; PyYAML moved from dev to runtime dependencies.
 
 ## Design Notes
 
