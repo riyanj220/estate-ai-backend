@@ -1,0 +1,14 @@
+"""Domain events emitted by `listings` (AD-18). Subscribers register in their own app's `ready`."""
+
+import uuid
+from dataclasses import dataclass
+
+from apps.kernel.events import DomainEvent
+
+
+@dataclass(frozen=True)
+class ListingModelInputsChanged(DomainEvent):
+    """A field flagged `valuation_input` in the registry changed value (derived, repairable)."""
+
+    name = "listing.model_inputs_changed"
+    listing_id: uuid.UUID

@@ -77,8 +77,13 @@ FIELD_MESSAGES: dict[str, str] = {
     "invalid_city": "Choose a city from the list.",
     "invalid_description": "Enter a description of up to 1000 characters, or leave it empty.",
     "contains_contact_details": (
-        "Descriptions cannot contain phone numbers, email addresses or street addresses."
+        "This text cannot contain phone numbers, email addresses or street addresses."
     ),
+    "not_editable": "This field cannot be changed here.",
+    "not_applicable": "This field does not apply to this listing.",
+    "too_short": "This text is too short.",
+    "too_long": "This text is too long.",
+    "invalid_price": "Enter an amount above zero with at most two decimals.",
 }
 DEFAULT_FIELD_MESSAGE = "Enter a valid value."
 

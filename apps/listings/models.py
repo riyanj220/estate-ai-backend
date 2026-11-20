@@ -3,6 +3,8 @@ from functools import reduce
 from operator import or_
 
 from django.db import models
+from django.db.models.functions import Length
+from django.db.models.lookups import GreaterThanOrEqual, LessThanOrEqual
 from django.utils import timezone
 
 from apps.catalog import registry
@@ -21,6 +23,58 @@ def _taxonomy_pairs() -> models.Q:
     )
 
 
+def _def(field_id: str) -> registry.FieldDef:
+    found = registry.field(field_id)
+    if found is None:  # a registry without the editable fields cannot start
+        raise RuntimeError(f"registry field {field_id} is missing")
+    return found
+
+
+_TITLE = _def("title")
+
+
+def text_constraints() -> list[models.CheckConstraint]:
+    """Length CHECKs of title and description, generated from the current registry."""
+    title, description = _def("title"), _def("description")
+    return [
+        models.CheckConstraint(
+            condition=models.Q(title__isnull=True)
+            | (
+                models.Q(GreaterThanOrEqual(Length("title"), title.min_length))
+                & models.Q(LessThanOrEqual(Length("title"), title.max_length))
+            ),
+            name="listings_title_length",
+        ),
+        models.CheckConstraint(
+            condition=models.Q(description__isnull=True)
+            | models.Q(LessThanOrEqual(Length("description"), description.max_length)),
+            name="listings_description_length",
+        ),
+    ]
+
+
+def terms_constraints() -> list[models.CheckConstraint]:
+    """Price range and enum CHECKs of the terms, generated from the current registry."""
+    price, basis, period = _def("asking_price"), _def("price_basis"), _def("rental_period")
+    return [
+        models.CheckConstraint(
+            condition=models.Q(asking_price__isnull=True)
+            | models.Q(asking_price__gte=price.minimum, asking_price__lte=price.maximum),
+            name="listings_terms_price_range",
+        ),
+        models.CheckConstraint(
+            condition=models.Q(price_basis__isnull=True)
+            | models.Q(price_basis__in=list(basis.allowed_values)),
+            name="listings_terms_basis_valid",
+        ),
+        models.CheckConstraint(
+            condition=models.Q(rental_period__isnull=True)
+            | models.Q(rental_period__in=list(period.allowed_values)),
+            name="listings_terms_period_valid",
+        ),
+    ]
+
+
 class PropertyListing(models.Model):
     """The one canonical Listing. Written only by `listings.services`; never leaves the app."""
 
@@ -32,6 +86,10 @@ class PropertyListing(models.Model):
     purpose = models.CharField(max_length=32)
     category = models.CharField(max_length=32)
     subtype = models.CharField(max_length=32)
+    title = models.CharField(max_length=_TITLE.max_length, null=True)  # empty is null
+    description = models.TextField(null=True)  # empty is null
+    # registry field id -> {"origin": "manual"|"ai", "confirmed": bool}, set fields only
+    provenance = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
 
@@ -68,6 +126,7 @@ class PropertyListing(models.Model):
             models.CheckConstraint(
                 condition=_taxonomy_pairs(), name="listings_subtype_in_category"
             ),
+            *text_constraints(),
         ]
 
 
@@ -91,3 +150,16 @@ class ListingRevision(models.Model):
                 name="listings_revision_origin_valid",
             ),
         ]
+
+
+class ListingTerms(models.Model):
+    """Price data of a Listing (one row, created lazily). Money is NUMERIC, never a float."""
+
+    listing = models.OneToOneField(PropertyListing, on_delete=models.CASCADE, related_name="terms")
+    asking_price = models.DecimalField(max_digits=14, decimal_places=2, null=True)
+    price_basis = models.CharField(max_length=32, null=True)
+    rental_period = models.CharField(max_length=32, null=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = terms_constraints()

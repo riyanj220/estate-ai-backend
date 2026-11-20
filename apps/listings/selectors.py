@@ -10,25 +10,28 @@ import json
 import re
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from types import MappingProxyType
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 
 from apps.identity.capabilities import Capability
 from apps.identity.policy import can
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
 from apps.kernel.errors import DomainError
-from apps.listings.lifecycle import ListingStatus, visibility_of
-from apps.listings.models import PropertyListing
+from apps.listings.fields import IDENTITY_FIELDS, LISTING_FIELDS, TERMS_FIELDS
+from apps.listings.lifecycle import ListingStatus, Origin, visibility_of
+from apps.listings.models import ListingTerms, PropertyListing
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
 _MIN_YEAR, _MAX_YEAR = 2000, 9000
 _CURSOR = re.compile(r"^[A-Za-z0-9_-]{1,200}$")
-# Registry field ids stored as columns of the Listing now; later stories add more.
-_COLUMN_FIELDS = ("purpose", "category", "subtype")
+_COLUMN_FIELDS = (*IDENTITY_FIELDS, *LISTING_FIELDS)
+MONEY_FORMAT = "{:.2f}"  # money is a decimal string with two decimals on the wire
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,10 @@ class ListingView:
     revision: int
     registry_version: int
     fields: Mapping[str, object]  # flat registry ids; null for unknown
+    # registry id -> {"origin", "confirmed"}, for fields that are set
+    provenance: Mapping[str, Mapping[str, object]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
     media: tuple = ()
     amenities: tuple = ()
 
@@ -55,18 +62,57 @@ class InvalidCursor(ValueError):
     """A cursor that is malformed or was not issued by `list_owned`."""
 
 
-def view_of(row: PropertyListing) -> ListingView:
+def terms_of(row: PropertyListing) -> ListingTerms | None:
+    """The Listing's terms row, or None when none was written yet (created lazily)."""
+    try:
+        return row.terms
+    except ObjectDoesNotExist:
+        return None
+
+
+def clean_provenance(stored) -> dict[str, dict]:
+    """Well-formed entries only: a malformed one is skipped, never an error for a read."""
+    if not isinstance(stored, dict):
+        return {}
+    clean = {}
+    for name, entry in stored.items():
+        if (
+            isinstance(name, str)
+            and isinstance(entry, dict)
+            and entry.get("origin") in {o.value for o in Origin}
+            and isinstance(entry.get("confirmed"), bool)
+        ):
+            clean[name] = {"origin": entry["origin"], "confirmed": entry["confirmed"]}
+    return clean
+
+
+def _money(value) -> str | None:
+    return None if value is None else MONEY_FORMAT.format(value)
+
+
+def view_of(row: PropertyListing, terms: ListingTerms | None = None) -> ListingView:
+    terms = terms if terms is not None else terms_of(row)
+    fields = {name: getattr(row, name) for name in _COLUMN_FIELDS}
+    for name in TERMS_FIELDS:
+        value = getattr(terms, name) if terms else None
+        fields[name] = _money(value) if isinstance(value, Decimal) else value
+    provenance = {
+        name: MappingProxyType(entry)
+        for name, entry in clean_provenance(row.provenance).items()
+        if name in fields and fields[name] is not None
+    }
     return ListingView(
         id=row.id,
         status=row.status,
         visibility=visibility_of(ListingStatus(row.status)).value,
         revision=row.revision,
         registry_version=row.registry_version,
-        fields=MappingProxyType({name: getattr(row, name) for name in _COLUMN_FIELDS}),
+        fields=MappingProxyType(fields),
+        provenance=MappingProxyType(provenance),
     )
 
 
-def _canonical_uuid(value) -> uuid.UUID | None:
+def canonical_uuid(value) -> uuid.UUID | None:
     """Only the canonical lowercase hyphenated form (a UUID object also passes)."""
     if isinstance(value, uuid.UUID):
         return value
@@ -85,10 +131,14 @@ def _owner_actor(actor: Actor) -> bool:
 
 def get_owned_listing(actor: Actor, listing_id) -> ListingView:
     """The owner's own Listing; anything else is `not_found` (never forbidden)."""
-    key = _canonical_uuid(listing_id)
+    key = canonical_uuid(listing_id)
     if key is None or not _owner_actor(actor):
         raise DomainError("not_found")
-    row = PropertyListing.objects.filter(id=key, owner_account_id=actor.account_id).first()
+    row = (
+        PropertyListing.objects.select_related("terms")
+        .filter(id=key, owner_account_id=actor.account_id)
+        .first()
+    )
     if row is None:
         raise DomainError("not_found")
     return view_of(row)
@@ -113,7 +163,7 @@ def decode_cursor(cursor: str, status: str | None) -> tuple[datetime, uuid.UUID]
         if not all(isinstance(data[k], str) for k in data):
             raise InvalidCursor
         created_at = datetime.fromisoformat(data["c"])
-        listing_id = _canonical_uuid(data["i"])
+        listing_id = canonical_uuid(data["i"])
         if created_at.tzinfo is None or listing_id is None or data["s"] != (status or ""):
             raise InvalidCursor
         created_at = created_at.astimezone(UTC)
@@ -136,7 +186,7 @@ def list_owned(
     require_signed_in(actor)
     if actor.kind is not ActorKind.USER or not can(actor, Capability.VIEW_DRAFTS):
         raise DomainError("forbidden")
-    rows = PropertyListing.objects.filter(owner_account_id=actor.account_id)
+    rows = PropertyListing.objects.select_related("terms").filter(owner_account_id=actor.account_id)
     if status is not None:
         rows = rows.filter(status=ListingStatus(status).value)
     if cursor is not None:
