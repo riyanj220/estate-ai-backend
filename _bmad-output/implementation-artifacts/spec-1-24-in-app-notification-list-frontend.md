@@ -2,7 +2,7 @@
 title: 'Story 1.24: In-app notification list (frontend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -84,6 +84,21 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, frontend half (blind, edge-case, verification-gap).
+
+**Patched:**
+- The list and the header count were separate sources of truth: "Mark all as read" was disabled by a stale zero count while unread items showed, and could replace loaded pages with page 1. The loaded list now decides button states, mark-all marks loaded items in place and keeps loaded pages, a disabled click announces "No unread notifications."
+- Filter and mutation races: first-page fetches are tagged with their filter and dropped when stale, mark and load-more actions are refused while a reload is in flight, a mutation that raced a reload triggers a quiet re-read, mark-one after the list changed only refreshes the count, and the focus target cannot leak.
+- Unread filter emptied with a `next` link auto-fetches pages (bounded) instead of showing a blank list with Load more.
+- Parsing and errors: one malformed item no longer fails the page, an unusable `next` is a load error with Retry, duplicate-only load-more is announced and ends the list, list 429 shows the wait and 403 a clear message without a Retry loop.
+- Unread count provider: keyed on the account id (a count owned by another account is never shown), focus and visibility coalesced with a 5 second minimum interval, 403 and 429 stop reads until the next sign-in, a failed first read retries once.
+- Accessibility: list items instead of a heading per item, `aria-current` on the header link, busy text on Load more, identical announcements re-announce.
+- Tests (66 new): hung requests, no-store request proof, exact count reads, sign-in and account-switch count behaviour, 401 on every action, network aborts, out-of-order toggling, stale zero count, mark-all keeps pages, double-click on Load more, announce-once, extra payload keys and prototype-key kinds, privacy including load-more.
+
+**Deferred:** a dedicated list hook instead of stretching `useProfileLoad` (README tech debt), scroll anchor restoration after re-reads, a page-level count retry (it would break the exact-once count read), e2e tests for the empty-title fallback and the unusable load-more body.
+
+Notes: `agency-profile.spec.ts` (a serial file from Story 1.21) failed once in each of three full runs on a different cities test and passes in full alone (82 of 82); recorded as test tech debt (the serial mode skips the rest of the file after one flake).
 
 ## Design Notes
 
