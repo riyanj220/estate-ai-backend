@@ -2,7 +2,7 @@
 title: 'Story 1.24: In-app notification list (backend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -100,6 +100,23 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, backend half (blind, edge-case, verification-gap).
+
+| # | Finding | Verdict | Route |
+|---|---------|---------|-------|
+| 1 | The `uuid` payload type let a producer embed another account's id; enum values and `short_text` could carry emails, URLs or phone digits split by spaces (blind) | high | patch: `uuid` removed, enums match a strict token pattern, `short_text` refused for `@`, URL schemes, `www.` and more than 6 digits in total |
+| 2 | Read retention ran from `created_at`, so a notification read on day 89 vanished a day later; unbounded delete (blind, edge) | medium | patch: 90 days from `read_at`, 180 days from `created_at`, batched deletes, `read_at` index |
+| 3 | `remove_admin` could leave orphan rows when a notify was queued in the same transaction (blind, edge, verification-gap) | medium | patch: after-commit delete registered last, helper documented for other removal flows |
+| 4 | A tampered cursor with a non-numeric or oversized position caused a 500 (found while patching) | medium | patch: positions validated, `400 validation_error` envelope |
+| 5 | `notify` was called before later steps that could still be swallowed (blind) | low | patch: `notify` is the last statement in each flow |
+| 6 | Sequence taken separately from the insert; 1 KB size check over-counted non-ASCII (edge) | low | patch: `db_default` nextval, `ensure_ascii=False` |
+| 7 | Tests: account removal, password change and reset rollback, the real 1 KB limit, a vacuous storage-failure test, unread filter across pages, end-to-end privacy (verification-gap) | medium | patch: 33 tests |
+| 8 | A late-committing notification can have a lower `seq` than one already visible; the cursor reveals a global position counter (blind, edge) | medium | defer, accepted and documented: clients refetch page 1 and use the unread count; the counter shows volume only |
+| 9 | Failed stores are logged but never retried or reconciled (blind, edge) | low | defer, documented: a spike of `notification_store_failed` signals a grant or table problem |
+| 10 | Registry has no test reset hook; `read-all/read` literal path returns 404 (blind) | low | defer |
+
+Deviation recorded: a bad cursor is `400 validation_error` in this view only; the generic pagination test keeps its own behaviour.
 
 ## Design Notes
 
