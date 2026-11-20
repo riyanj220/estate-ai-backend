@@ -17,6 +17,8 @@ scripts/dev_server.sh                   # Daphne on DJANGO_BIND_HOST:DJANGO_PORT
 curl -s 127.0.0.1:8000/api/v1/health    # {"status":"ok"}
 ```
 
+**After every `git pull` run `uv run python manage.py migrate --database=migrator` again**: the test suite uses its own throwaway database, so the development database does not move on its own and silently lags behind new migrations (it was three migrations behind at the end of Epic 1). `scripts/dev_server.sh` starts the server but never migrates.
+
 Mailpit UI: http://127.0.0.1:8025 shows every email the app sends locally (see `docs/mail.md`; `scripts/mail_check.py` sends one test message). Never commit `.env`; only `.env.example` (placeholders) is tracked.
 
 ## Database roles
