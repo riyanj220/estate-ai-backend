@@ -112,6 +112,57 @@ def _phone_spans(text: str):
         yield match.span()
 
 
+# --- split phone: digit groups joined by any separator ---------------------------------------
+
+# Up to five digit groups joined by short runs of separators (also the comma, colon, pipe,
+# bullet, asterisk, tilde and hash that the main pass excludes) are concatenated and judged by
+# shape: a Pakistani mobile (03xxxxxxxxx, 923xxxxxxxxx, 00923xxxxxxxxx) or any 10 to 13 digit
+# number led by 0 or 92. Prices and areas do not start that way, so they pass. Digits are
+# already ASCII (the normaliser folds Unicode digits). Windows are bounded, so the scan is linear.
+_GROUP = re.compile(r"\+?\d+")
+_GAP_CHARS = frozenset(" \t\r\n,:;|\u2022\u00b7*~#/-.()_")
+_GAP_MAX = 3
+_SPLIT_GROUPS_MAX = 5
+_MOBILE_SHAPE = re.compile(r"(?:0|92)3\d{9}")
+_SPLIT_LENGTHS = range(10, 14)
+
+
+def _split_shape(digits: str) -> bool:
+    for candidate in {digits, digits[2:] if digits.startswith("00") else digits}:
+        if _MOBILE_SHAPE.fullmatch(candidate):
+            return True
+        if len(candidate) in _SPLIT_LENGTHS and candidate.startswith(("0", "92")):
+            return True
+    return False
+
+
+def _thousands_group(text: str, groups: list, index: int) -> bool:
+    """A 2 or 3 digit group right after a lone comma ("4,500,000" and "4,50,00,000")."""
+    if index == 0:
+        return False
+    start, end = groups[index]
+    return text[groups[index - 1][1] : start] == "," and end - start in (2, 3)
+
+
+def _split_phone_spans(text: str):
+    # Dates are not phones: hide them so a window cannot start inside "12-03-2024".
+    text = _DATE.sub(lambda m: "x" * len(m.group()), text)
+    groups = [match.span() for match in _GROUP.finditer(text)]
+    for first, (start, _) in enumerate(groups):
+        if _thousands_group(text, groups, first):
+            continue
+        digits = ""
+        for last in range(first, min(first + _SPLIT_GROUPS_MAX, len(groups))):
+            if last > first:
+                gap = text[groups[last - 1][1] : groups[last][0]]
+                if not 1 <= len(gap) <= _GAP_MAX or not all(c in _GAP_CHARS for c in gap):
+                    break
+            digits += text[groups[last][0] : groups[last][1]].lstrip("+")
+            if last > first and _split_shape(digits):
+                yield start, groups[last][1]
+                break
+
+
 # --- email -----------------------------------------------------------------------------------
 
 _LOCAL = r"[\w.%+\-]+"
@@ -187,6 +238,8 @@ def find_contact_details(text: str) -> tuple[Finding, ...]:
     normal, origin = _normalise(text)
     spans: set[tuple[int, int, ContactKind]] = set()
     for start, end in _phone_spans(normal):
+        spans.add((start, end, ContactKind.PHONE))
+    for start, end in _split_phone_spans(normal):
         spans.add((start, end, ContactKind.PHONE))
     for pattern in _EMAILS:
         for match in pattern.finditer(normal):

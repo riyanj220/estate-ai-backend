@@ -50,7 +50,6 @@ PHONES = [
     "zero three zero zero one two three four five six seven",
     "oh three oh oh one two three four five six seven",
     "O3OO".replace("O", "0") + "1234567",
-    uni("0660 0663 0660 0660 0661 0662 0663 0664 0665 0666 0667"),  # Arabic-Indic
     uni("ff10 ff13 ff10 ff10 ff11 ff12 ff13 ff14 ff15 ff16 ff17"),  # full-width
     f"0300{ZW}1234567",
     ZW.join("03001234567"),
@@ -141,6 +140,40 @@ ALLOWED = [
     "ID 1234",
     "20% off",
     "Spacious 10 marla house in DHA Phase 6, Block 13-D, Plot 45, 5th floor, 3 bedrooms",
+    "Price Rs 25,000,000 negotiable, 10 marla corner",
+    "Asking 25,000,000, 3 bedrooms, 4 bathrooms",
+    "Areas 5, 10, 20 marla available, floors 1, 2, 3",
+    "Sizes: 120, 240, 500 sq yd; prices 4,500,000, 9,000,000",
+    "Built 2015, renovated 2021, 3 bed, 3 bath, 2 kitchen",
+    "Floor 03 of 12, 1,450 sq ft, 2 parking",
+    "Rs 92,000,000 total for the 1 kanal plot",
+    "Rent 150,000 monthly, deposit 300,000, 2 years lease",
+    "House 3 beds | 2 baths | 1 lounge | 5 marla | 2019",
+    "Plots: 10 marla * 3, 5 marla * 2, 1 kanal * 1, 2 acres",
+    "Floors 0, 1, 2, 3, 4, 5, 6 and basement 1",
+    "Per marla 4,200,000; total 21,000,000; token 500,000",
+    "Phase 6, Block 13, Street 5 km away from 24/7 mall",
+]
+
+SPLIT_PHONES = [
+    "0300,1234567",
+    "0300:1234567",
+    "0300 | 123 | 4567",
+    "0300\u2022123\u20224567",
+    "03-00-12-34-567",
+    "+92 300 1234567",
+    "+92,300,1234567",
+    "0092 300 1234567",
+    "92;300;1234567",
+    "0300*123*4567",
+    "0300~1234567",
+    "0300#1234567",
+    "0300 (123) 4567",
+    "Rs 5,000 0300,1234567",
+    "\u0660\u0663\u0660\u0660,\u0661\u0662\u0663\u0664\u0665\u0666\u0667",
+    "\u0660\u0663\u0660\u0660 | \u0661\u0662\u0663 | \u0664\u0665\u0666\u0667",
+    "\u06f0\u06f3\u06f0\u06f0:\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7",
+    "021,3456,7890",
 ]
 
 
@@ -167,6 +200,18 @@ def test_address_shapes_are_detected(text):
 def test_false_positive_set_passes_untouched(text):
     assert reject_contact_details(text) is None
     assert find_contact_details(text) == ()
+
+
+@pytest.mark.parametrize("text", SPLIT_PHONES)
+def test_split_phone_numbers_are_detected(text):
+    assert ContactKind.PHONE in kinds(text), text
+    assert reject_contact_details(f"Lovely house {text} call") is not None
+
+
+def test_a_split_phone_span_covers_only_the_number():
+    text = "Call 0300,1234567 now"
+    (finding,) = [f for f in find_contact_details(text) if f.kind is ContactKind.PHONE]
+    assert text[finding.start : finding.end] == "0300,1234567"
 
 
 def test_unseparated_seven_to_nine_digits_are_not_phones():
