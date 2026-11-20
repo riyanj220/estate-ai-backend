@@ -62,8 +62,8 @@ development_status:
   1-24-in-app-notification-list: done
   epic-1-retrospective: done
 
-  epic-2: backlog
-  2-1-start-a-draft-with-purpose-category-and-subtype: backlog
+  epic-2: in-progress
+  2-1-start-a-draft-with-purpose-category-and-subtype: in-progress
   2-2-conflict-safe-editing-with-title-description-and-price: backlog
   2-3-area-and-measurement-units: backlog
   2-4-house-and-apartment-details: backlog
