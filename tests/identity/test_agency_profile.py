@@ -427,7 +427,7 @@ def test_description_rejects(text, code):
 
 def test_description_messages_are_static():
     assert field_message("contains_contact_details") == (
-        "Descriptions cannot contain phone numbers, email addresses or street addresses."
+        "This text cannot contain phone numbers, email addresses or street addresses."
     )
     assert "1000" in field_message("invalid_description")
 

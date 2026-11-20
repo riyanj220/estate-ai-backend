@@ -19,6 +19,12 @@ FIELD_KEYS = {
     "ai_extractable",
     "valuation_input",
     "quota_identity",
+    "allowed_values_by_purpose",
+    "min_length",
+    "max_length",
+    "min",
+    "max",
+    "currency",
 }
 
 
@@ -27,7 +33,7 @@ def test_served_publicly_with_the_defined_shape():
     assert response.status_code == 200
     body = response.json()
     assert list(body) == ["version", "taxonomy", "fields"]
-    assert body["version"] == 1
+    assert body["version"] == 2
     assert body["taxonomy"] == {
         "categories": [
             {"id": "house", "subtypes": ["house"]},
@@ -37,9 +43,19 @@ def test_served_publicly_with_the_defined_shape():
         ],
         "purposes": ["sale", "rent"],
     }
-    assert [f["id"] for f in body["fields"]] == ["purpose", "category", "subtype"]
+    assert [f["id"] for f in body["fields"]] == [
+        "purpose",
+        "category",
+        "subtype",
+        "title",
+        "description",
+        "asking_price",
+        "price_basis",
+        "rental_period",
+    ]
     for field in body["fields"]:
         assert set(field) == FIELD_KEYS
+    for field in body["fields"][:3]:
         assert field["class"] == "public" and field["quota_identity"] is True
         assert field["searchable"] is False and field["requirement"] == "required_for_publication"
         assert field["applicability"] == {"purposes": [], "categories": [], "subtypes": []}
@@ -56,6 +72,30 @@ def test_served_publicly_with_the_defined_shape():
     assert body["fields"][1]["allowed_values"] == ["house", "apartment", "plot", "commercial"]
 
 
+def test_the_editing_fields_are_described_for_clients():
+    fields = {f["id"]: f for f in Client().get(URL).json()["fields"]}
+    title, description, price = fields["title"], fields["description"], fields["asking_price"]
+    assert (title["type"], title["min_length"], title["max_length"]) == ("text", 10, 100)
+    assert (description["type"], description["max_length"]) == ("text", 5000)
+    assert description["requirement"] == "recommended"
+    assert (price["type"], price["min"], price["max"], price["currency"]) == (
+        "money",
+        "0.01",
+        "999999999999.99",
+        "PKR",
+    )
+    assert price["valuation_input"] is False and price["ai_extractable"] is True
+    basis = fields["price_basis"]
+    assert basis["allowed_values_by_purpose"] == {
+        "sale": ["total", "per_unit"],
+        "rent": ["rental_period"],
+    }
+    period = fields["rental_period"]
+    assert period["allowed_values"] == ["day", "week", "month", "year"]
+    assert period["applicability"]["purposes"] == ["rent"]
+    assert title["min"] is None and title["allowed_values_by_purpose"] is None
+
+
 def test_no_internal_paths_or_hash_in_the_body():
     text = Client().get(URL).content.decode()
     for leak in ("/home", "fields.yaml", "fields.lock", registry.content_hash(), ".py"):
@@ -66,7 +106,7 @@ def test_cache_headers_and_strong_etag():
     response = Client().get(URL)
     assert response.headers["Cache-Control"] == "public, max-age=300"
     tag = response.headers["ETag"]
-    assert tag == f'"1-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
+    assert tag == f'"2-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
         "W/"
     )
 
@@ -96,7 +136,7 @@ def test_read_only(method):
 
 def test_a_shape_change_alone_changes_the_etag(monkeypatch):
     before = Client().get(URL).headers["ETag"]
-    monkeypatch.setattr("apps.presentation.api.registry.RESPONSE_SHAPE_VERSION", 2)
+    monkeypatch.setattr("apps.presentation.api.registry.RESPONSE_SHAPE_VERSION", 99)
     after = Client().get(URL)
     assert after.headers["ETag"] != before
     assert Client().get(URL, HTTP_IF_NONE_MATCH=before).status_code == 200

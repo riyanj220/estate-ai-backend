@@ -2,6 +2,7 @@
 
 import copy
 import dataclasses
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -34,27 +35,67 @@ def add_field(**overrides):
     base = {
         "id": "extra_field",
         "type": "text",
+        "max_length": 50,
         "requirement": "optional",
         "applicability": {"purposes": [], "categories": [], "subtypes": []},
         "class": "public",
     }
     base.update(overrides)
+    if base["type"] != "text":
+        base.pop("max_length", None)  # only a text field has lengths
     return lambda data: data["fields"].append(base)
 
 
 # --- the shipped file -----------------------------------------------------------------------
 
 
-def test_the_shipped_registry_loads_with_the_three_identity_fields():
+def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
     loaded = registry.load()
-    assert loaded.version == 1
-    assert [f.id for f in registry.fields()] == ["purpose", "category", "subtype"]
+    assert loaded.version == 2
+    assert [f.id for f in registry.fields()] == [
+        "purpose",
+        "category",
+        "subtype",
+        "title",
+        "description",
+        "asking_price",
+        "price_basis",
+        "rental_period",
+    ]
     assert registry.purposes() == ("sale", "rent")
     assert [c.id for c in registry.categories()] == ["house", "apartment", "plot", "commercial"]
-    for definition in registry.fields():
+    for definition in registry.fields()[:3]:
         assert definition.requirement == "required_for_publication"
         assert definition.field_class == "public" and definition.quota_identity
         assert not (definition.searchable or definition.sortable or definition.valuation_input)
+    for definition in registry.fields():
+        assert definition.field_class == "public" and not definition.valuation_input
+
+
+def test_the_editing_fields_are_defined_by_the_registry():
+    title, description = registry.field("title"), registry.field("description")
+    assert (title.type, title.min_length, title.max_length) == ("text", 10, 100)
+    assert title.requirement == "required_for_publication" and title.ai_extractable
+    assert (description.type, description.min_length, description.max_length) == ("text", 0, 5000)
+    assert description.requirement == "recommended" and description.ai_extractable
+    price = registry.field("asking_price")
+    assert (price.type, price.currency) == ("money", "PKR")
+    assert (price.minimum, price.maximum) == (Decimal("0.01"), Decimal("999999999999.99"))
+    assert price.ai_extractable and not price.valuation_input
+    assert price.requirement == "required_for_publication"
+    assert registry.field("price_basis").requirement == "required_for_publication"
+    assert registry.field("rental_period").requirement == "required_for_publication"
+    basis = registry.field("price_basis")
+    assert basis.allowed_values == ("total", "per_unit", "rental_period")
+    assert basis.values_for("sale") == ("total", "per_unit")
+    assert basis.values_for("rent") == ("rental_period",)
+    assert basis.values_for("lease") == ()
+    period = registry.field("rental_period")
+    assert period.allowed_values == ("day", "week", "month", "year")
+    assert period.applicability.purposes == ("rent",)
+    assert period.applies_to("rent", "house", "house")
+    assert not period.applies_to("sale", "house", "house")
+    assert registry.field("purpose").values_for("sale") == ("sale", "rent")
 
 
 def test_plot_file_is_a_distinct_subtype_of_plot():
@@ -68,7 +109,7 @@ def test_plot_file_is_a_distinct_subtype_of_plot():
 
 
 def test_accessors_return_immutable_values():
-    assert registry.registry_version() == 1
+    assert registry.registry_version() == 2
     assert registry.field("purpose").allowed_values == ("sale", "rent")
     assert registry.field("nope") is None
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -208,7 +249,7 @@ def test_startup_fails_on_an_invalid_file(monkeypatch, tmp_path):
     finally:
         monkeypatch.undo()
         registry.load.cache_clear()
-    assert registry.load().version == 1
+    assert registry.load().version == 2
 
 
 def test_catalog_ready_loads_the_registry(monkeypatch):
@@ -264,18 +305,18 @@ def test_lock_script_refuses_a_change_without_a_bump(monkeypatch, tmp_path, caps
     monkeypatch.setattr(registry, "LOCK_PATH", lock)
     with pytest.raises(SystemExit, match="bump"):
         script.main()
-    fields.write_text(text(lambda d: (add_field()(d), d.update(version=2))))
+    fields.write_text(text(lambda d: (add_field()(d), d.update(version=3))))
     script.main()
-    assert registry.read_lock(lock.read_text())[0] == 2
-    assert "version 2" in capsys.readouterr().out
+    assert registry.read_lock(lock.read_text())[0] == 3
+    assert "version 3" in capsys.readouterr().out
 
 
 def test_the_files_are_found_from_any_working_directory(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     registry.load.cache_clear()
     try:
-        assert registry.load().version == 1
-        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 1
+        assert registry.load().version == 2
+        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 2
     finally:
         registry.load.cache_clear()
 
@@ -290,6 +331,8 @@ def test_taxonomy_ids_must_fit_the_listing_columns():
     def grow(d):
         d["taxonomy"]["purposes"].append(ok)
         d["fields"][0]["allowed_values"].append(ok)
+        basis = next(f for f in d["fields"] if f["id"] == "price_basis")
+        basis["allowed_values_by_purpose"][ok] = ["total"]
 
     parsed = registry.parse(text(grow))
     assert ok in parsed.purposes
@@ -346,3 +389,129 @@ def test_lock_script_refuses_a_lower_version(monkeypatch, tmp_path):
     monkeypatch.setattr(registry, "LOCK_PATH", lock)
     with pytest.raises(SystemExit, match="lower"):
         script.main()
+
+
+# --- the text, money and by-purpose rules (Story 2.2) ----------------------------------------
+
+
+def money(**overrides):
+    base = {"id": "fee", "type": "money", "min": "0.01", "max": "500.00", "currency": "PKR"}
+    base.update(overrides)
+    return add_field(**base)
+
+
+def test_a_text_field_carries_lengths():
+    parsed = registry.parse(text(add_field(min_length=3, max_length=9)))
+    assert (parsed.fields[-1].min_length, parsed.fields[-1].max_length) == (3, 9)
+    assert registry.parse(text(add_field())).fields[-1].min_length == 0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"max_length": None},
+        {"max_length": 0},
+        {"max_length": True},
+        {"max_length": "5"},
+        {"max_length": 20_001},
+        {"min_length": -1},
+        {"min_length": 60},
+        {"min_length": 1.5},
+    ],
+)
+def test_bad_text_lengths(overrides):
+    def mutate(data):
+        add_field(**overrides)(data)
+        if overrides.get("max_length", 0) is None:
+            data["fields"][-1].pop("max_length")
+
+    refused(mutate)
+
+
+def test_lengths_belong_to_text_only():
+    refused(add_field(type="enum", allowed_values=["a"], min_length=2), "only a text field")
+
+    def money_with_length(data):
+        money()(data)
+        data["fields"][-1]["max_length"] = 5
+
+    refused(money_with_length, "only a text field")
+
+
+def test_a_money_field_carries_bounds_and_currency():
+    parsed = registry.parse(text(money()))
+    fee = parsed.fields[-1]
+    assert (fee.minimum, fee.maximum, fee.currency) == (Decimal("0.01"), Decimal("500.00"), "PKR")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"min": 1},
+        {"min": 0.5},
+        {"min": "-1"},
+        {"min": "1.005"},
+        {"min": "abc"},
+        {"max": "1" * 13},
+        {"max": "1000000000000.00"},
+        {"min": "600"},
+        {"currency": "USD"},
+        {"currency": None},
+    ],
+)
+def test_bad_money_definitions(overrides):
+    refused(money(**overrides))
+
+
+def test_money_needs_all_three_keys_and_only_money_has_them():
+    def drop(key):
+        def mutate(data):
+            money()(data)
+            data["fields"][-1].pop(key)
+
+        return mutate
+
+    for key in ("min", "max", "currency"):
+        refused(drop(key), "needs min, max and currency")
+    refused(add_field(min="1"), "only a money field")
+    refused(add_field(type="enum", allowed_values=["a"], currency="PKR"), "only a money field")
+
+
+def test_the_shipped_price_ceiling_fits_the_column():
+    assert registry.field("asking_price").maximum == registry.MONEY_CEILING
+
+
+def by_purpose(mapping, **overrides):
+    return add_field(
+        id="mode",
+        type="enum",
+        allowed_values=["a", "b", "c"],
+        allowed_values_by_purpose=mapping,
+        **overrides,
+    )
+
+
+def test_allowed_values_by_purpose_narrows_an_enum():
+    parsed = registry.parse(text(by_purpose({"sale": ["a", "b"], "rent": ["c"]})))
+    mode = parsed.fields[-1]
+    assert mode.values_for("sale") == ("a", "b") and mode.values_for("rent") == ("c",)
+
+
+@pytest.mark.parametrize(
+    "mapping",
+    [
+        {"sale": ["a"]},  # a purpose is missing
+        {"sale": ["a"], "rent": ["c"], "lease": ["a"]},  # not a purpose
+        {"sale": [], "rent": ["c"]},  # empty
+        {"sale": ["z"], "rent": ["c"]},  # outside allowed_values
+        {"sale": ["a", "a"], "rent": ["c"]},  # duplicate
+        {"sale": "a", "rent": ["c"]},  # not a list
+        ["a"],
+    ],
+)
+def test_bad_allowed_values_by_purpose(mapping):
+    refused(by_purpose(mapping))
+
+
+def test_allowed_values_by_purpose_is_for_enums_only():
+    refused(add_field(allowed_values_by_purpose={"sale": ["a"], "rent": ["a"]}), "only an enum")

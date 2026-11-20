@@ -11,7 +11,7 @@ from django.test import Client
 from apps.catalog import registry
 from apps.identity import services as identity_services
 from apps.kernel.models import AuditRecord
-from apps.listings.models import ListingRevision, PropertyListing
+from apps.listings.models import ListingRevision, ListingTerms, PropertyListing
 from tests.listings.support import PASSWORD, SYSTEM, make_account, seed_cap
 
 CREATE = "/api/v1/listings"
@@ -27,8 +27,16 @@ WIRE_KEYS = {
     "revision",
     "registry_version",
     "fields",
+    "provenance",
     "media",
     "amenities",
+}
+NEW_FIELDS = {
+    "title": None,
+    "description": None,
+    "asking_price": None,
+    "price_basis": None,
+    "rental_period": None,
 }
 
 
@@ -84,8 +92,9 @@ def test_create_returns_the_wire_shape(kind):
     body = response.json()
     assert set(body) == WIRE_KEYS
     assert body["status"] == "draft" and body["visibility"] == "private"
-    assert (body["revision"], body["registry_version"]) == (1, 1)
-    assert body["fields"] == BODY and body["media"] == [] and body["amenities"] == []
+    assert (body["revision"], body["registry_version"]) == (1, 2)
+    assert body["fields"] == {**BODY, **NEW_FIELDS} and body["provenance"] == {}
+    assert body["media"] == [] and body["amenities"] == []
     uuid.UUID(body["id"])
     row = PropertyListing.objects.get()
     assert str(row.id) == body["id"] and row.owner_account_id == client.account_id
@@ -330,10 +339,20 @@ def test_listing_resource_is_exactly_the_wire_shape():
         "revision",
         "registry_version",
         "fields",
+        "provenance",
         "media",
         "amenities",
     ]
-    assert list(body["fields"]) == ["purpose", "category", "subtype"]
+    assert list(body["fields"]) == [
+        "purpose",
+        "category",
+        "subtype",
+        "title",
+        "description",
+        "asking_price",
+        "price_basis",
+        "rental_period",
+    ]
 
 
 def test_openapi_describes_the_routes_and_generates_enums_from_the_registry(tmp_path):
@@ -374,3 +393,508 @@ def test_non_canonical_ids_are_404():
     created = post(client, CREATE).json()["id"]
     for variant in (created.upper(), created.replace("-", "")):
         assert client.get(detail(variant)).status_code == 404
+
+
+# --- edit: PATCH /api/v1/listings/{id} (Story 2.2) -------------------------------------------
+
+TITLE = "Family house near the park"
+SAVE = {"title": TITLE, "description": "Three bedrooms.", "asking_price": "1500000"}
+
+
+def patch(client, listing_id, body, token=True, **extra):
+    if token:
+        extra["HTTP_X_CSRFTOKEN"] = client.get(CSRF).json()["csrf_token"]
+    return client.patch(
+        detail(listing_id), json.dumps(body), content_type="application/json", **extra
+    )
+
+
+def edit(client, listing, fields, base=None):
+    base = listing["revision"] if base is None else base
+    return patch(client, listing["id"], {"base_revision": base, "fields": fields})
+
+
+def draft(client, body=BODY):
+    return post(client, CREATE, body).json()
+
+
+def field_codes(response):
+    return response.json()["error"]["fields"]
+
+
+def test_patch_saves_and_returns_the_listing_resource():
+    client = signed_in()
+    created = draft(client)
+    response = edit(client, created, SAVE)
+    assert response.status_code == 200 and response.headers["Cache-Control"] == "no-store"
+    body = response.json()
+    assert list(body) == list(created) and set(body) == WIRE_KEYS
+    assert body["revision"] == 2 and body["id"] == created["id"]
+    assert body["fields"] == {
+        **BODY,
+        **NEW_FIELDS,
+        "title": TITLE,
+        "description": "Three bedrooms.",
+        "asking_price": "1500000.00",
+    }
+    assert body["provenance"] == {name: {"origin": "manual", "confirmed": True} for name in SAVE}
+    assert client.get(detail(created["id"])).json() == body
+    revision = ListingRevision.objects.get(revision=2)
+    assert revision.origin == "manual" and revision.actor_account_id == client.account_id
+    assert revision.changes == {**SAVE, "asking_price": "1500000.00"}
+
+
+def test_the_own_list_carries_the_edited_fields_in_the_same_shape():
+    client = signed_in()
+    created = draft(client)
+    saved = edit(client, created, SAVE).json()
+    item = client.get(MINE).json()["results"][0]
+    assert item == saved and set(item) == WIRE_KEYS
+
+
+def test_partial_clear_and_unchanged_saves():
+    client = signed_in()
+    created = draft(client)
+    first = edit(client, created, {"title": TITLE}).json()
+    assert first["revision"] == 2 and first["fields"]["asking_price"] is None
+    same = edit(client, first, {"title": TITLE})
+    assert same.status_code == 200 and same.json() == first
+    assert ListingRevision.objects.count() == 2
+    cleared = edit(client, first, {"title": None}).json()
+    assert cleared["revision"] == 3 and cleared["fields"]["title"] is None
+    assert cleared["provenance"] == {}
+
+
+def test_rent_terms_and_the_purpose_rules():
+    client = signed_in()
+    rent = draft(client, {**BODY, "purpose": "rent"})
+    ok = edit(
+        client,
+        rent,
+        {"asking_price": "85000.50", "price_basis": "rental_period", "rental_period": "month"},
+    )
+    assert ok.status_code == 200 and ok.json()["fields"]["asking_price"] == "85000.50"
+    assert ok.json()["fields"]["rental_period"] == "month"
+    sale = draft(client)
+    bad = edit(client, sale, {"rental_period": "month"})
+    assert (bad.status_code, code(bad)) == (400, "validation_error")
+    assert field_codes(bad) == {"rental_period": ["This field does not apply to this listing."]}
+    mismatch = edit(client, sale, {"price_basis": "rental_period"})
+    assert field_codes(mismatch) == {"price_basis": ["Select a valid choice."]}
+    assert field_codes(edit(client, ok.json(), {"price_basis": "total"})) == {
+        "price_basis": ["Select a valid choice."]
+    }
+    # saving never needs complete data: a basis without its period, or a period alone, saves
+    cleared = edit(client, ok.json(), {"rental_period": None})
+    assert cleared.status_code == 200 and cleared.json()["fields"]["rental_period"] is None
+    other = draft(client, {**BODY, "purpose": "rent"})
+    assert edit(client, other, {"price_basis": "rental_period"}).status_code == 200
+    third = draft(client, {**BODY, "purpose": "rent"})
+    assert edit(client, third, {"rental_period": "week"}).status_code == 200
+    assert PropertyListing.objects.get(id=sale["id"]).revision == 1
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("0", "Enter an amount above zero with at most two decimals."),
+        ("-5", "Enter an amount above zero with at most two decimals."),
+        ("1.234", "Enter an amount above zero with at most two decimals."),
+        ("1000000000000", "Enter an amount above zero with at most two decimals."),
+        ("12abc", "Enter a valid value."),
+    ],
+)
+def test_money_errors(value, message):
+    client = signed_in()
+    created = draft(client)
+    response = edit(client, created, {"asking_price": value})
+    assert (response.status_code, code(response)) == (400, "validation_error")
+    assert field_codes(response) == {"asking_price": [message]}
+    assert len(value) < 3 or value not in response.content.decode()
+
+
+def test_a_json_number_for_money_is_refused_as_a_float():
+    client = signed_in()
+    created = draft(client)
+    raw = '{"base_revision": 1, "fields": {"asking_price": 1500000.5}}'
+    response = client.patch(
+        detail(created["id"]),
+        raw,
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=client.get(CSRF).json()["csrf_token"],
+    )
+    assert field_codes(response) == {"asking_price": ["Enter a valid value."]}
+    assert ListingTerms.objects.get().asking_price is None
+
+
+def test_text_errors_and_the_contact_detail_explanation_without_echo(caplog):
+    client = signed_in()
+    created = draft(client)
+    phone = "Call 0300 1234567 now please"
+    response = edit(client, created, {"title": phone, "description": "x" * 5001})
+    assert (response.status_code, code(response)) == (400, "validation_error")
+    assert field_codes(response) == {
+        "title": ["This text cannot contain phone numbers, email addresses or street addresses."],
+        "description": ["This text is too long."],
+    }
+    assert "0300" not in response.content.decode() and "0300" not in caplog.text
+    assert field_codes(edit(client, created, {"title": "short"})) == {
+        "title": ["This text is too short."]
+    }
+    assert field_codes(edit(client, created, {"title": "Nice\x00 family home"})) == {
+        "title": ["Enter a valid value."]
+    }
+    assert PropertyListing.objects.get().revision == 1
+
+
+def test_unknown_and_non_editable_fields_are_refused_without_echo():
+    client = signed_in()
+    created = draft(client)
+    response = edit(
+        client,
+        created,
+        {"purpose": "rent", "status": "published", "owner_account_id": "x", "title": TITLE},
+    )
+    assert (response.status_code, code(response)) == (400, "validation_error")
+    assert field_codes(response) == {
+        "purpose": ["This field cannot be changed here."],
+        "non_field_errors": ["The request contains fields that are not accepted."],
+    }
+    assert "owner_account_id" not in response.content.decode()
+    row = PropertyListing.objects.get()
+    assert (row.purpose, row.title, row.revision) == ("sale", None, 1)
+
+
+@pytest.mark.parametrize(
+    ("body", "fields"),
+    [
+        ({"fields": {"title": TITLE}}, {"base_revision": ["This field is required."]}),
+        ({"base_revision": 1}, {"fields": ["This field is required."]}),
+        (
+            {"base_revision": "1", "fields": {"title": TITLE}},
+            {"base_revision": ["Enter a valid value."]},
+        ),
+        (
+            {"base_revision": 0, "fields": {"title": TITLE}},
+            {"base_revision": ["Enter a valid value."]},
+        ),
+        (
+            {"base_revision": 1.5, "fields": {"title": TITLE}},
+            {"base_revision": ["Enter a valid value."]},
+        ),
+        (
+            {"base_revision": True, "fields": {"title": TITLE}},
+            {"base_revision": ["Enter a valid value."]},
+        ),
+        ({"base_revision": 1, "fields": {}}, {"fields": ["This field may not be empty."]}),
+        ({"base_revision": 1, "fields": [TITLE]}, {"fields": ["Expected an object."]}),
+        ({"base_revision": 1, "fields": TITLE}, {"fields": ["Expected an object."]}),
+        ({"base_revision": 1, "fields": None}, {"fields": ["This field is required."]}),
+    ],
+)
+def test_bad_bodies_are_validation_errors(body, fields):
+    client = signed_in()
+    created = draft(client)
+    response = patch(client, created["id"], body)
+    assert (response.status_code, code(response)) == (400, "validation_error")
+    assert field_codes(response) == fields
+    assert PropertyListing.objects.get().revision == 1
+
+
+@pytest.mark.parametrize(
+    "extra", [{"origin": "ai"}, {"confirmed": True}, {"owner_account_id": "x"}, {"revision": 3}]
+)
+def test_an_extra_top_level_key_is_refused_and_origin_is_never_client_input(extra):
+    client = signed_in()
+    created = draft(client)
+    body = {"base_revision": 1, "fields": {"title": TITLE}, **extra}
+    response = patch(client, created["id"], body)
+    assert (response.status_code, code(response)) == (400, "validation_error")
+    assert field_codes(response) == {
+        "non_field_errors": ["The request contains fields that are not accepted."]
+    }
+    assert PropertyListing.objects.get().title is None
+    inside = edit(client, created, {"title": TITLE, **extra})
+    assert inside.status_code == 400 and PropertyListing.objects.get().title is None
+
+
+@pytest.mark.parametrize("body", [[], "text", 5, None])
+def test_a_non_object_patch_body_is_a_validation_error(body):
+    client = signed_in()
+    created = draft(client)
+    response = patch(client, created["id"], body)
+    assert (response.status_code, code(response)) == (400, "validation_error")
+
+
+def test_the_origin_is_fixed_to_manual_by_the_api():
+    client = signed_in()
+    created = draft(client)
+    edit(client, created, {"title": TITLE})
+    assert ListingRevision.objects.get(revision=2).origin == "manual"
+    row = PropertyListing.objects.get()
+    assert row.provenance == {"title": {"origin": "manual", "confirmed": True}}
+
+
+# --- edit: conflicts -----------------------------------------------------------------------------
+
+
+def test_a_stale_revision_is_409_with_the_current_listing():
+    client = signed_in()
+    created = draft(client)
+    saved = edit(client, created, {"title": TITLE}).json()
+    response = edit(client, created, {"title": "Someone else's title"}, base=created["revision"])
+    assert (response.status_code, code(response)) == (409, "stale_revision")
+    assert response.headers["Cache-Control"] == "no-store"
+    body = response.json()
+    assert list(body) == ["error", "current"]
+    assert set(body["error"]) == {"code", "message", "fields", "request_id"}
+    assert body["error"]["message"] == "The resource changed since it was loaded."
+    assert body["error"]["fields"] == {} and body["error"]["request_id"]
+    assert body["current"] == saved and set(body["current"]) == WIRE_KEYS
+    assert PropertyListing.objects.get().title == TITLE and ListingRevision.objects.count() == 2
+
+
+def test_replaying_a_successful_patch_is_409_never_a_double_write():
+    client = signed_in()
+    created = draft(client)
+    first = edit(client, created, {"asking_price": "100"})
+    second = edit(client, created, {"asking_price": "100"})
+    assert (first.status_code, second.status_code) == (200, 409)
+    assert second.json()["current"] == first.json()
+    assert ListingRevision.objects.count() == 2
+
+
+def test_a_second_session_of_the_same_account_gets_the_conflict():
+    first = signed_in()
+    created = draft(first)
+    second = sign_in("jane.doe@example.com")
+    assert edit(first, created, {"title": TITLE}).status_code == 200
+    stale = edit(second, created, {"title": "Another title here"})
+    assert (stale.status_code, code(stale)) == (409, "stale_revision")
+    assert stale.json()["current"]["fields"]["title"] == TITLE
+
+
+def test_the_conflict_comes_before_value_validation_and_leaks_nothing_foreign():
+    client = signed_in()
+    created = draft(client)
+    edit(client, created, {"title": TITLE})
+    response = edit(client, created, {"title": "x", "asking_price": "-1"}, base=1)
+    assert (response.status_code, code(response)) == (409, "stale_revision")
+    assert str(client.account_id) not in response.content.decode()
+
+
+# --- edit: who may -------------------------------------------------------------------------------
+
+
+def test_another_account_and_unknown_ids_are_404():
+    owner = signed_in()
+    created = draft(owner)
+    other = signed_in("other@example.com")
+    body = {"base_revision": 1, "fields": {"title": TITLE}}
+    foreign = patch(other, created["id"], body)
+    unknown = patch(other, str(uuid.uuid4()), body)
+    assert (foreign.status_code, code(foreign)) == (404, "not_found")
+    assert foreign.json()["error"]["message"] == unknown.json()["error"]["message"]
+    assert foreign.json()["error"]["fields"] == unknown.json()["error"]["fields"]
+    for lookup in ("not-a-uuid", created["id"].upper(), created["id"].replace("-", "")):
+        assert patch(owner, lookup, body).status_code == 404
+    stale = patch(other, created["id"], {"base_revision": 9, "fields": {"title": TITLE}})
+    assert stale.status_code == 404  # no conflict body for a foreigner
+    assert PropertyListing.objects.get().title is None
+
+
+def test_an_administrator_gets_404_and_a_visitor_401():
+    owner = signed_in()
+    created = draft(owner)
+    identity_services.provision_admin(SYSTEM, "root.admin@example.com", ADMIN_PASSWORD)
+    admin = sign_in("root.admin@example.com", admin=True)
+    body = {"base_revision": 1, "fields": {"title": TITLE}}
+    assert patch(admin, created["id"], body).status_code == 404
+    anonymous = Client(enforce_csrf_checks=True)
+    response = anonymous.patch(
+        detail(created["id"]), json.dumps(body), content_type="application/json"
+    )
+    assert (response.status_code, code(response)) == (401, "unauthenticated")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert PropertyListing.objects.get().title is None
+
+
+def test_a_suspended_owner_is_403_and_nothing_is_written():
+    client = signed_in()
+    created = draft(client)
+    from django.utils import timezone
+
+    from apps.identity.models import Account
+
+    Account.objects.filter(id=client.account_id).update(
+        suspended_at=timezone.now(), suspension_reason="r"
+    )
+    response = edit(client, created, {"title": TITLE})
+    assert (response.status_code, code(response)) == (403, "forbidden")
+    assert PropertyListing.objects.get().title is None and ListingRevision.objects.count() == 1
+
+
+def test_editing_with_a_deactivated_account_has_no_session():
+    client = signed_in()
+    created = draft(client)
+    from django.utils import timezone
+
+    from apps.identity.models import Account
+
+    Account.objects.filter(id=client.account_id).update(deactivated_at=timezone.now())
+    response = edit(client, created, {"title": TITLE})
+    assert (response.status_code, code(response)) == (401, "unauthenticated")
+
+
+def test_patch_without_csrf_is_403_and_writes_nothing():
+    client = signed_in()
+    created = draft(client)
+    response = patch(
+        client, created["id"], {"base_revision": 1, "fields": {"title": TITLE}}, token=False
+    )
+    assert (response.status_code, code(response)) == (403, "forbidden")
+    assert PropertyListing.objects.get().title is None
+
+
+def test_an_email_unverified_owner_may_edit():
+    client = signed_in(state="unverified")
+    created = draft(client)
+    assert edit(client, created, {"title": TITLE}).status_code == 200
+
+
+# --- edit: privacy and the contract --------------------------------------------------------------
+
+
+def test_no_edit_response_carries_the_owner_account_id():
+    client = signed_in()
+    owner = str(client.account_id)
+    created = draft(client)
+    responses = [
+        edit(client, created, SAVE),
+        edit(client, created, SAVE),  # 409
+        edit(client, created, {"title": "x"}, base=2),
+        edit(client, created, {"owner_account_id": owner}, base=2),
+        patch(client, owner, {"base_revision": 1, "fields": {"title": TITLE}}),
+    ]
+    assert [r.status_code for r in responses] == [200, 409, 400, 400, 404]
+    for response in responses:
+        assert owner not in response.content.decode()
+
+
+def test_openapi_describes_the_patch_route_and_the_409_with_current(tmp_path):
+    target = tmp_path / "openapi.yaml"
+    call_command("spectacular", "--validate", "--file", str(target))
+    schema = yaml.safe_load(target.read_text())
+    operation = schema["paths"]["/api/v1/listings/{listing_id}"]["patch"]
+    assert operation["operationId"] == "update_listing"
+    request = operation["requestBody"]["content"]["application/json"]["schema"]
+    assert request == {"$ref": "#/components/schemas/ListingUpdateRequest"}
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/Listing"
+    }
+    assert operation["responses"]["409"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ListingConflict"
+    }
+    for status in ("400", "401", "403", "404", "429", "500"):
+        assert status in operation["responses"]
+    schemas = schema["components"]["schemas"]
+    conflict = schemas["ListingConflict"]
+    assert set(conflict["properties"]) == {"error", "current"}
+    assert set(conflict["required"]) == {"error", "current"}
+    assert conflict["properties"]["current"]["allOf"] == [{"$ref": "#/components/schemas/Listing"}]
+    update = schemas["ListingUpdateRequest"]
+    assert set(update["properties"]) == {"base_revision", "fields"}
+    assert set(update["required"]) == {"base_revision", "fields"}
+    assert set(schemas["ListingFieldsUpdateRequest"]["properties"]) == {
+        "title",
+        "description",
+        "asking_price",
+        "price_basis",
+        "rental_period",
+    }
+    fields = schemas["ListingFields"]["properties"]
+    assert set(fields) == {"purpose", "category", "subtype", *NEW_FIELDS}
+    assert "provenance" in schemas["Listing"]["properties"]
+    assert schemas["PriceBasisEnum"]["enum"] == list(registry.field("price_basis").allowed_values)
+    assert schemas["RentalPeriodEnum"]["enum"] == list(
+        registry.field("rental_period").allowed_values
+    )
+    assert "owner_account_id" not in schemas["Listing"]["properties"]
+    assert set(schemas["ProvenanceEntry"]["properties"]) == {"origin", "confirmed"}
+
+
+# --- review additions ----------------------------------------------------------------------------
+
+
+def test_the_409_carries_the_request_id_no_store_and_is_logged(caplog):
+    import logging
+
+    client = signed_in()
+    created = draft(client)
+    edit(client, created, {"title": TITLE})
+    with caplog.at_level(logging.INFO):
+        response = edit(client, created, {"title": "Another title entirely"})
+    assert response.status_code == 409
+    assert response.headers["Cache-Control"] == "no-store"
+    request_id = response.headers["X-Request-ID"]
+    assert response.json()["error"]["request_id"] == request_id
+    logged = [r for r in caplog.records if getattr(r, "status", None) == 409]
+    assert logged and all(getattr(r, "request_id", request_id) == request_id for r in logged)
+
+
+def test_a_stale_base_with_a_bad_shape_gets_the_shape_error_first():
+    client = signed_in()
+    created = draft(client)
+    saved = edit(client, created, {"title": TITLE}).json()
+    stale = saved["revision"] - 1
+    not_editable = edit(client, saved, {"purpose": "rent"}, base=stale)
+    assert (not_editable.status_code, code(not_editable)) == (400, "validation_error")
+    assert "current" not in not_editable.json()
+    unknown = edit(client, saved, {"owner_account_id": "x"}, base=stale)
+    assert (unknown.status_code, code(unknown)) == (400, "validation_error")
+    bad_base = patch(client, saved["id"], {"base_revision": "1", "fields": {"title": TITLE}})
+    assert (bad_base.status_code, code(bad_base)) == (400, "validation_error")
+    well_formed = edit(client, saved, {"title": "Another title entirely"}, base=stale)
+    assert (well_formed.status_code, code(well_formed)) == (409, "stale_revision")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Call 0300 1234567 now please",
+        "Write to canary.person@example.com please",
+        "Find House 12, Street 5, Gulberg",
+        "Ring 0300,1234567 any time",
+    ],
+)
+@pytest.mark.parametrize("name", ["title", "description"])
+def test_contact_values_are_never_echoed_or_logged(name, value, caplog):
+    import logging
+
+    client = signed_in()
+    created = draft(client)
+    with caplog.at_level(logging.DEBUG):
+        response = edit(client, created, {name: value})
+    assert response.status_code == 400
+    assert field_codes(response) == {
+        name: ["This text cannot contain phone numbers, email addresses or street addresses."]
+    }
+    probes = [value, *value.split()[1:3]]
+    for probe in probes:
+        assert probe not in response.content.decode() and probe not in caplog.text
+    assert PropertyListing.objects.get().revision == 1
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "12.345", "abc"])
+def test_money_values_are_never_echoed_or_logged(value, caplog):
+    import logging
+
+    client = signed_in()
+    created = draft(client)
+    with caplog.at_level(logging.DEBUG):
+        response = edit(client, created, {"asking_price": value})
+    assert response.status_code == 400
+    assert list(field_codes(response)) == ["asking_price"]
+    assert value not in json.dumps(field_codes(response))
+    assert f'"{value}"' not in response.content.decode() and f'"{value}"' not in caplog.text
+    assert f"asking_price={value}" not in caplog.text

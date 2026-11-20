@@ -244,7 +244,7 @@ def test_description_with_contact_details_is_explained(owner, text):
     assert (response.status_code, error_code(response)) == (400, "validation_error")
     assert fields(response) == {
         "description": [
-            "Descriptions cannot contain phone numbers, email addresses or street addresses."
+            "This text cannot contain phone numbers, email addresses or street addresses."
         ]
     }
     assert AgencyProfile.objects.get().description == ""

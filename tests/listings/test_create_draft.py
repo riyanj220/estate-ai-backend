@@ -16,7 +16,7 @@ from apps.kernel.actor import Actor
 from apps.kernel.errors import DomainError
 from apps.kernel.models import AuditRecord, RateLimitPolicy
 from apps.listings import selectors, services
-from apps.listings.models import ListingRevision, PropertyListing
+from apps.listings.models import ListingRevision, ListingTerms, PropertyListing
 from tests.listings.support import (
     HOUSE,
     PASSWORD,
@@ -45,8 +45,19 @@ def test_active_owner_creates_a_draft(kind):
     account = make_account(account_type=kind)
     view = services.create_draft(user(account), *HOUSE)
     assert view.status == "draft" and view.visibility == "private"
-    assert (view.revision, view.registry_version) == (1, 1)
-    assert dict(view.fields) == {"purpose": "sale", "category": "house", "subtype": "house"}
+    assert (view.revision, view.registry_version) == (1, 2)
+    assert dict(view.fields) == {
+        "purpose": "sale",
+        "category": "house",
+        "subtype": "house",
+        "title": None,
+        "description": None,
+        "asking_price": None,
+        "price_basis": None,
+        "rental_period": None,
+    }
+    assert dict(view.provenance) == {}
+    assert ListingTerms.objects.get(listing_id=view.id).asking_price is None
     assert view.media == () and view.amenities == ()
     row = PropertyListing.objects.get()
     assert row.id == view.id and row.owner_account_id == account.id
@@ -365,6 +376,7 @@ def test_view_is_frozen_and_has_no_owner():
         "revision",
         "registry_version",
         "fields",
+        "provenance",
         "media",
         "amenities",
     }
