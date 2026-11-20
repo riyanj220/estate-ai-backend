@@ -2,7 +2,7 @@
 title: 'Story 1.20: Individual profile management (frontend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -89,6 +89,21 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, frontend half (blind, edge-case, verification-gap).
+
+**Patched:**
+- Existence oracle: the pending note appeared only for free addresses because the backend showed `pending_email` only for issued links. Fixed in the backend (`pending_email` now identical across free, taken, same and capped requests, merged as a separate fix) and the note wording is neutral ("If that address can be used...").
+- Emailed token restored in `history.state` by Next after Back or Forward (the address bar was clean): new `scrub-token` helper rewrites the router state; applied to the confirm page and, as the same latent leak, to the reset and verify pages with Back/Forward tests on all three.
+- Server text: only known codes are shown, unknown sentences, unknown keys and prototype keys (`constructor`, `__proto__`) become generic text; `mapFieldMessages` uses `Object.hasOwn`.
+- Details form: typed edits survive an in-flight save, trim-only changes, malformed 2xx bodies, unhandled `refresh()` rejections; email form: sent text clears on edit, new email `autocomplete=off`; profile re-reads silently on focus and visibility; Retry keeps focus; Profile links only for individual accounts; confirm sends a locally captured token.
+- Tests (17 new): session-refresh assertions that fail without the refresh call (also fixed in the reset and change tests), served markup has no token, unsaved edits survive an email request, privacy scan after 400 and 5xx.
+
+**Rejected:** retry on any 403 double-counting the password throttle (the CSRF check rejects before the backend service; comment added).
+
+**Deferred:** validating required fields only when changed, one shared 400-handling helper across forms, a `useProfile` hook, double announcement through `showNotice` (existing shared pattern), double-click guard test on the confirm button, automated production prerender check (manual `next build && next start` check documented).
+
+Deviation: an unknown-code 409 or 410 on the confirm page keeps the button with a generic message (documented in the README).
 
 ## Design Notes
 
