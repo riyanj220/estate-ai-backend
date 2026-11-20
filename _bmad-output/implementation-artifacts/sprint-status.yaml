@@ -29,38 +29,38 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 11-19-2026 08:06
-last_updated: 11-19-2026 18:00
+last_updated: 11-20-2026 12:30
 project: estate-ai-backend
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 development_status:
-  epic-1: in-progress
-  1-1-backend-repository-local-environment-and-database-roles: review
-  1-2-layered-app-skeleton-and-import-contracts: review
-  1-3-api-contract-error-envelope-and-structured-logging: review
-  1-4-security-baseline: review
-  1-5-frontend-scaffold-and-generated-api-client: review
-  1-6-actor-and-default-deny-authorisation-foundation: review
-  1-7-rate-limit-foundation: review
-  1-8-domain-events-and-idempotency: review
-  1-9-runtime-executor-feature-flags-ai-request-log-and-retention: review
-  1-10-audit-trail-and-reasoned-private-reads: review
-  1-11-city-reference-data: review
-  1-12-account-model-states-and-capability-matrix: review
-  1-13-mail-port-and-dev-mail-catcher: review
-  1-14-shared-contact-detail-patterns: review
-  1-15-individual-registration: review
-  1-16-email-verification: review
-  1-17-sign-in-and-sign-out-with-session-security: review
-  1-18-password-reset-and-password-change: review
-  1-19-agency-registration: review
-  1-20-individual-profile-management: review
-  1-21-agency-business-profile: review
-  1-22-administrator-provisioning-and-protected-admin-api: review
-  1-23-admin-area-shell: review
-  1-24-in-app-notification-list: review
-  epic-1-retrospective: optional
+  epic-1: done
+  1-1-backend-repository-local-environment-and-database-roles: done
+  1-2-layered-app-skeleton-and-import-contracts: done
+  1-3-api-contract-error-envelope-and-structured-logging: done
+  1-4-security-baseline: done
+  1-5-frontend-scaffold-and-generated-api-client: done
+  1-6-actor-and-default-deny-authorisation-foundation: done
+  1-7-rate-limit-foundation: done
+  1-8-domain-events-and-idempotency: done
+  1-9-runtime-executor-feature-flags-ai-request-log-and-retention: done
+  1-10-audit-trail-and-reasoned-private-reads: done
+  1-11-city-reference-data: done
+  1-12-account-model-states-and-capability-matrix: done
+  1-13-mail-port-and-dev-mail-catcher: done
+  1-14-shared-contact-detail-patterns: done
+  1-15-individual-registration: done
+  1-16-email-verification: done
+  1-17-sign-in-and-sign-out-with-session-security: done
+  1-18-password-reset-and-password-change: done
+  1-19-agency-registration: done
+  1-20-individual-profile-management: done
+  1-21-agency-business-profile: done
+  1-22-administrator-provisioning-and-protected-admin-api: done
+  1-23-admin-area-shell: done
+  1-24-in-app-notification-list: done
+  epic-1-retrospective: done
 
   epic-2: backlog
   2-1-start-a-draft-with-purpose-category-and-subtype: backlog
@@ -189,3 +189,64 @@ development_status:
   11-13-end-to-end-journeys-uj-5-and-uj-6: backlog
   11-14-measure-and-report-success-metrics: backlog
   epic-11-retrospective: optional
+action_items:
+  - id: "epic-1-retro-item-1-split-apps-identity-services-py-by-area"
+    epic: 1
+    action: "Split apps/identity/services.py by area behind unchanged public imports
+      before Epic 2"
+    owner: "Riyan"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
+  - id: "epic-1-retro-item-2-add-the-account-enumeration-and-after-co"
+    epic: 1
+    action: "Add the account-enumeration and after-commit checklist to the story spec
+      template and build skill"
+    owner: "Riyan"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
+  - id: "epic-1-retro-item-3-decide-a-path-scoped-gitleaks-allowlist"
+    epic: 1
+    action: "Decide a path-scoped gitleaks allowlist for test fixtures"
+    owner: "Riyan"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
+  - id: "epic-1-retro-item-4-fix-the-agency-profile-spec-ts-flake-at"
+    epic: 1
+    action: "Fix the agency-profile.spec.ts flake at its root cause and drop serial
+      mode where tests are independent"
+    owner: "Riyan"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
+  - id: "epic-1-retro-item-5-frontend-shared-400-handling-helper-indi"
+    epic: 1
+    action: "Frontend: shared 400-handling helper, Individual register form adopts
+      agency error handling, dedicated notification list hook"
+    owner: "Riyan"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
+  - id: "epic-1-retro-item-6-add-an-automated-real-stack-smoke-and-pr"
+    epic: 1
+    action: "Add an automated real-stack smoke and production-build checks for reset-password
+      and confirm-email-change pages to CI"
+    owner: "Riyan"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
+  - id: "epic-1-retro-item-7-schedule-the-security-follow-ups-separat"
+    epic: 1
+    action: "Schedule the security follow-ups: separate admin cookie, contact-pattern
+      hardening, agency-name uniqueness, admin audit operator identity"
+    owner: "Riyan"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
+  - id: "epic-1-retro-item-8-document-and-script-migrate-after-pull-s"
+    epic: 1
+    action: "Document and script migrate after pull so the dev database does not lag"
+    owner: "Riyan"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
+  - id: "epic-1-retro-item-9-record-the-accepted-epic-1-deviations-in"
+    epic: 1
+    action: "Record the accepted Epic 1 deviations in the project contract"
+    owner: "Riyan"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
