@@ -2,7 +2,7 @@
 title: 'Story 1.19: Agency registration (frontend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -80,6 +80,20 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, frontend half (blind, edge-case, verification-gap).
+
+**Patched:**
+- A submit before hydration could put the password, phone and address in a GET query: all seven forms now use `method="post"`.
+- City loader: Retry no longer unmounts its own focus target, one live region, focus returns to the select, the select is disabled only on first load, honest required messages for failed, empty and loading states, selection reconciled against every reload, malformed items filtered, stale responses ignored.
+- Success only on exactly 202 (both registration forms); email field messages allow-listed by code; address newlines collapse to a space; "Use a different email address" keeps the other fields; announce timer cleared; account type label falls back to the raw type; `ErrorSummary` title id overridable.
+- Tests (13 new): selection cleared after reload, double submit settles, privacy scan across success, 400, 429 and 5xx, server-driven option lists, malformed and partial lists, single live region, multi-line paste, non-202 2xx, display-name fallbacks, stale response guard.
+
+**Deferred:** porting the agency form's error handling (timeout wording, 403, code maps, clearing the password after a 400) to the Individual form, which is recorded in the README as a follow-up; distinguishing 401 and 403 on the city fetch; a dedicated reconcile test beyond the invalid-city path.
+
+Note: one health-page test (`backend never answers`) failed once in a full run and passed three times alone; a cold-start timing flake, not a regression.
+
+Deviation: the spec's hand-off to "Story 1.20" is 1.21 for the agency profile (1.20 is Individual profile management); the README names both.
 
 ## Design Notes
 
