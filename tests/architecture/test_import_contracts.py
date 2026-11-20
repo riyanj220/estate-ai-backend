@@ -75,7 +75,10 @@ def test_domain_apps_have_public_modules() -> None:
     assert DOMAIN_APPS
     for app in DOMAIN_APPS:
         for module in ("services", "selectors", "events", "subscribers"):
-            assert (ROOT / "apps" / app / f"{module}.py").is_file(), f"apps/{app}/{module}.py"
+            path = ROOT / "apps" / app / module
+            assert path.with_suffix(".py").is_file() or (path / "__init__.py").is_file(), (
+                f"apps/{app}/{module}"
+            )
 
 
 def test_contracts_cover_every_domain_app() -> None:

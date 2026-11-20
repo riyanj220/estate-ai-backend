@@ -10,6 +10,7 @@ from apps.identity import events as identity_events
 from apps.identity import selectors, services
 from apps.identity.events import AccountSessionEnded, emit_session_ended
 from apps.identity.models import Account
+from apps.identity.services import accounts
 from apps.identity.state import AccountState as S
 from apps.kernel import events
 from apps.kernel.actor import Actor
@@ -105,7 +106,7 @@ def test_database_enforces_case_insensitive_uniqueness(db):
 
 def test_race_on_unique_constraint_is_a_validation_error(db, monkeypatch):
     create()
-    monkeypatch.setattr(services, "_email_taken", lambda email: False)
+    monkeypatch.setattr(accounts, "_email_taken", lambda email: False)
     with transaction.atomic():
         assert codes(create, EMAIL.lower()) == "validation_error"
         assert Account.objects.count() == 1
@@ -591,13 +592,13 @@ def test_non_canonical_uuid_forms_are_not_found(db, form):
 @pytest.mark.django_db(transaction=True)
 def test_failure_after_event_emission_rolls_back_and_dispatches_nothing(received, monkeypatch):
     view = create()
-    original = services.emit_session_ended
+    original = accounts.emit_session_ended
 
     def emit_then_fail(*args):
         original(*args)
         raise RuntimeError
 
-    monkeypatch.setattr(services, "emit_session_ended", emit_then_fail)
+    monkeypatch.setattr(accounts, "emit_session_ended", emit_then_fail)
     with pytest.raises(RuntimeError):
         services.deactivate(ADMIN, view.id)
     assert received == []

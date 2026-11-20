@@ -9,6 +9,7 @@ from django.db import transaction
 from apps.identity import passwords, services, validation
 from apps.identity.events import AccountRegistered
 from apps.identity.models import Account, IndividualProfile
+from apps.identity.services import registration
 from apps.identity.state import AccountState
 from apps.kernel import events, runtime
 from apps.kernel.actor import Actor
@@ -188,8 +189,8 @@ def test_password_is_hashed_once_on_both_paths(db, monkeypatch, known):
     if known:
         register()
     calls = []
-    real = services.make_password
-    monkeypatch.setattr(services, "make_password", lambda p: calls.append(p) or real(p))
+    real = registration.make_password
+    monkeypatch.setattr(registration, "make_password", lambda p: calls.append(p) or real(p))
     register(email=EMAIL if known else "new@example.com")
     assert calls == [PASSWORD]
 
@@ -247,13 +248,13 @@ def test_failure_after_account_creation_rolls_everything_back(db, monkeypatch):
 
 
 def test_failure_after_profile_rolls_back_account_profile_and_audit(db, monkeypatch):
-    real = services.emit_registered
+    real = registration.emit_registered
 
     def boom(account_id):
         real(account_id)
         raise RuntimeError("late")
 
-    monkeypatch.setattr(services, "emit_registered", boom)
+    monkeypatch.setattr(registration, "emit_registered", boom)
     with pytest.raises(RuntimeError):
         register()
     assert (Account.objects.count(), IndividualProfile.objects.count()) == (0, 0)

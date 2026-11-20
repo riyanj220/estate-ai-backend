@@ -11,6 +11,7 @@ from apps.catalog.models import City
 from apps.identity import selectors, services, subscribers, validation
 from apps.identity.events import AccountRegistered, AccountVerificationRequested
 from apps.identity.models import Account, AgencyProfile, IndividualProfile
+from apps.identity.services import registration
 from apps.identity.state import AccountState
 from apps.kernel import events, runtime
 from apps.kernel.actor import Actor
@@ -210,8 +211,8 @@ def test_password_is_hashed_once_on_both_paths(city, monkeypatch, known):
     if known:
         register(city)
     calls = []
-    real = services.make_password
-    monkeypatch.setattr(services, "make_password", lambda p: calls.append(p) or real(p))
+    real = registration.make_password
+    monkeypatch.setattr(registration, "make_password", lambda p: calls.append(p) or real(p))
     register(city, email=EMAIL if known else "new@example.com")
     assert calls == [PASSWORD]
 
@@ -298,13 +299,13 @@ def test_refused_registration_writes_nothing(city):
 def test_failure_after_profile_rolls_back_account_profile_audit_and_event(
     city, registered, monkeypatch, django_capture_on_commit_callbacks
 ):
-    real = services.emit_registered
+    real = registration.emit_registered
 
     def boom(account_id):
         real(account_id)
         raise RuntimeError("late")
 
-    monkeypatch.setattr(services, "emit_registered", boom)
+    monkeypatch.setattr(registration, "emit_registered", boom)
     with django_capture_on_commit_callbacks(execute=True), pytest.raises(RuntimeError):
         register(city)
     assert (Account.objects.count(), AgencyProfile.objects.count()) == (0, 0)
@@ -520,7 +521,7 @@ def test_city_deactivated_between_validation_and_insert_creates_nothing(
     city, registered, monkeypatch, django_capture_on_commit_callbacks
 ):
     monkeypatch.setattr(
-        services,
+        registration,
         "validate_agency",
         lambda *a, **k: validation.validate_agency(*a[:6], lambda c: True),
     )

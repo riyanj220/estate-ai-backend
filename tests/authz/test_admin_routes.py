@@ -16,7 +16,7 @@ from apps.presentation.api.authz_matrix import route_table
 from apps.presentation.api.permissions import RequireAdmin
 
 ROOT = Path(__file__).resolve().parents[2]
-SERVICES = ROOT / "apps" / "identity" / "services.py"
+SERVICES = ROOT / "apps" / "identity" / "services"
 ADMIN_PREFIX = "/api/v1/admin/"
 REGISTRATION_PREFIX = "/api/v1/registrations/"
 
@@ -141,6 +141,14 @@ def _calls(tree, name):
                 yield node
 
 
+def _services_tree():
+    """One tree for the whole services package: every module's top-level code, in file order."""
+    tree = ast.Module(body=[], type_ignores=[])
+    for path in sorted(SERVICES.glob("*.py")):
+        tree.body.extend(ast.parse(path.read_text()).body)
+    return tree
+
+
 def _enclosing_functions(tree):
     owners = {}
     for node in ast.walk(tree):
@@ -152,7 +160,7 @@ def _enclosing_functions(tree):
 
 
 def test_only_two_services_write_an_account_row_and_only_one_may_choose_admin():
-    tree = ast.parse(SERVICES.read_text())
+    tree = _services_tree()
     owners = _enclosing_functions(tree)
     creators = {
         owners[id(call)]
@@ -164,7 +172,7 @@ def test_only_two_services_write_an_account_row_and_only_one_may_choose_admin():
 
 
 def test_account_inserts_from_registration_can_only_be_individual_or_agency():
-    tree = ast.parse(SERVICES.read_text())
+    tree = _services_tree()
     owners = _enclosing_functions(tree)
     callers = {owners[id(c)] for c in _calls(tree, "_insert_account")}
     assert callers == {"create_account", "_register"}

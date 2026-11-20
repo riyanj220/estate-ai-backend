@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.catalog.models import City
 from apps.identity import selectors, services, subscribers, validation
 from apps.identity.models import Account, AgencyProfile
+from apps.identity.services import profile as profile_service
 from apps.kernel import events, runtime
 from apps.kernel.actor import Actor
 from apps.kernel.errors import DomainError, field_message
@@ -265,7 +266,7 @@ def test_city_is_looked_up_only_after_the_other_fields_pass(city, monkeypatch):
     view = make(city)
     other = City.objects.create(name="Lahore")
     calls = []
-    monkeypatch.setattr(services, "city_is_active", lambda c: calls.append(c) or True)
+    monkeypatch.setattr(profile_service, "city_is_active", lambda c: calls.append(c) or True)
     assert errors_of(view, {"city_id": other.id, "business_phone": "1"}) == {
         "business_phone": "invalid_phone"
     }
@@ -280,7 +281,7 @@ def test_city_deactivated_mid_request_changes_nothing(city, monkeypatch):
         City.objects.filter(id=city_id).update(is_active=False)  # deactivated before the write
         return selectors.city_is_active(city_id)
 
-    monkeypatch.setattr(services, "city_is_active", lookup)
+    monkeypatch.setattr(profile_service, "city_is_active", lookup)
     assert errors_of(view, {"agency_name": "Skyline Group", "city_id": other.id}) == {
         "city_id": "invalid_city"
     }

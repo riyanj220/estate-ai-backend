@@ -20,7 +20,9 @@ def violations(path: Path) -> list[str]:
 
 
 def test_service_modules_take_actor_first():
-    modules = sorted((ROOT / "apps").glob("*/services.py"))
+    modules = sorted(
+        [*(ROOT / "apps").glob("*/services.py"), *(ROOT / "apps").glob("*/services/*.py")]
+    )
     assert modules
     assert [v for m in modules for v in violations(m)] == []
 

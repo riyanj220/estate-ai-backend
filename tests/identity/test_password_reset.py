@@ -16,6 +16,7 @@ from django.utils import timezone
 from apps.identity import password_reset, services, subscribers, verification
 from apps.identity.events import AccountSessionEnded
 from apps.identity.models import Account, PasswordResetToken, Session
+from apps.identity.services import password_flows
 from apps.identity.state import AccountState
 from apps.kernel import events, retention, runtime
 from apps.kernel.actor import Actor
@@ -326,7 +327,7 @@ def test_field_errors_only_appear_for_a_valid_link(link):
 def test_failures_before_the_password_check_do_no_hashing(link, monkeypatch):
     _, token = link
     calls = []
-    monkeypatch.setattr(services, "make_password", lambda *a: calls.append(a) or "x")
+    monkeypatch.setattr(password_flows, "make_password", lambda *a: calls.append(a) or "x")
     reset_code("unknown-token-value")
     reset_code(token, "short")
     PasswordResetToken.objects.update(used_at=timezone.now())
@@ -509,8 +510,8 @@ def test_throttle_answers_incorrect_without_checking_and_clears_with_the_window(
     for _ in range(5):
         assert change_error(view, sid, current="wrong") == {"current_password": "incorrect"}
     calls = []
-    real = services.check_password
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
+    real = password_flows.check_password
+    monkeypatch.setattr(password_flows, "check_password", lambda *a: calls.append(a) or real(*a))
     assert change_error(view, sid) == {"current_password": "incorrect"}  # correct, but locked
     assert calls == []
     assert RateLimitCounter.objects.get(scope="password_change_failed").count == 5
@@ -537,8 +538,8 @@ def test_oversized_current_password_is_incorrect_without_hashing(db, monkeypatch
     view = make()
     sign_in()
     calls = []
-    real = services.check_password
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
+    real = password_flows.check_password
+    monkeypatch.setattr(password_flows, "check_password", lambda *a: calls.append(a) or real(*a))
     assert change_error(view, Session.objects.get().id, current="x" * 1025) == {
         "current_password": "incorrect"
     }

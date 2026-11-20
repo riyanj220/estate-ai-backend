@@ -15,6 +15,7 @@ from apps.identity import policy as identity_policy
 from apps.identity.capabilities import Capability
 from apps.identity.events import AccountSessionEnded, emit_session_ended
 from apps.identity.models import Account, Session
+from apps.identity.services import sessions_auth
 from apps.identity.state import AccountState
 from apps.kernel import events, ratelimit, retention, runtime
 from apps.kernel.actor import Actor
@@ -130,7 +131,7 @@ def test_non_string_fields_are_validation_errors(db, email, password):
 def test_oversized_password_fails_without_hashing(db, monkeypatch):
     make()
     calls = []
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or True)
+    monkeypatch.setattr(sessions_auth, "check_password", lambda *a: calls.append(a) or True)
     assert code_of(sign_in, EMAIL, "x" * 2000) == "invalid_credentials"
     assert calls == []
 
@@ -140,8 +141,8 @@ def test_every_failure_runs_exactly_one_hash_comparison(db, monkeypatch):
     make("deact@example.com")
     services.deactivate(ADMIN, selectors_id("deact@example.com"))
     calls = []
-    real = services.check_password
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
+    real = sessions_auth.check_password
+    monkeypatch.setattr(sessions_auth, "check_password", lambda *a: calls.append(a) or real(*a))
     for email in (EMAIL, "unknown@example.com", "deact@example.com"):
         calls.clear()
         assert code_of(sign_in, email, "wrong") == "invalid_credentials"
@@ -175,8 +176,8 @@ def test_lockout_after_five_failures_blocks_even_the_right_password(db, clock, m
     make()
     fail(5)
     calls = []
-    real = services.check_password
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
+    real = sessions_auth.check_password
+    monkeypatch.setattr(sessions_auth, "check_password", lambda *a: calls.append(a) or real(*a))
     assert code_of(sign_in, EMAIL, "wrong") == "invalid_credentials"  # the 6th
     assert code_of(sign_in) == "invalid_credentials"  # right password, locked
     assert len(calls) == 2  # each of the two locked attempts costs one dummy-hash comparison
@@ -518,13 +519,13 @@ def test_ratelimit_key_is_a_hmac_not_the_email(db):
 
 def _during_check(monkeypatch, side_effect):
     """Run `side_effect` inside the password check, after the lookup and before the lock."""
-    real = services.check_password
+    real = sessions_auth.check_password
 
     def check(*args):
         side_effect()
         return real(*args)
 
-    monkeypatch.setattr(services, "check_password", check)
+    monkeypatch.setattr(sessions_auth, "check_password", check)
 
 
 def test_account_deactivated_between_lookup_and_lock_fails_and_counts(db, monkeypatch):
@@ -565,8 +566,8 @@ def test_unusable_password_still_runs_one_hash_comparison(db, monkeypatch):
     view = make()
     Account.objects.filter(id=view.id).update(password="!unusable-marker")
     calls = []
-    real = services.check_password
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
+    real = sessions_auth.check_password
+    monkeypatch.setattr(sessions_auth, "check_password", lambda *a: calls.append(a) or real(*a))
     assert code_of(sign_in) == "invalid_credentials"
     assert len(calls) == 1 and calls[0][1] == passwords.dummy_hash()
 

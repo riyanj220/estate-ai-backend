@@ -14,6 +14,7 @@ from django.utils import timezone
 from apps.identity import email_change, services, subscribers, verification
 from apps.identity.events import AccountEmailChangeRequested
 from apps.identity.models import Account, EmailChangeToken, IndividualProfile
+from apps.identity.services import email_changes
 from apps.kernel import events, retention, runtime
 from apps.kernel.actor import Actor
 from apps.kernel.errors import DomainError
@@ -449,7 +450,7 @@ def test_race_on_the_unique_index_is_link_invalid_not_a_500(db, monkeypatch):
     services.request_email_change(user(view), NEW, PASSWORD)
     delivery = services.issue_email_change(SYSTEM, view.id, EmailChangeToken.objects.get().id)
     make(NEW.lower())  # registered between the check and the write
-    monkeypatch.setattr(services, "_email_taken", lambda email: False)
+    monkeypatch.setattr(email_changes, "_email_taken", lambda email: False)
     with pytest.raises(DomainError) as exc:
         services.confirm_email_change(Actor.visitor(), delivery.token)
     assert exc.value.code == "link_invalid"

@@ -24,6 +24,7 @@ from apps.identity.models import (
     PasswordResetToken,
     Session,
 )
+from apps.identity.services import sessions_auth
 from apps.kernel import audit, events, runtime
 from apps.kernel.actor import Actor
 from apps.kernel.errors import DomainError
@@ -475,8 +476,8 @@ def test_every_admin_sign_in_path_runs_exactly_one_hash_comparison(db, monkeypat
     make_admin("gone@example.com")
     services.disable_admin(SYSTEM, "gone@example.com")
     calls = []
-    real = services.check_password
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
+    real = sessions_auth.check_password
+    monkeypatch.setattr(sessions_auth, "check_password", lambda *a: calls.append(a) or real(*a))
     for email, password in (
         (EMAIL, "wrong password 1"),
         ("person@example.com", USER_PASSWORD),
@@ -497,7 +498,7 @@ def test_every_admin_sign_in_path_runs_exactly_one_hash_comparison(db, monkeypat
 def test_oversized_password_is_a_failure_without_hashing(db, monkeypatch):
     make_admin()
     calls = []
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or True)
+    monkeypatch.setattr(sessions_auth, "check_password", lambda *a: calls.append(a) or True)
     assert code_of(admin_in, EMAIL, "x" * 2000) == "invalid_credentials"
     assert calls == []
 
@@ -507,8 +508,8 @@ def test_throttle_five_failures_then_silent_lockout_then_clears(db, clock, monke
     for _ in range(5):
         assert code_of(admin_in, EMAIL, "wrong password 1") == "invalid_credentials"
     calls = []
-    real = services.check_password
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
+    real = sessions_auth.check_password
+    monkeypatch.setattr(sessions_auth, "check_password", lambda *a: calls.append(a) or real(*a))
     assert code_of(admin_in) == "invalid_credentials"  # right password, locked out
     assert len(calls) == 1 and not Session.objects.exists()  # one dummy-hash comparison, no more
     assert RateLimitCounter.objects.get(scope="admin_sign_in").count == 5
@@ -1009,8 +1010,8 @@ def test_the_per_account_ceiling_holds_across_many_networks(db, monkeypatch):
     assert RateLimitCounter.objects.get(scope="admin_sign_in_account").count == 20
     assert records("admin.sign_in_failed").count() == 20
     calls = []
-    real = services.check_password
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
+    real = sessions_auth.check_password
+    monkeypatch.setattr(sessions_auth, "check_password", lambda *a: calls.append(a) or real(*a))
     assert code_of(admin_in, EMAIL, PASSWORD, "203.0.113.200") == "invalid_credentials"
     assert code_of(admin_in, EMAIL, "wrong password 1", "203.0.113.201") == "invalid_credentials"
     assert len(calls) == 2  # throttled: one dummy-hash comparison each, never the real hash
@@ -1033,8 +1034,8 @@ def test_throttled_branch_runs_one_dummy_hash_on_the_ordinary_door_too(db, monke
     for _ in range(5):
         code_of(services.sign_in, VISITOR, "jane@example.com", "wrong", NET)
     calls = []
-    real = services.check_password
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
+    real = sessions_auth.check_password
+    monkeypatch.setattr(sessions_auth, "check_password", lambda *a: calls.append(a) or real(*a))
     code_of(services.sign_in, VISITOR, "jane@example.com", USER_PASSWORD, NET)
     assert len(calls) == 1 and calls[0][1] == passwords.dummy_hash()
 
@@ -1077,8 +1078,8 @@ def test_each_door_accepts_only_its_own_account_type(db, monkeypatch, door, kind
         make_user(email)
         password = USER_PASSWORD
     calls = []
-    real = services.check_password
-    monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
+    real = sessions_auth.check_password
+    monkeypatch.setattr(sessions_auth, "check_password", lambda *a: calls.append(a) or real(*a))
     call = admin_in if door == "admin" else sign_in_ordinary
     if succeeds:
         assert call(email, password).summary.account_type == kind
