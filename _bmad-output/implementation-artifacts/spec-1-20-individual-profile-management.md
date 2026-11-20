@@ -2,7 +2,7 @@
 title: 'Story 1.20: Individual profile management (backend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -104,6 +104,23 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, backend half (blind, edge-case, verification-gap).
+
+| # | Finding | Verdict | Route |
+|---|---------|---------|-------|
+| 1 | A password change or reset left an attacker's already-mailed email-change link valid for 24 hours (blind) | high | patch: change, reset and deactivation void every unused change link in the same transaction |
+| 2 | The heads-up mail went only to the current address on the free branch, so the owner could tell whether a new address is registered (blind) | high | patch: sent on every accepted request |
+| 3 | The request limit counted wrong passwords, so typos or a stolen session burned the budget and made the silent `incorrect` unreachable (blind, edge, verification-gap) | medium | patch: counted only after the password verifies |
+| 4 | Every accepted request superseded the pending link, including no-ops, and `pending_email` showed addresses that never got a link (blind, edge, verification-gap) | medium | patch: `link_issued` flag, supersede only when a real link is minted, pending shows issued rows only |
+| 5 | Mail bombing of a target address through many accounts (blind, edge) | low | patch: per-target silent cap |
+| 6 | Same-address and taken checks mixed Python and database case folding (blind, edge) | low | patch: database comparison |
+| 7 | PATCH returned 400 before 403 for other account types; the profile view repr exposed phone and emails (edge, blind) | low | patch |
+| 8 | Tests: handler rollback, exact error codes, capped branch, query-shape equality, expiry, supersession, notice on rollback, canary casing, per-account 429 (verification-gap) | medium | patch: 22 tests |
+| 9 | Confirm leaves other sessions open and the old-address notice says only "contact support" (blind, edge) | medium | defer, accepted and documented: the password was required to start the change and the notice is the revert signal |
+| 10 | Suspended accounts can change their email; mail timing after commit still differs by branch (edge, blind) | low | defer, documented; same residual as Stories 1.16 and 1.18 |
+
+Deviation recorded: the heads-up is sent whenever the account is eligible, even if the row is already used or issued; handlers that run out of order leave the last one owning the link.
 
 ## Design Notes
 
