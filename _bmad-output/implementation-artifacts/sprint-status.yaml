@@ -64,7 +64,7 @@ development_status:
 
   epic-2: in-progress
   2-1-start-a-draft-with-purpose-category-and-subtype: review
-  2-2-conflict-safe-editing-with-title-description-and-price: in-progress
+  2-2-conflict-safe-editing-with-title-description-and-price: in-progress  # backend merged, frontend pending
   2-3-area-and-measurement-units: backlog
   2-4-house-and-apartment-details: backlog
   2-5-plot-and-commercial-details: backlog

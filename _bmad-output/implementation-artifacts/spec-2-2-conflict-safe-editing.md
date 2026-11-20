@@ -2,7 +2,7 @@
 title: 'Story 2.2: Conflict-safe editing with title, description and price (backend half)'
 type: 'feature'
 created: '2026-11-20'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -104,6 +104,23 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+Pass 1, backend half (blind, edge-case, verification-gap).
+
+| # | Finding | Verdict | Route |
+|---|---------|---------|-------|
+| 1 | Phone numbers split by a comma, colon, pipe, bullet or other separators (`0300,1234567`) passed the contact-detail check on the new 5,000-character free-text surface (blind) | high | patch: separator-agnostic split-phone pass in the shared `kernel/privacy/patterns.py` with 18 catch strings and 12 new false-positive strings (also strengthens the Epic 1 agency fields); digit words in other languages and look-alike scripts stay documented known gaps |
+| 2 | An AI-written value could never be confirmed by the owner re-saving it (blind, edge) | high | patch: a manual save of an equal value that is not manual/confirmed is a change (provenance, revision, revision row); Assistant overwrite policy deferred to Epic 5 |
+| 3 | `price_basis` alone on a rent listing was refused (`required_for_rent`), contradicting "saving never requires complete data" (blind) | medium | patch: removed; completeness is a publication rule (Story 2.15) |
+| 4 | Field lists were duplicated in six places, so a new field could be routed to the wrong table or skipped by the no-op comparison (blind) | medium | patch: one field-to-storage map with a test that fails when the registry and the map disagree |
+| 5 | Registry bounds and enums are frozen into migration constraints (blind, edge) | medium | accept (same as Story 2.1), drift test extended to the new bounds and enums |
+| 6 | The shared `contains_contact_details` message named "titles and descriptions" on the agency About text (blind) | low | patch: neutral wording |
+| 7 | Malformed stored provenance made every read 500; an invalid `origin` gave a raw error; the 409 skipped the shared error handling (edge, blind) | medium | patch |
+| 8 | RTL marks from Urdu text pasted from messengers were refused (edge) | low | patch: LRM and RLM allowed, overrides and isolates still refused |
+| 9 | The concurrency test did not prove the row lock; the rollback test could not show no-event-on-rollback; no-echo checks were vacuous in places; Published rules untested (verification-gap) | high | patch: single-threaded `FOR UPDATE` proof, outer-rollback test, API no-echo for phone, email, address and split phone, money values, published-row test |
+| 10 | A retried successful PATCH returns 409; edit volume has no per-account limit; older-registry revalidation covers submitted fields only; whitespace-only text clears a field (blind, edge) | low | defer or accept, all documented |
+
+Notes: `test_parallel_patches_audit_once_per_real_change` (Epic 1) returned a 500 in two mid-work runs while concurrent test sessions shared one database, then passed 12 of 12 in isolation and in every full run; treated as test-environment contention. Known false positive: a price starting with 92 and 10 or more digits (for example `92,500,000,000`) trips the split-phone rule.
 
 ## Design Notes
 
