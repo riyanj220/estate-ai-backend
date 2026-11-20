@@ -27,6 +27,8 @@ EXPECTED = {
     "password_change_failed": (5, 900, "account"),
     "email_change_request": (5, H, "account"),
     "email_change_confirm": (20, H, "client"),
+    "admin_sign_in": (5, 900, "client"),
+    "admin_sign_in_account": (20, H, "account"),
 }
 
 

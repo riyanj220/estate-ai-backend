@@ -18,6 +18,7 @@ from apps.kernel.actor import Actor
 from apps.kernel.models import AuditRecord
 
 SESSION = "/api/v1/session"
+ADMIN_SESSION = "/api/v1/admin-session"
 CSRF = "/api/v1/csrf"
 ME = "/api/v1/me"
 EMAIL = "Jane.Doe@Example.com"
@@ -295,7 +296,24 @@ def test_me_for_a_verified_agency_shows_its_name_and_nothing_private(
 
 def test_me_for_an_admin_account(db):
     make("admin@example.com", kind="admin")
-    body = signed_in("admin@example.com").get(ME).json()
+    client = browser()
+    response = post(
+        client,
+        {"email": "admin@example.com", "password": PASSWORD},
+        token_for(client),
+    )
+    assert response.status_code == 401  # the ordinary door refuses administrators
+    client = browser()
+    assert (
+        client.post(
+            ADMIN_SESSION,
+            json.dumps({"email": "admin@example.com", "password": PASSWORD}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=token_for(client),
+        ).status_code
+        == 200
+    )
+    body = client.get(ME).json()
     assert (body["account_type"], body["capabilities"]) == ("admin", ["sign_in", "browse"])
 
 

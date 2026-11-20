@@ -179,7 +179,7 @@ def test_lockout_after_five_failures_blocks_even_the_right_password(db, clock, m
     monkeypatch.setattr(services, "check_password", lambda *a: calls.append(a) or real(*a))
     assert code_of(sign_in, EMAIL, "wrong") == "invalid_credentials"  # the 6th
     assert code_of(sign_in) == "invalid_credentials"  # right password, locked
-    assert calls == []  # no hash during lockout
+    assert len(calls) == 2  # each of the two locked attempts costs one dummy-hash comparison
     assert Session.objects.count() == 0
     assert RateLimitCounter.objects.get(scope="sign_in").count == 5  # lockout adds nothing
     clock(seconds=900)

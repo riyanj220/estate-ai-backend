@@ -92,6 +92,13 @@ def sign_in_browser(email=EMAIL):
     response = post(
         client, SESSION, {"email": email, "password": PASSWORD}, HTTP_X_CSRFTOKEN=csrf(client)
     )
+    if response.status_code == 401:  # an administrator account signs in at its own door
+        response = post(
+            client,
+            "/api/v1/admin-session",
+            {"email": email, "password": PASSWORD},
+            HTTP_X_CSRFTOKEN=csrf(client),
+        )
     assert response.status_code == 200
     return client
 
