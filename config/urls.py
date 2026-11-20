@@ -3,6 +3,12 @@ from django.urls import path
 from apps.presentation.adminapi.me import AdminMeView
 from apps.presentation.api.handlers import bad_request, forbidden, not_found, server_error
 from apps.presentation.api.health import health
+from apps.presentation.api.notifications import (
+    MarkAllReadView,
+    MarkReadView,
+    NotificationListView,
+    UnreadCountView,
+)
 from apps.presentation.api.passwords import (
     ChangePasswordView,
     PasswordResetConfirmView,
@@ -75,6 +81,16 @@ urlpatterns = [
         "api/v1/password-resets/confirm",
         PasswordResetConfirmView.as_view(),
         name="password-resets-confirm",
+    ),
+    path("api/v1/notifications", NotificationListView.as_view(), name="notifications"),
+    path(
+        "api/v1/notifications/unread-count", UnreadCountView.as_view(), name="notifications-unread"
+    ),
+    path("api/v1/notifications/read-all", MarkAllReadView.as_view(), name="notifications-read-all"),
+    path(
+        "api/v1/notifications/<str:notification_id>/read",
+        MarkReadView.as_view(),
+        name="notifications-read",
     ),
     path("api/v1/schema", PublicSchemaView.as_view(), name="schema"),
 ]
