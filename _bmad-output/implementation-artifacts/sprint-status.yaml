@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 11-19-2026 08:06
-last_updated: 11-20-2026 12:30
+last_updated: 11-20-2026 18:40
 project: estate-ai-backend
 project_key: NOKEY
 tracking_system: file-system
@@ -195,14 +195,14 @@ action_items:
     action: "Split apps/identity/services.py by area behind unchanged public imports
       before Epic 2"
     owner: "Riyan"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
   - id: "epic-1-retro-item-2-add-the-account-enumeration-and-after-co"
     epic: 1
     action: "Add the account-enumeration and after-commit checklist to the story spec
       template and build skill"
     owner: "Riyan"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
   - id: "epic-1-retro-item-3-decide-a-path-scoped-gitleaks-allowlist"
     epic: 1
@@ -215,7 +215,7 @@ action_items:
     action: "Fix the agency-profile.spec.ts flake at its root cause and drop serial
       mode where tests are independent"
     owner: "Riyan"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
   - id: "epic-1-retro-item-5-frontend-shared-400-handling-helper-indi"
     epic: 1
@@ -242,11 +242,11 @@ action_items:
     epic: 1
     action: "Document and script migrate after pull so the dev database does not lag"
     owner: "Riyan"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
   - id: "epic-1-retro-item-9-record-the-accepted-epic-1-deviations-in"
     epic: 1
     action: "Record the accepted Epic 1 deviations in the project contract"
     owner: "Riyan"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-11-20.md"
