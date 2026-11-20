@@ -69,7 +69,7 @@ from apps.identity.validation import (
     validate_agency,
     validate_individual,
 )
-from apps.kernel import audit, ratelimit
+from apps.kernel import audit, notifications, ratelimit
 from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.kernel.privacy.patterns import LONG_DIGIT_RUN, reject_contact_details
@@ -792,6 +792,7 @@ def confirm_password_reset(actor: Actor, token, password) -> None:
         )
         emit_session_ended(account.id, "password_changed", ended_before=now)
         notices.send_password_reset_done(account.email)
+        notifications.notify(account.id, "account.password_changed", {})  # last: see docs
 
 
 def _change_attempt(key: str, actor: Actor, session_id, current: str, new: str, now) -> bool:
@@ -839,6 +840,7 @@ def _change_attempt(key: str, actor: Actor, session_id, current: str, new: str, 
         audit.record(actor, "account.password_changed", "account", account.id)
         emit_session_ended(account.id, "password_changed", session_id, ended_before=now)
         notices.send_password_changed(account.email)
+        notifications.notify(account.id, "account.password_changed", {})  # last: see docs
         return True
 
 
@@ -1199,6 +1201,7 @@ def confirm_email_change(actor: Actor, token) -> None:
         _record_verified(system, account)
         audit.record(system, "account.email_changed", "account", account.id)
         notices.send_email_changed(old_email)
+        notifications.notify(account.id, "account.email_changed", {})  # last: see docs
 
 
 # --- administrator provisioning (Story 1.22) ----------------------------------------------------
@@ -1332,7 +1335,7 @@ def enable_admin(actor: Actor, email) -> bool:
 
 
 def remove_admin(actor: Actor, email, force_last: bool = False) -> None:
-    """Delete an administrator account (its sessions and tokens cascade).
+    """Delete an administrator account (sessions and tokens cascade; notifications are deleted).
 
     The last active administrator is kept unless `force_last`; `admin.removed` records whether
     the flag was needed (`forced`). The target is the former account id (the audit table keeps
@@ -1347,9 +1350,13 @@ def remove_admin(actor: Actor, email, force_last: bool = False) -> None:
             raise AdminRefused("last_administrator")
         account_id = account.id
         account.delete()
+        notifications.delete_for_account(account_id)
         audit.record(
             actor, "admin.removed", "account", account_id, {"forced": "yes" if last else "no"}
         )
+        # Last, so a notification queued earlier in this transaction (stored by its own
+        # after-commit callback) is removed too.
+        notifications.delete_for_account_after_commit(account_id)
 
 
 def reset_admin_password(actor: Actor, email, password) -> None:

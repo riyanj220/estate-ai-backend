@@ -16,7 +16,7 @@ class IdentityConfig(AppConfig):
             verification,
         )
         from apps.identity.models import AccountType
-        from apps.kernel import audit, retention
+        from apps.kernel import audit, notifications, retention
 
         # Metadata holds enumerated values only: never email, phone, hash or the suspension reason.
         audit.register_action("account.created", {"account_type": [t.value for t in AccountType]})
@@ -46,6 +46,10 @@ class IdentityConfig(AppConfig):
             audit.register_action(
                 action, {"forced": ["yes", "no"]}
             )  # whether --force-last was needed
+
+        # In-app counterparts of the old-address mail notices; empty payloads (no private data).
+        for kind in ("account.password_changed", "account.email_changed"):
+            notifications.register_kind(kind, {})
 
         subscribers.register()
         retention.register("identity.email_verification_tokens", verification.purge_expired)
