@@ -63,8 +63,9 @@ def test_every_cell_matches_fr74(state, capability):
     assert caps.matrix_access(state, capability) == want
 
 
-def test_pending_is_everything_except_sign_in_and_browse():
-    assert PENDING_CAPABILITIES == set(C) - {C.SIGN_IN, C.BROWSE}
+def test_pending_is_everything_except_the_activated_capabilities():
+    # Story 2.1 activated view_drafts and edit_drafts; later stories remove the rest.
+    assert PENDING_CAPABILITIES == set(C) - {C.SIGN_IN, C.BROWSE, C.VIEW_DRAFTS, C.EDIT_DRAFTS}
 
 
 def make(**fields):
@@ -166,3 +167,24 @@ def test_user_check_is_one_query(db, django_assert_num_queries):
 def test_unknown_capability_is_an_error():
     with pytest.raises(ValueError):
         can(Actor.visitor(), "fly")
+
+
+@pytest.mark.parametrize(
+    ("state", "view", "edit"),
+    [
+        (S.EMAIL_UNVERIFIED, True, True),
+        (S.ACTIVE, True, True),
+        (S.SUSPENDED, True, False),
+        (S.DEACTIVATED, False, False),
+    ],
+)
+def test_draft_capabilities_are_live_and_follow_fr74(db, state, view, edit):
+    # Story 2.1 removed both from PENDING_CAPABILITIES.
+    assert C.VIEW_DRAFTS not in PENDING_CAPABILITIES and C.EDIT_DRAFTS not in PENDING_CAPABILITIES
+    actor = Actor.user(account_in(state).id)
+    assert (can(actor, C.VIEW_DRAFTS), can(actor, C.EDIT_DRAFTS)) == (view, edit)
+
+
+def test_administrators_never_hold_the_draft_capabilities(db):
+    admin = Actor.admin(admin_account(email_verified_at=timezone.now()).id)
+    assert not can(admin, C.VIEW_DRAFTS) and not can(admin, C.EDIT_DRAFTS)

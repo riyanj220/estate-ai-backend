@@ -123,7 +123,7 @@ def test_sign_in_returns_the_summary_and_a_hardened_cookie(db):
         "email": EMAIL,
         "full_name": "",
         "agency_name": "",
-        "capabilities": ["sign_in", "browse"],
+        "capabilities": ["sign_in", "browse", "view_drafts", "edit_drafts"],
     }
     cookie = client.cookies[COOKIE]
     assert cookie["httponly"] and cookie["samesite"] == "Lax"
@@ -332,7 +332,10 @@ def test_me_reflects_suspension_without_ending_the_session(db):
     client = signed_in()
     services.suspend(ADMIN, view.id, "policy breach")
     body = client.get(ME).json()
-    assert (body["state"], body["capabilities"]) == ("suspended", ["sign_in", "browse"])
+    assert (body["state"], body["capabilities"]) == (
+        "suspended",
+        ["sign_in", "browse", "view_drafts"],
+    )
 
 
 def test_expired_and_ended_sessions_are_401(db):
