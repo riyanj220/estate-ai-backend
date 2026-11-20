@@ -139,3 +139,33 @@ class AuditRecord(models.Model):
                 name="audit_actor_id_matches_kind",
             ),
         ]
+
+
+class Notification(models.Model):
+    """One in-app notification for an account (Story 1.24). Written only by `kernel.notifications`.
+
+    `seq` is allocated by the column default (a database sequence) in the INSERT and orders the
+    list and its cursor (a UUID is not time-ordered). It is never returned as a field, but the
+    cursor carries its position, so it is opaque rather than secret. `payload` is schema-checked
+    public-class data.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    seq = models.BigIntegerField(
+        unique=True,
+        editable=False,
+        db_default=models.expressions.RawSQL("nextval('kernel_notification_seq')", []),
+    )
+    account_id = models.UUIDField()  # plain UUID: kernel never points at another app's table
+    kind = models.CharField(max_length=64)
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["account_id", "-seq"], name="notification_account_seq_idx"),
+            models.Index(fields=["account_id", "read_at"], name="notification_account_read_idx"),
+            models.Index(fields=["created_at"], name="notification_created_idx"),
+            models.Index(fields=["read_at"], name="notification_read_at_idx"),
+        ]
