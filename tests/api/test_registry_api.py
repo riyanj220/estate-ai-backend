@@ -25,6 +25,9 @@ FIELD_KEYS = {
     "min",
     "max",
     "currency",
+    "scale",
+    "derived",
+    "description",
 }
 
 
@@ -33,7 +36,7 @@ def test_served_publicly_with_the_defined_shape():
     assert response.status_code == 200
     body = response.json()
     assert list(body) == ["version", "taxonomy", "fields"]
-    assert body["version"] == 2
+    assert body["version"] == 3
     assert body["taxonomy"] == {
         "categories": [
             {"id": "house", "subtypes": ["house"]},
@@ -52,6 +55,10 @@ def test_served_publicly_with_the_defined_shape():
         "asking_price",
         "price_basis",
         "rental_period",
+        "area_value",
+        "area_unit",
+        "marla_basis",
+        "area_sqft",
     ]
     for field in body["fields"]:
         assert set(field) == FIELD_KEYS
@@ -106,7 +113,7 @@ def test_cache_headers_and_strong_etag():
     response = Client().get(URL)
     assert response.headers["Cache-Control"] == "public, max-age=300"
     tag = response.headers["ETag"]
-    assert tag == f'"2-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
+    assert tag == f'"3-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
         "W/"
     )
 
@@ -140,3 +147,26 @@ def test_a_shape_change_alone_changes_the_etag(monkeypatch):
     after = Client().get(URL)
     assert after.headers["ETag"] != before
     assert Client().get(URL, HTTP_IF_NONE_MATCH=before).status_code == 200
+
+
+def test_the_shape_version_is_pinned_and_the_area_fields_are_served_in_full():
+    assert RESPONSE_SHAPE_VERSION == 3
+    served = {f["id"]: f for f in Client().get(URL).json()["fields"]}
+    value = served["area_value"]
+    assert (value["type"], value["min"], value["max"], value["scale"]) == (
+        "decimal",
+        "0.0001",
+        "9999999999.9999",
+        4,
+    )
+    assert value["derived"] is False and value["currency"] is None
+    sqft = served["area_sqft"]
+    assert (sqft["derived"], sqft["scale"], sqft["max"]) == (True, 4, "9999999999999999.9999")
+    basis = served["marla_basis"]
+    assert basis["allowed_values"] == ["225", "250", "272.25"]
+    assert basis["description"] == (
+        "Square feet in one marla. Applies only while the unit is marla or kanal."
+    )
+    assert served["title"]["description"] is None and served["title"]["scale"] is None
+    assert served["asking_price"]["min"] == "0.01" and served["asking_price"]["scale"] is None
+    assert "E" not in "".join(f"{f['min']}{f['max']}" for f in served.values() if f["min"])

@@ -51,7 +51,7 @@ def add_field(**overrides):
 
 def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
     loaded = registry.load()
-    assert loaded.version == 2
+    assert loaded.version == 3
     assert [f.id for f in registry.fields()] == [
         "purpose",
         "category",
@@ -61,6 +61,10 @@ def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
         "asking_price",
         "price_basis",
         "rental_period",
+        "area_value",
+        "area_unit",
+        "marla_basis",
+        "area_sqft",
     ]
     assert registry.purposes() == ("sale", "rent")
     assert [c.id for c in registry.categories()] == ["house", "apartment", "plot", "commercial"]
@@ -69,7 +73,12 @@ def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
         assert definition.field_class == "public" and definition.quota_identity
         assert not (definition.searchable or definition.sortable or definition.valuation_input)
     for definition in registry.fields():
-        assert definition.field_class == "public" and not definition.valuation_input
+        assert definition.field_class == "public"
+    assert {f.id for f in registry.fields() if f.valuation_input} == {
+        "area_value",
+        "area_unit",
+        "marla_basis",
+    }
 
 
 def test_the_editing_fields_are_defined_by_the_registry():
@@ -109,7 +118,7 @@ def test_plot_file_is_a_distinct_subtype_of_plot():
 
 
 def test_accessors_return_immutable_values():
-    assert registry.registry_version() == 2
+    assert registry.registry_version() == 3
     assert registry.field("purpose").allowed_values == ("sale", "rent")
     assert registry.field("nope") is None
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -249,7 +258,7 @@ def test_startup_fails_on_an_invalid_file(monkeypatch, tmp_path):
     finally:
         monkeypatch.undo()
         registry.load.cache_clear()
-    assert registry.load().version == 2
+    assert registry.load().version == 3
 
 
 def test_catalog_ready_loads_the_registry(monkeypatch):
@@ -305,18 +314,18 @@ def test_lock_script_refuses_a_change_without_a_bump(monkeypatch, tmp_path, caps
     monkeypatch.setattr(registry, "LOCK_PATH", lock)
     with pytest.raises(SystemExit, match="bump"):
         script.main()
-    fields.write_text(text(lambda d: (add_field()(d), d.update(version=3))))
+    fields.write_text(text(lambda d: (add_field()(d), d.update(version=4))))
     script.main()
-    assert registry.read_lock(lock.read_text())[0] == 3
-    assert "version 3" in capsys.readouterr().out
+    assert registry.read_lock(lock.read_text())[0] == 4
+    assert "version 4" in capsys.readouterr().out
 
 
 def test_the_files_are_found_from_any_working_directory(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     registry.load.cache_clear()
     try:
-        assert registry.load().version == 2
-        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 2
+        assert registry.load().version == 3
+        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 3
     finally:
         registry.load.cache_clear()
 
@@ -515,3 +524,136 @@ def test_bad_allowed_values_by_purpose(mapping):
 
 def test_allowed_values_by_purpose_is_for_enums_only():
     refused(add_field(allowed_values_by_purpose={"sale": ["a"], "rent": ["a"]}), "only an enum")
+
+
+# --- decimal, derived and the version 3 area fields (Story 2.3) ---------------------------------
+
+
+def decimal_field(**overrides):
+    base = {"id": "depth", "type": "decimal", "min": "0.01", "max": "500.5", "scale": 2}
+    base.update(overrides)
+    return add_field(**base)
+
+
+def test_the_area_fields_are_defined_by_the_registry():
+    value, unit = registry.field("area_value"), registry.field("area_unit")
+    basis, sqft = registry.field("marla_basis"), registry.field("area_sqft")
+    assert (value.type, value.scale) == ("decimal", 4)
+    assert (value.minimum, value.maximum) == (Decimal("0.0001"), Decimal("9999999999.9999"))
+    assert value.requirement == "required_for_publication"
+    assert value.searchable and value.sortable and value.ai_extractable and value.valuation_input
+    assert unit.allowed_values == ("sqft", "sqyd", "marla", "kanal", "acre")
+    assert unit.requirement == "required_for_publication"
+    assert unit.searchable and unit.ai_extractable and unit.valuation_input
+    assert basis.allowed_values == ("225", "250", "272.25") and basis.requirement == "optional"
+    assert basis.description == (
+        "Square feet in one marla. Applies only while the unit is marla or kanal."
+    )
+    assert basis.ai_extractable and basis.valuation_input and not basis.searchable
+    assert (sqft.type, sqft.scale, sqft.derived) == ("decimal", 4, True)
+    assert sqft.searchable and sqft.sortable
+    assert not (sqft.valuation_input or sqft.ai_extractable)
+    for definition in (value, unit, basis, sqft):
+        assert definition.field_class == "public"
+        assert definition.applicability == registry.Applicability()
+        assert definition.applies_to("rent", "plot", "plot_file")
+    assert not any(f.derived for f in registry.fields() if f.id != "area_sqft")
+
+
+def test_a_decimal_field_carries_bounds_and_scale():
+    parsed = registry.parse(text(decimal_field()))
+    depth = parsed.fields[-1]
+    assert (depth.minimum, depth.maximum, depth.scale) == (Decimal("0.01"), Decimal("500.5"), 2)
+    assert depth.currency is None and not depth.derived
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"min": 1},
+        {"min": "-1"},
+        {"min": "0.001"},  # more decimals than the scale
+        {"max": "abc"},
+        {"max": "1" * 17},
+        {"min": "600"},
+        {"scale": 0},
+        {"scale": 9},
+        {"scale": "2"},
+        {"scale": True},
+        {"currency": "PKR"},
+    ],
+)
+def test_bad_decimal_definitions(overrides):
+    refused(decimal_field(**overrides))
+
+
+def test_a_decimal_needs_min_max_and_scale_and_only_a_decimal_has_scale():
+    for key in ("min", "max", "scale"):
+
+        def drop(data, key=key):
+            decimal_field()(data)
+            data["fields"][-1].pop(key)
+
+        refused(drop, "needs min, max and scale")
+    refused(add_field(scale=2), "only a decimal field has scale")
+    refused(money(scale=2), "only a decimal field has scale")
+    refused(add_field(type="enum", allowed_values=["a"], scale=2), "only a decimal field")
+
+
+def test_an_enum_value_may_carry_a_decimal_part():
+    parsed = registry.parse(text(add_field(type="enum", allowed_values=["225", "272.25"])))
+    assert parsed.fields[-1].allowed_values == ("225", "272.25")
+    for bad in ("272.", ".5", "1.23456", "a.b", "1.2.3", "2,5", "12345.5", "1.234"):
+        refused(add_field(type="enum", allowed_values=[bad]))
+
+
+def test_a_decimal_part_needs_an_all_numeric_enum_without_equal_values():
+    refused(add_field(type="enum", allowed_values=["225", "big.5"]))
+    refused(add_field(type="enum", allowed_values=["225", "abc", "1.5"]), "every value")
+    refused(add_field(type="enum", allowed_values=["225", "225.00"]), "numerically equal")
+    refused(add_field(type="enum", allowed_values=["1.5", "1.50"]), "numerically equal")
+    ok = registry.parse(text(add_field(type="enum", allowed_values=["1", "1.5", "9999.99"])))
+    assert ok.fields[-1].allowed_values == ("1", "1.5", "9999.99")
+    plain = registry.parse(text(add_field(type="enum", allowed_values=["a", "2_5", "10"])))
+    assert plain.fields[-1].allowed_values == ("a", "2_5", "10")
+
+
+def test_decimal_bounds_are_served_without_an_exponent():
+    from apps.presentation.api import registry as api
+
+    tiny = registry.parse(text(decimal_field(min="0.0000001", max="0.5", scale=7)))
+    found = tiny.fields[-1]
+    assert (found.minimum, found.scale) == (Decimal("0.0000001"), 7)
+    assert str(found.minimum) == "1E-7"  # why the serializer must not use str()
+    assert format(found.minimum, "f") == "0.0000001"
+    import unittest.mock as mock
+
+    with mock.patch.object(registry, "fields", lambda: tiny.fields[-1:]):
+        served = api._body()["fields"][0]
+    assert served["min"] == "0.0000001" and served["max"] == "0.5"
+    from apps.presentation.api.listings import _help
+
+    assert "E-" not in _help(found) and "0.0000001" in _help(found)
+
+
+def test_a_derived_field_is_optional_and_never_an_input():
+    parsed = registry.parse(text(decimal_field(derived=True)))
+    assert parsed.fields[-1].derived is True
+    for overrides in (
+        {"requirement": "required_for_publication"},
+        {"requirement": "recommended"},
+        {"ai_extractable": True},
+        {"valuation_input": True},
+        {"quota_identity": True},
+        {"derived": "yes"},
+        {"derived": 1},
+    ):
+        refused(decimal_field(**{"derived": True, **overrides}))
+
+
+def test_a_description_is_short_text():
+    parsed = registry.parse(text(add_field(description="Square feet in one marla.")))
+    assert parsed.fields[-1].description == "Square feet in one marla."
+    for bad in ("", "x" * 201, 5, ["a"]):
+        refused(add_field(description=bad))
+    assert registry.field("title").description is None

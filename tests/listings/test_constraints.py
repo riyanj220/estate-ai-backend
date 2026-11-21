@@ -7,7 +7,7 @@ from django.db import DataError, IntegrityError, connection, transaction
 from django.db.migrations.loader import MigrationLoader
 
 from apps.listings import models as listing_models
-from apps.listings.models import ListingRevision, ListingTerms, PropertyListing
+from apps.listings.models import ListingArea, ListingRevision, ListingTerms, PropertyListing
 
 GOOD = {
     "owner_account_id": uuid.UUID(int=7),
@@ -210,3 +210,128 @@ def test_a_loosened_or_tightened_registry_bound_would_differ_from_the_migration(
         )
         drifted = {c.name: c.condition for c in [*text_constraints(), *terms_constraints()]}
         assert any(migrated[name] != drifted[name] for name in drifted), field_id
+
+
+# --- area (Story 2.3) ---------------------------------------------------------------------------
+
+
+def area_row(**overrides):
+    return ListingArea.objects.create(
+        listing=overrides.pop("listing", None) or listing(), **overrides
+    )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "constraint"),
+    [
+        ({"area_value": 0}, "listings_area_value_range"),
+        ({"area_value": "0.0000"}, "listings_area_value_range"),
+        ({"area_value": "-1"}, "listings_area_value_range"),
+        ({"area_unit": "hectare"}, "listings_area_unit_valid"),
+        ({"area_unit": "marla", "marla_basis": "300"}, "listings_area_basis_valid"),
+        ({"area_unit": "sqft", "marla_basis": "225"}, "listings_area_basis_applies"),
+        ({"marla_basis": "225"}, "listings_area_basis_applies"),
+        ({"area_sqft": "100"}, "listings_area_sqft_consistent"),  # no value or unit
+        ({"area_value": "5", "area_sqft": "5"}, "listings_area_sqft_consistent"),  # no unit
+        ({"area_unit": "sqft", "area_sqft": "5"}, "listings_area_sqft_consistent"),  # no value
+        (
+            {"area_value": "5", "area_unit": "marla", "area_sqft": "1125"},
+            "listings_area_sqft_consistent",  # a marla without its basis is not computable
+        ),
+        (
+            {"area_value": "5", "area_unit": "sqft", "area_sqft": "0"},
+            "listings_area_sqft_consistent",
+        ),
+    ],
+)
+def test_area_constraints_name_themselves(db, overrides, constraint):
+    with pytest.raises(IntegrityError, match=constraint), transaction.atomic():
+        area_row(**overrides)
+    assert ListingArea.objects.count() == 0
+
+
+def test_area_over_the_column_width_is_a_data_error(db):
+    with pytest.raises(DataError), transaction.atomic():
+        area_row(area_value="10000000000")
+
+
+def test_area_accepts_the_bounds_and_consistent_rows(db):
+    good = [
+        {},
+        {"area_value": "0.0001", "area_unit": "sqft", "area_sqft": "0.0001"},
+        {"area_value": "9999999999.9999", "area_unit": "acre", "area_sqft": "435599999999995.644"},
+        {"area_value": "5", "area_unit": "marla"},  # unknown basis: sqft stays null
+        {"area_value": "5", "area_unit": "marla", "marla_basis": "225", "area_sqft": "1125"},
+        {"area_value": "1", "area_unit": "kanal", "marla_basis": "272.25", "area_sqft": "5445"},
+    ]
+    for overrides in good:
+        ListingArea.objects.all().delete()
+        PropertyListing.objects.all().delete()
+        assert area_row(**overrides).pk
+
+
+def test_area_is_numeric_in_the_database_and_one_per_listing(db):
+    row = listing()
+    area_row(listing=row, area_value="1.5", area_unit="sqft", area_sqft="1.5")
+    with pytest.raises(IntegrityError), transaction.atomic():
+        area_row(listing=row)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT column_name, data_type, numeric_precision, numeric_scale "
+            "FROM information_schema.columns WHERE table_name = 'listings_listingarea' "
+            "AND data_type = 'numeric' ORDER BY column_name"
+        )
+        assert cursor.fetchall() == [
+            ("area_sqft", "numeric", 20, 4),
+            ("area_value", "numeric", 14, 4),
+            ("marla_basis", "numeric", 6, 2),
+        ]
+
+
+def test_migration_0003_matches_the_models_and_the_registry(db):
+    from apps.listings.models import area_constraints
+
+    migrated = _migrated("listingarea")
+    assert migrated == {c.name: c.condition for c in ListingArea._meta.constraints}
+    assert migrated == {c.name: c.condition for c in area_constraints()}
+    text = repr(migrated["listings_area_value_range"])
+    assert "0.0001" in text and "9999999999.9999" in text
+    assert "['sqft', 'sqyd', 'marla', 'kanal', 'acre']" in repr(
+        migrated["listings_area_unit_valid"]
+    )
+    assert all(
+        value in repr(migrated["listings_area_basis_valid"]) for value in ("225", "250", "272.25")
+    )
+    assert "['marla', 'kanal']" in repr(migrated["listings_area_basis_applies"])
+    assert "9999999999999999.9999" in repr(migrated["listings_area_sqft_consistent"])
+
+
+def test_a_changed_area_bound_enum_or_unit_set_would_differ_from_the_migration(db, monkeypatch):
+    import dataclasses
+
+    from apps.catalog import registry
+    from apps.listings import area as area_module
+    from apps.listings.models import area_constraints
+
+    migrated = _migrated("listingarea")
+    real = registry.field
+    changes = {
+        "area_value": {"maximum": registry.field("area_value").maximum / 2},
+        "area_unit": {"allowed_values": ("sqft", "sqyd", "marla", "kanal")},
+        "marla_basis": {"allowed_values": ("225", "250")},
+        "area_sqft": {"maximum": registry.field("area_sqft").maximum / 2},
+    }
+    for field_id, change in changes.items():
+        monkeypatch.setattr(
+            registry,
+            "field",
+            lambda name, fid=field_id, ch=change: (
+                dataclasses.replace(real(name), **ch) if name == fid else real(name)
+            ),
+        )
+        drifted = {c.name: c.condition for c in area_constraints()}
+        assert any(migrated[name] != drifted[name] for name in drifted), field_id
+    monkeypatch.setattr(registry, "field", real)
+    monkeypatch.setattr(area_module, "MARLA_UNITS", ("marla",))
+    drifted = {c.name: c.condition for c in area_constraints()}
+    assert any(migrated[name] != drifted[name] for name in drifted)

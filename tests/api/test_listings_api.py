@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from decimal import Decimal
 
 import pytest
 import yaml
@@ -10,8 +11,9 @@ from django.test import Client
 
 from apps.catalog import registry
 from apps.identity import services as identity_services
+from apps.kernel.errors import field_message
 from apps.kernel.models import AuditRecord
-from apps.listings.models import ListingRevision, ListingTerms, PropertyListing
+from apps.listings.models import ListingArea, ListingRevision, ListingTerms, PropertyListing
 from tests.listings.support import PASSWORD, SYSTEM, make_account, seed_cap
 
 CREATE = "/api/v1/listings"
@@ -37,6 +39,10 @@ NEW_FIELDS = {
     "asking_price": None,
     "price_basis": None,
     "rental_period": None,
+    "area_value": None,
+    "area_unit": None,
+    "marla_basis": None,
+    "area_sqft": None,
 }
 
 
@@ -92,7 +98,7 @@ def test_create_returns_the_wire_shape(kind):
     body = response.json()
     assert set(body) == WIRE_KEYS
     assert body["status"] == "draft" and body["visibility"] == "private"
-    assert (body["revision"], body["registry_version"]) == (1, 2)
+    assert (body["revision"], body["registry_version"]) == (1, 3)
     assert body["fields"] == {**BODY, **NEW_FIELDS} and body["provenance"] == {}
     assert body["media"] == [] and body["amenities"] == []
     uuid.UUID(body["id"])
@@ -352,6 +358,10 @@ def test_listing_resource_is_exactly_the_wire_shape():
         "asking_price",
         "price_basis",
         "rental_period",
+        "area_value",
+        "area_unit",
+        "marla_basis",
+        "area_sqft",
     ]
 
 
@@ -811,6 +821,9 @@ def test_openapi_describes_the_patch_route_and_the_409_with_current(tmp_path):
         "asking_price",
         "price_basis",
         "rental_period",
+        "area_value",
+        "area_unit",
+        "marla_basis",
     }
     fields = schemas["ListingFields"]["properties"]
     assert set(fields) == {"purpose", "category", "subtype", *NEW_FIELDS}
@@ -819,6 +832,9 @@ def test_openapi_describes_the_patch_route_and_the_409_with_current(tmp_path):
     assert schemas["RentalPeriodEnum"]["enum"] == list(
         registry.field("rental_period").allowed_values
     )
+    assert schemas["AreaUnitEnum"]["enum"] == list(registry.field("area_unit").allowed_values)
+    assert schemas["MarlaBasisEnum"]["enum"] == ["225", "250", "272.25"]
+    assert "area_sqft" not in schemas["ListingFieldsUpdateRequest"]["properties"]
     assert "owner_account_id" not in schemas["Listing"]["properties"]
     assert set(schemas["ProvenanceEntry"]["properties"]) == {"origin", "confirmed"}
 
@@ -898,3 +914,139 @@ def test_money_values_are_never_echoed_or_logged(value, caplog):
     assert value not in json.dumps(field_codes(response))
     assert f'"{value}"' not in response.content.decode() and f'"{value}"' not in caplog.text
     assert f"asking_price={value}" not in caplog.text
+
+
+# --- area and units (Story 2.3) -------------------------------------------------------------
+
+
+def test_area_is_saved_and_returned_as_strings_with_the_derived_square_feet():
+    client = signed_in()
+    created = draft(client)
+    response = edit(
+        client, created, {"area_value": "5", "area_unit": "marla", "marla_basis": "225"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2
+    assert {
+        k: body["fields"][k] for k in ("area_value", "area_unit", "marla_basis", "area_sqft")
+    } == {
+        "area_value": "5.0000",
+        "area_unit": "marla",
+        "marla_basis": "225",
+        "area_sqft": "1125.0000",
+    }
+    assert set(body["provenance"]) == {"area_value", "area_unit", "marla_basis"}
+    assert client.get(detail(created["id"])).json() == body
+    assert client.get(MINE).json()["results"][0] == body
+    assert ListingRevision.objects.get(revision=2).changes["area_sqft"] == "1125.0000"
+    raw = response.content.decode()
+    assert '"area_value":"5.0000"' in raw.replace(" ", "")  # a string, never a number
+
+
+def test_a_marla_without_a_basis_saves_and_the_basis_can_come_later():
+    client = signed_in()
+    created = draft(client)
+    first = edit(client, created, {"area_value": "5", "area_unit": "marla"}).json()
+    assert first["revision"] == 2 and first["fields"]["area_sqft"] is None
+    second = edit(client, first, {"marla_basis": "272.25"}).json()
+    assert second["fields"]["area_sqft"] == "1361.2500" and second["revision"] == 3
+
+
+def test_changing_the_unit_away_shows_the_cleared_basis_as_null():
+    client = signed_in()
+    created = draft(client)
+    first = edit(
+        client, created, {"area_value": "1", "area_unit": "kanal", "marla_basis": "250"}
+    ).json()
+    assert first["fields"]["area_sqft"] == "5000.0000"
+    second = edit(client, first, {"area_unit": "sqft"}).json()
+    assert second["fields"]["marla_basis"] is None and second["fields"]["area_sqft"] == "1.0000"
+    assert "marla_basis" not in second["provenance"]
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({"area_value": "0"}, {"area_value": "invalid_area"}),
+        ({"area_value": "-5"}, {"area_value": "invalid_area"}),
+        ({"area_value": "1.12345"}, {"area_value": "invalid_area"}),
+        ({"area_value": "99999999999"}, {"area_value": "invalid_area"}),
+        ({"area_value": "12,5"}, {"area_value": "invalid"}),
+        ({"area_value": "1e3"}, {"area_value": "invalid"}),
+        ({"area_value": "abc"}, {"area_value": "invalid"}),
+        ({"area_value": 5}, {"area_value": "invalid"}),
+        ({"area_value": 5.5}, {"area_value": "invalid"}),
+        ({"area_unit": "hectare"}, {"area_unit": "invalid_choice"}),
+        ({"area_unit": "marla", "marla_basis": "300"}, {"marla_basis": "invalid_choice"}),
+        ({"area_unit": "marla", "marla_basis": 225}, {"marla_basis": "invalid_choice"}),
+        ({"area_unit": "sqft", "marla_basis": "225"}, {"marla_basis": "not_applicable"}),
+        ({"area_sqft": "100"}, {"area_sqft": "not_editable"}),
+    ],
+)
+def test_area_errors_are_codes_keyed_by_field_and_nothing_is_written(fields, expected):
+    client = signed_in()
+    created = draft(client)
+    response = edit(client, created, fields)
+    assert response.status_code == 400 and code(response) == "validation_error"
+    assert field_codes(response) == {name: [field_message(c)] for name, c in expected.items()}
+    assert not ListingArea.objects.exists() and ListingRevision.objects.count() == 1
+    assert "hectare" not in response.content.decode()
+
+
+def test_the_area_error_messages_are_catalogue_text_without_the_value():
+    client = signed_in()
+    created = draft(client)
+    response = edit(client, created, {"area_value": "-5"})
+    message = field_codes(response)
+    assert message == {"area_value": [field_message("invalid_area")]}
+    assert message["area_value"] == [
+        "Enter an area above zero with at most four decimals, using digits only."
+    ]
+    assert "-5" not in response.content.decode()
+
+
+def test_a_stale_area_edit_is_409_with_the_current_area_and_a_replay_is_too():
+    client = signed_in()
+    created = draft(client)
+    winner = edit(client, created, {"area_value": "3", "area_unit": "acre"})
+    assert winner.status_code == 200
+    stale = edit(client, created, {"area_value": "4"})
+    assert stale.status_code == 409 and code(stale) == "stale_revision"
+    assert stale.json()["current"] == winner.json()
+    assert stale.json()["current"]["fields"]["area_sqft"] == "130680.0000"
+    replay = edit(client, created, {"area_value": "3", "area_unit": "acre"})
+    assert replay.status_code == 409
+
+
+def test_clearing_the_area_over_http():
+    client = signed_in()
+    created = draft(client)
+    saved = edit(client, created, {"area_value": "3", "area_unit": "sqyd"}).json()
+    cleared = edit(client, saved, {"area_value": None}).json()
+    assert cleared["fields"]["area_value"] is None and cleared["fields"]["area_sqft"] is None
+    assert "area_value" not in cleared["provenance"]
+
+
+def test_other_accounts_cannot_edit_or_see_the_area():
+    owner = signed_in()
+    created = draft(owner)
+    edit(owner, created, {"area_value": "3", "area_unit": "sqft"})
+    other = signed_in("john.roe@example.com")
+    assert edit(other, created, {"area_value": "9"}).status_code == 404
+    assert other.get(detail(created["id"])).status_code == 404
+    assert ListingArea.objects.get().area_value == Decimal("3")
+
+
+def test_openapi_describes_the_area_fields_and_the_registry_serves_them(tmp_path):
+    target = tmp_path / "openapi.yaml"
+    call_command("spectacular", "--validate", "--file", str(target))
+    schemas = yaml.safe_load(target.read_text())["components"]["schemas"]
+    fields = schemas["ListingFields"]["properties"]
+    for name in ("area_value", "area_sqft"):
+        assert fields[name]["type"] == "string" and fields[name]["nullable"] is True
+    assert "Computed by the server" in fields["area_sqft"]["description"]
+    registry_fields = {f["id"]: f for f in Client().get("/api/v1/registry").json()["fields"]}
+    assert registry_fields["area_sqft"]["derived"] is True
+    assert registry_fields["area_value"]["scale"] == 4
+    assert registry_fields["marla_basis"]["allowed_values"] == ["225", "250", "272.25"]
