@@ -101,6 +101,8 @@ Decisions beyond the story text: `covered_area_sqft` is always square feet (no u
 
 Backend half (three reviewers). Patched: `invalid_floor` is reported on `floor_number` and also on `building_floors` when that was sent; echo-leak assertions restored to whole-body checks (only the request id removed, which had made a test flaky in CI); a floor-rule test that really reaches a violating stored pair; null on a not-applicable field pinned as a no-op; stored out-of-range value revalidated; docs and annotation fixes. Deferred: dead floor guard, floor equal to building floors accepted, RESPONSE_SHAPE_VERSION stays 3 (no new keys). Verification: lint-imports 13 kept, ruff, pytest 3208 passed, no migration drift, openapi regenerated.
 
+Frontend half (three reviewers). Patched: integers up to 9 digits are sent as JSON integers so the server judges range (leading zeros and other text stay raw strings); linked floor errors clear only when a floor field changes, late 400s drop errors for fields edited since; unrepresentable stored values stay visible (stringified numbers, "(stored value)", "(no longer offered)"); money compared by registry scale with leading-zero text dirty; conflict handling when another session makes a detail inapplicable; the label-only claim is now proven for errors and conflict rows; hand-built id list shared and checked. Deferred: non-editable registry flag (not in the payload), summary heading association. Verification: lint, typecheck, build, api:check, full Playwright 922 passed.
+
 ## Design Notes
 
 One table per concern (terms, area, residential; plots/commercial get theirs in 2.5). Tri-state booleans and nullable integers keep "unknown" honest for search and for the valuation model later.
