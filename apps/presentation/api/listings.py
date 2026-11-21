@@ -56,6 +56,11 @@ def _help(definition) -> str:
             f"Decimal string with {definition.scale} decimals (`{low}` to `{high}`), "
             f"digits and a point only.{note}"
         )
+    if definition.type == "integer":
+        low, high = int(definition.minimum), int(definition.maximum)
+        return f"Whole number from {low} to {high}, a JSON integer (never text). Null clears it."
+    if definition.type == "boolean":
+        return "`true` or `false`; null when not answered (never defaulted to either)."
     return ""
 
 
@@ -66,6 +71,12 @@ def _serializer_field(definition, update: bool):
         options["required"] = False
     if definition.type == "enum":
         return serializers.ChoiceField(choices=_choices(definition.allowed_values), **options)
+    if definition.type == "integer":
+        return serializers.IntegerField(
+            min_value=int(definition.minimum), max_value=int(definition.maximum), **options
+        )
+    if definition.type == "boolean":
+        return serializers.BooleanField(**options)
     return serializers.CharField(**options)  # text, and money as a decimal string
 
 
@@ -239,14 +250,26 @@ class ListingDetailView(NoStoreMixin, APIView):
             "(a decimal string, at most four decimals, above zero; never a JSON number), "
             '`area_unit` and `marla_basis` (`"225"`, `"250"` or `"272.25"` square feet '
             "per marla, only while the unit is marla or kanal; changing the unit away clears "
-            "it); `null` clears a field. `area_sqft` is computed by the server and is "
+            "it) and the House and Apartment details (`bedrooms`, `bathrooms`, "
+            "`construction_year`, "
+            "`condition`, `furnishing`, `parking_spaces`, `occupancy_status`, "
+            "`covered_area_sqft` (a decimal string in square feet), the House set `total_floors`, "
+            "`kitchens`, "
+            "`construction_status`, room counts and `basement`, and the Apartment set "
+            "`floor_number`, `building_floors`, `lift`, `backup_electricity`, "
+            "`building_security`, `balcony_or_terrace`, `building_lobby`, `intercom` and "
+            "`maintenance_charges` (PKR per month)). Counts are JSON integers and yes/no "
+            "answers are JSON `true`/`false`, never text; unanswered is `null`, never 0 or "
+            "false. The registry says which apply to which Subtype (`not_applicable` "
+            "otherwise); `null` clears a field. `area_sqft` is computed by the server and is "
             "`not_editable` as input. Saving never needs complete data. Every saved field is "
             "recorded as `manual` and confirmed; the client never chooses provenance. A "
             "`base_revision` that is not the current `revision` is `409 stale_revision` with "
             "the current Listing under `current` and nothing written (a retried PATCH after it "
             "succeeded is also a 409: reload). An edit that changes nothing is `200` and keeps the "
             "revision. `400` carries codes keyed by registry field id (`invalid`, `too_short`, "
-            "`too_long`, `invalid_price`, `invalid_area`, `invalid_choice`, `not_applicable`, "
+            "`too_long`, `invalid_price`, `invalid_area`, `invalid_range`, `invalid_floor`, "
+            "`invalid_choice`, `not_applicable`, "
             "`contains_contact_details`, `not_editable`; unknown ids are "
             "`unknown_field` under `non_field_errors`) and never echoes a value. Another "
             "account's, an unknown or a malformed id is `404 not_found`; an account that may "

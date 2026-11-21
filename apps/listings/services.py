@@ -24,18 +24,27 @@ from apps.listings.fields import (
     DERIVED,
     EDITABLE_FIELDS,
     LISTING,
+    RESIDENTIAL,
+    RESIDENTIAL_FIELDS,
     STORAGE,
     TERMS,
     TERMS_FIELDS,
 )
 from apps.listings.lifecycle import ListingStatus, Origin
-from apps.listings.models import ListingArea, ListingRevision, ListingTerms, PropertyListing
+from apps.listings.models import (
+    ListingArea,
+    ListingResidential,
+    ListingRevision,
+    ListingTerms,
+    PropertyListing,
+)
 from apps.listings.selectors import (
     ListingView,
     area_of,
     canonical_uuid,
     clean_provenance,
     field_text,
+    residential_of,
     terms_of,
     view_of,
 )
@@ -229,7 +238,11 @@ def apply_updates(
         stored_area = area is not None
         if area is None:
             area = ListingArea(listing=row)
-        owners = {LISTING: row, TERMS: terms, AREA: area}
+        residential = residential_of(row)
+        stored_residential = residential is not None
+        if residential is None:
+            residential = ListingResidential(listing=row)  # saved only on a first non-null value
+        owners = {LISTING: row, TERMS: terms, AREA: area, RESIDENTIAL: residential}
         current = {name: _stored(name, owners[STORAGE[name]]) for name in EDITABLE_FIELDS}
         current.update({name: getattr(owners[table], name) for name, table in DERIVED.items()})
         values, errors = validation.evaluate(
@@ -259,7 +272,12 @@ def apply_updates(
             if sqft != current["area_sqft"]:
                 changed["area_sqft"] = sqft
         if not changed:
-            return view_of(row, terms if stored_terms else None, area if stored_area else None)
+            return view_of(
+                row,
+                terms if stored_terms else None,
+                area if stored_area else None,
+                residential if stored_residential else None,
+            )
         now = timezone.now()
         for name, value in changed.items():
             table = DERIVED[name] if name in DERIVED else STORAGE[name]
@@ -289,6 +307,11 @@ def apply_updates(
         if any(name in AREA_FIELDS or name in DERIVED for name in changed):
             area.updated_at = now
             area.save()
+        # The row exists only once a value is first saved: a clear (null) never creates it, and
+        # `changed` holds a null only for a column that already holds a value.
+        if any(name in RESIDENTIAL_FIELDS for name in changed):
+            residential.updated_at = now
+            residential.save()
         ListingRevision.objects.create(
             listing=row,
             revision=row.revision,
@@ -297,7 +320,9 @@ def apply_updates(
             changes={name: field_text(name, value) for name, value in changed.items()},
             created_at=now,
         )
-        view = view_of(row, terms, area if area.pk else None)
+        view = view_of(
+            row, terms, area if area.pk else None, residential if residential.pk else None
+        )
         if any(registry.field(n).valuation_input for n in changed if changed[n] != current[n]):
             emit(ListingModelInputsChanged(listing_id=row.id))  # last: after-commit
     return view

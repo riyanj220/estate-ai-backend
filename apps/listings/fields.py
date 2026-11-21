@@ -11,6 +11,7 @@ from types import MappingProxyType
 LISTING = "listing"  # a column of PropertyListing
 TERMS = "terms"  # a column of ListingTerms
 AREA = "area"  # a column of ListingArea
+RESIDENTIAL = "residential"  # a column of ListingResidential (House and Apartment details)
 
 # Chosen when the Draft starts and never edited (Story 2.1); stored on PropertyListing.
 IDENTITY_FIELDS = ("purpose", "category", "subtype")
@@ -26,6 +27,36 @@ STORAGE = MappingProxyType(
         "area_value": AREA,
         "area_unit": AREA,
         "marla_basis": AREA,
+        "bedrooms": RESIDENTIAL,
+        "bathrooms": RESIDENTIAL,
+        "construction_year": RESIDENTIAL,
+        "condition": RESIDENTIAL,
+        "furnishing": RESIDENTIAL,
+        "parking_spaces": RESIDENTIAL,
+        "occupancy_status": RESIDENTIAL,
+        "covered_area_sqft": RESIDENTIAL,
+        "total_floors": RESIDENTIAL,
+        "kitchens": RESIDENTIAL,
+        "construction_status": RESIDENTIAL,
+        "drawing_rooms": RESIDENTIAL,
+        "dining_rooms": RESIDENTIAL,
+        "tv_lounges": RESIDENTIAL,
+        "study_rooms": RESIDENTIAL,
+        "prayer_rooms": RESIDENTIAL,
+        "store_rooms": RESIDENTIAL,
+        "laundry_rooms": RESIDENTIAL,
+        "powder_rooms": RESIDENTIAL,
+        "servant_quarters": RESIDENTIAL,
+        "basement": RESIDENTIAL,
+        "floor_number": RESIDENTIAL,
+        "building_floors": RESIDENTIAL,
+        "lift": RESIDENTIAL,
+        "backup_electricity": RESIDENTIAL,
+        "building_security": RESIDENTIAL,
+        "balcony_or_terrace": RESIDENTIAL,
+        "building_lobby": RESIDENTIAL,
+        "intercom": RESIDENTIAL,
+        "maintenance_charges": RESIDENTIAL,
     }
 )
 
@@ -37,6 +68,7 @@ EDITABLE_FIELDS = tuple(STORAGE)
 LISTING_FIELDS = tuple(name for name, table in STORAGE.items() if table == LISTING)
 TERMS_FIELDS = tuple(name for name, table in STORAGE.items() if table == TERMS)
 AREA_FIELDS = tuple(name for name, table in STORAGE.items() if table == AREA)
+RESIDENTIAL_FIELDS = tuple(name for name, table in STORAGE.items() if table == RESIDENTIAL)
 DERIVED_FIELDS = tuple(DERIVED)
 WIRE_FIELDS = (
     *IDENTITY_FIELDS,

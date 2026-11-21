@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from apps.catalog import registry
 from apps.listings import area
+from apps.listings.fields import RESIDENTIAL_FIELDS
 from apps.listings.lifecycle import ListingStatus, Origin
 
 
@@ -116,6 +117,44 @@ def area_constraints() -> list[models.CheckConstraint]:
     ]
 
 
+def residential_constraints() -> list[models.CheckConstraint]:
+    """Bound and enum CHECKs of the residential details, generated from the current registry.
+
+    Integers and decimals within their bounds, enums within their values; booleans need none.
+    A NULL always passes: unknown is allowed. Plus the one cross-field rule, an apartment's floor
+    within its building.
+    """
+    constraints = []
+    for name in RESIDENTIAL_FIELDS:
+        definition = _def(name)
+        if definition.type == "enum":
+            inside = models.Q(**{f"{name}__in": list(definition.allowed_values)})
+            suffix = "valid"
+        elif definition.type in ("integer", "decimal", "money"):
+            low, high = definition.minimum, definition.maximum
+            if definition.type == "integer":
+                low, high = int(low), int(high)
+            inside = models.Q(**{f"{name}__gte": low, f"{name}__lte": high})
+            suffix = "range"
+        else:
+            continue
+        constraints.append(
+            models.CheckConstraint(
+                condition=models.Q(**{f"{name}__isnull": True}) | inside,
+                name=f"listings_res_{name}_{suffix}",
+            )
+        )
+    constraints.append(
+        models.CheckConstraint(
+            condition=models.Q(floor_number__isnull=True)
+            | models.Q(building_floors__isnull=True)
+            | models.Q(floor_number__lte=models.F("building_floors")),
+            name="listings_res_floor_within_building",
+        )
+    )
+    return constraints
+
+
 class PropertyListing(models.Model):
     """The one canonical Listing. Written only by `listings.services`; never leaves the app."""
 
@@ -219,3 +258,46 @@ class ListingArea(models.Model):
 
     class Meta:
         constraints = area_constraints()
+
+
+class ListingResidential(models.Model):
+    """House and Apartment details of a Listing (one row, created lazily on the first non-null
+    value). Every column is nullable: unanswered is NULL, never 0 or false."""
+
+    listing = models.OneToOneField(
+        PropertyListing, on_delete=models.CASCADE, related_name="residential"
+    )
+    bedrooms = models.IntegerField(null=True)
+    bathrooms = models.IntegerField(null=True)
+    construction_year = models.IntegerField(null=True)
+    condition = models.CharField(max_length=32, null=True)
+    furnishing = models.CharField(max_length=32, null=True)
+    parking_spaces = models.IntegerField(null=True)
+    occupancy_status = models.CharField(max_length=32, null=True)
+    covered_area_sqft = models.DecimalField(max_digits=14, decimal_places=4, null=True)
+    total_floors = models.IntegerField(null=True)
+    kitchens = models.IntegerField(null=True)
+    construction_status = models.CharField(max_length=32, null=True)
+    drawing_rooms = models.IntegerField(null=True)
+    dining_rooms = models.IntegerField(null=True)
+    tv_lounges = models.IntegerField(null=True)
+    study_rooms = models.IntegerField(null=True)
+    prayer_rooms = models.IntegerField(null=True)
+    store_rooms = models.IntegerField(null=True)
+    laundry_rooms = models.IntegerField(null=True)
+    powder_rooms = models.IntegerField(null=True)
+    servant_quarters = models.IntegerField(null=True)
+    basement = models.BooleanField(null=True)
+    floor_number = models.IntegerField(null=True)
+    building_floors = models.IntegerField(null=True)
+    lift = models.BooleanField(null=True)
+    backup_electricity = models.BooleanField(null=True)
+    building_security = models.BooleanField(null=True)
+    balcony_or_terrace = models.BooleanField(null=True)
+    building_lobby = models.BooleanField(null=True)
+    intercom = models.BooleanField(null=True)
+    maintenance_charges = models.DecimalField(max_digits=14, decimal_places=2, null=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = residential_constraints()

@@ -29,10 +29,11 @@ from apps.listings.fields import (
     DERIVED_FIELDS,
     IDENTITY_FIELDS,
     LISTING_FIELDS,
+    RESIDENTIAL_FIELDS,
     TERMS_FIELDS,
 )
 from apps.listings.lifecycle import ListingStatus, Origin, visibility_of
-from apps.listings.models import ListingArea, ListingTerms, PropertyListing
+from apps.listings.models import ListingArea, ListingResidential, ListingTerms, PropertyListing
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
@@ -86,6 +87,14 @@ def area_of(row: PropertyListing) -> ListingArea | None:
         return None
 
 
+def residential_of(row: PropertyListing) -> ListingResidential | None:
+    """The Listing's residential details row, or None until a value is first saved."""
+    try:
+        return row.residential
+    except ObjectDoesNotExist:
+        return None
+
+
 def clean_provenance(stored) -> dict[str, dict]:
     """Well-formed entries only: a malformed one is skipped, never an error for a read."""
     if not isinstance(stored, dict):
@@ -102,11 +111,14 @@ def clean_provenance(stored) -> dict[str, dict]:
     return clean
 
 
-def field_text(name: str, value) -> str | None:
+def field_text(name: str, value) -> str | int | bool | None:
     """A stored value as it goes on the wire and into revisions: money with two decimals, a
-    decimal at its registry scale (`"10.0000"`), the marla basis as its enum string, else text."""
+    decimal at its registry scale (`"10.0000"`), the marla basis as its enum string, integers
+    and booleans as themselves, else text."""
     if value is None:
         return None
+    if isinstance(value, bool | int):
+        return value
     if name == "marla_basis" and isinstance(value, Decimal):
         return basis_text(value)
     definition = registry.field(name)
@@ -122,14 +134,18 @@ def view_of(
     row: PropertyListing,
     terms: ListingTerms | None = None,
     area: ListingArea | None = None,
+    residential: ListingResidential | None = None,
 ) -> ListingView:
     terms = terms if terms is not None else terms_of(row)
     area = area if area is not None else area_of(row)
+    residential = residential if residential is not None else residential_of(row)
     fields = {name: getattr(row, name) for name in _COLUMN_FIELDS}
     for name in TERMS_FIELDS:
         fields[name] = field_text(name, getattr(terms, name) if terms else None)
     for name in (*AREA_FIELDS, *DERIVED_FIELDS):
         fields[name] = field_text(name, getattr(area, name) if area else None)
+    for name in RESIDENTIAL_FIELDS:
+        fields[name] = field_text(name, getattr(residential, name) if residential else None)
     provenance = {
         name: MappingProxyType(entry)
         for name, entry in clean_provenance(row.provenance).items()
@@ -169,7 +185,7 @@ def get_owned_listing(actor: Actor, listing_id) -> ListingView:
     if key is None or not _owner_actor(actor):
         raise DomainError("not_found")
     row = (
-        PropertyListing.objects.select_related("terms", "area")
+        PropertyListing.objects.select_related("terms", "area", "residential")
         .filter(id=key, owner_account_id=actor.account_id)
         .first()
     )
@@ -220,7 +236,7 @@ def list_owned(
     require_signed_in(actor)
     if actor.kind is not ActorKind.USER or not can(actor, Capability.VIEW_DRAFTS):
         raise DomainError("forbidden")
-    rows = PropertyListing.objects.select_related("terms", "area").filter(
+    rows = PropertyListing.objects.select_related("terms", "area", "residential").filter(
         owner_account_id=actor.account_id
     )
     if status is not None:

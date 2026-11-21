@@ -170,6 +170,23 @@ def check_decimal(definition: registry.FieldDef, value) -> tuple[Decimal | None,
     return amount.quantize(Decimal(1).scaleb(-definition.scale)), None
 
 
+def check_integer(definition: registry.FieldDef, value) -> tuple[int | None, str | None]:
+    """(whole number, code). Only a JSON integer: text, floats and booleans are `invalid`; one
+    outside the registry bounds is `invalid_range`."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None, "invalid"
+    if value < definition.minimum or value > definition.maximum:
+        return None, "invalid_range"
+    return value, None
+
+
+def check_boolean(value) -> tuple[bool | None, str | None]:
+    """(true or false, code). Only JSON true or false; `1`, `"yes"` and the like are `invalid`."""
+    if not isinstance(value, bool):
+        return None, "invalid"
+    return value, None
+
+
 # Enums whose values are numbers written as text: a JSON number is a wrong choice, not a wrong type.
 _NUMERIC_ENUMS = frozenset({"marla_basis"})
 
@@ -191,6 +208,10 @@ def _check_one(definition, value, purpose):
         return check_decimal(definition, value)
     if definition.type == "enum":
         return check_enum(definition, value, purpose)
+    if definition.type == "integer":
+        return check_integer(definition, value)
+    if definition.type == "boolean":
+        return check_boolean(value)
     return None, "invalid"  # a type that has no editor yet
 
 
@@ -203,7 +224,8 @@ def evaluate(
 ) -> tuple[dict[str, object], dict[str, str]]:
     """Normalised values for every update (None clears) and a code per failing field.
 
-    Cross-field: the marla basis against the resulting unit (`_check_marla_basis`).
+    Cross-field: the marla basis against the resulting unit (`_check_marla_basis`) and an
+    apartment's floor against its building (`_check_floor`).
     Every update is judged against the current registry: the value rules and whether the field
     applies to this Listing. Failing fields are all reported at once. Completeness (a rental
     priced per rental period naming its period, required fields) is a publication rule
@@ -228,7 +250,29 @@ def evaluate(
             else:
                 values[name] = value
     _check_marla_basis(current, values, errors)
+    _check_floor(purpose, category, subtype, current, values, errors)
     return values, errors
+
+
+def _check_floor(purpose, category, subtype, current, values, errors) -> None:
+    """An apartment's floor cannot be above its building's floors, judged on the RESULTING state
+    and only when this update touches one of the two (stored data is never re-judged). The code is
+    on `floor_number`, and also on `building_floors` when the request sent it."""
+    if "floor_number" not in values and "building_floors" not in values:
+        return
+    if "floor_number" in errors or "building_floors" in errors:
+        return
+    definition = registry.field("floor_number")
+    if definition is None or not definition.applies_to(purpose, category, subtype):
+        return
+    floor = values["floor_number"] if "floor_number" in values else current.get("floor_number")
+    building = (
+        values["building_floors"] if "building_floors" in values else current.get("building_floors")
+    )
+    if floor is not None and building is not None and floor > building:
+        errors["floor_number"] = "invalid_floor"
+        if "building_floors" in values:  # the client finds the code under a field it sent
+            errors["building_floors"] = "invalid_floor"
 
 
 def _check_marla_basis(current, values, errors) -> None:

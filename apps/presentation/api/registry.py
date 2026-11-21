@@ -44,12 +44,12 @@ class RegistryFieldSerializer(serializers.Serializer):
     min = serializers.CharField(
         source="minimum",
         allow_null=True,
-        help_text="Money and decimal only: smallest value, a decimal string.",
+        help_text="Money, decimal and integer: smallest value, a decimal string.",
     )
     max = serializers.CharField(
         source="maximum",
         allow_null=True,
-        help_text="Money and decimal only: largest value, a decimal string.",
+        help_text="Money, decimal and integer: largest value, a decimal string.",
     )
     currency = serializers.CharField(allow_null=True, help_text="Money only: `PKR`.")
     scale = serializers.IntegerField(
