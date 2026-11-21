@@ -12,7 +12,7 @@ from apps.presentation.api.permissions import AllowPublic
 MAX_AGE = 300
 # Bump when the response shape (serializers) changes without a registry change, so client
 # caches are invalidated.
-RESPONSE_SHAPE_VERSION = 2
+RESPONSE_SHAPE_VERSION = 3
 FIELD_TYPES = registry.FIELD_TYPES
 
 
@@ -44,12 +44,23 @@ class RegistryFieldSerializer(serializers.Serializer):
     min = serializers.CharField(
         source="minimum",
         allow_null=True,
-        help_text="Money only: smallest amount, a decimal string.",
+        help_text="Money and decimal only: smallest value, a decimal string.",
     )
     max = serializers.CharField(
-        source="maximum", allow_null=True, help_text="Money only: largest amount, a decimal string."
+        source="maximum",
+        allow_null=True,
+        help_text="Money and decimal only: largest value, a decimal string.",
     )
     currency = serializers.CharField(allow_null=True, help_text="Money only: `PKR`.")
+    scale = serializers.IntegerField(
+        allow_null=True, help_text="Decimal only: the number of decimals stored and returned."
+    )
+    derived = serializers.BooleanField(
+        help_text="Computed by the server from other fields; read-only, never accepted as input."
+    )
+    description = serializers.CharField(
+        allow_null=True, help_text="What the value means, for the form; null when not needed."
+    )
     class_ = serializers.ChoiceField(choices=registry.CLASSES, source="field_class")
     searchable = serializers.BooleanField()
     sortable = serializers.BooleanField()
@@ -121,9 +132,12 @@ def _body() -> dict:
                     ),
                     "min_length": f.min_length,
                     "max_length": f.max_length,
-                    "minimum": None if f.minimum is None else str(f.minimum),
-                    "maximum": None if f.maximum is None else str(f.maximum),
+                    "minimum": None if f.minimum is None else format(f.minimum, "f"),
+                    "maximum": None if f.maximum is None else format(f.maximum, "f"),
                     "currency": f.currency,
+                    "scale": f.scale,
+                    "derived": f.derived,
+                    "description": f.description,
                     "field_class": f.field_class,
                     "searchable": f.searchable,
                     "sortable": f.sortable,

@@ -49,6 +49,13 @@ def _help(definition) -> str:
     if definition.type == "text":
         low = f"{definition.min_length} to " if definition.min_length else "Up to "
         return f"{low}{definition.max_length} characters."
+    if definition.type == "decimal":
+        note = " Computed by the server; read-only." if definition.derived else ""
+        low, high = format(definition.minimum, "f"), format(definition.maximum, "f")
+        return (
+            f"Decimal string with {definition.scale} decimals (`{low}` to `{high}`), "
+            f"digits and a point only.{note}"
+        )
     return ""
 
 
@@ -228,14 +235,18 @@ class ListingDetailView(NoStoreMixin, APIView):
             "Needs `X-CSRFToken`. Body: `{base_revision, fields}` and nothing else (any other "
             "key, `origin` and `confirmed` included, is `validation_error` `unknown_field`). "
             "`fields` holds registry ids: `title`, `description`, `asking_price` (a decimal "
-            "string in PKR, at most two decimals), `price_basis` and `rental_period`; `null` "
-            "clears a field. Saving never needs complete data. Every saved field is recorded "
-            "as `manual` and confirmed; the client never chooses provenance. A `base_revision` "
-            "that is not the current `revision` is `409 stale_revision` with the current "
-            "Listing under `current` and nothing written (a retried PATCH after it succeeded "
-            "is also a 409: reload). An edit that changes nothing is `200` and keeps the "
+            "string in PKR, at most two decimals), `price_basis`, `rental_period`, `area_value` "
+            "(a decimal string, at most four decimals, above zero; never a JSON number), "
+            '`area_unit` and `marla_basis` (`"225"`, `"250"` or `"272.25"` square feet '
+            "per marla, only while the unit is marla or kanal; changing the unit away clears "
+            "it); `null` clears a field. `area_sqft` is computed by the server and is "
+            "`not_editable` as input. Saving never needs complete data. Every saved field is "
+            "recorded as `manual` and confirmed; the client never chooses provenance. A "
+            "`base_revision` that is not the current `revision` is `409 stale_revision` with "
+            "the current Listing under `current` and nothing written (a retried PATCH after it "
+            "succeeded is also a 409: reload). An edit that changes nothing is `200` and keeps the "
             "revision. `400` carries codes keyed by registry field id (`invalid`, `too_short`, "
-            "`too_long`, `invalid_price`, `invalid_choice`, `not_applicable`, "
+            "`too_long`, `invalid_price`, `invalid_area`, `invalid_choice`, `not_applicable`, "
             "`contains_contact_details`, `not_editable`; unknown ids are "
             "`unknown_field` under `non_field_errors`) and never echoes a value. Another "
             "account's, an unknown or a malformed id is `404 not_found`; an account that may "

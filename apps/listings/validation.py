@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 
 from apps.catalog import registry
 from apps.kernel.privacy.patterns import reject_contact_details
+from apps.listings.area import MARLA_UNITS
 from apps.listings.fields import EDITABLE_FIELDS
 
 RAW_TEXT_LIMIT = 20_000  # characters; checked before any scanning or normalisation
@@ -145,9 +146,37 @@ def check_money(definition: registry.FieldDef, value) -> tuple[Decimal | None, s
     return amount.quantize(Decimal("0.01")), None
 
 
+def check_decimal(definition: registry.FieldDef, value) -> tuple[Decimal | None, str | None]:
+    """(value at the field's scale, code). Text only: numbers, floats and commas are refused.
+
+    Valid text is ASCII `^\\d{1,10}(\\.\\d{1,4})?$` without leading zeros (`0.5` is fine, `0010` is
+    not) and without surrounding whitespace; anything else that is not a plain decimal number
+    is `invalid`. A well-formed number that is zero, negative, below the minimum, above the
+    maximum or has too many decimals is `invalid_area`.
+    """
+    if not isinstance(value, str) or len(value) > _MONEY_INPUT_MAX:
+        return None, "invalid"
+    match = _MONEY_TEXT.fullmatch(value)
+    if match is None:
+        return None, "invalid"
+    negative, whole, fraction = match.groups()
+    if len(whole) > 1 and whole.startswith("0"):
+        return None, "invalid"  # zero-padded
+    if negative or len(fraction or "") > definition.scale:
+        return None, "invalid_area"
+    amount = Decimal(f"{whole}.{fraction or '0'}")
+    if amount < definition.minimum or amount > definition.maximum:
+        return None, "invalid_area"
+    return amount.quantize(Decimal(1).scaleb(-definition.scale)), None
+
+
+# Enums whose values are numbers written as text: a JSON number is a wrong choice, not a wrong type.
+_NUMERIC_ENUMS = frozenset({"marla_basis"})
+
+
 def check_enum(definition: registry.FieldDef, value, purpose: str) -> tuple[str | None, str | None]:
     if not isinstance(value, str):
-        return None, "invalid"
+        return None, "invalid_choice" if definition.id in _NUMERIC_ENUMS else "invalid"
     if value not in (definition.values_for(purpose) or ()):
         return None, "invalid_choice"
     return value, None
@@ -158,6 +187,8 @@ def _check_one(definition, value, purpose):
         return check_text(definition, value, paragraphs=definition.id == "description")
     if definition.type == "money":
         return check_money(definition, value)
+    if definition.type == "decimal":
+        return check_decimal(definition, value)
     if definition.type == "enum":
         return check_enum(definition, value, purpose)
     return None, "invalid"  # a type that has no editor yet
@@ -172,6 +203,7 @@ def evaluate(
 ) -> tuple[dict[str, object], dict[str, str]]:
     """Normalised values for every update (None clears) and a code per failing field.
 
+    Cross-field: the marla basis against the resulting unit (`_check_marla_basis`).
     Every update is judged against the current registry: the value rules and whether the field
     applies to this Listing. Failing fields are all reported at once. Completeness (a rental
     priced per rental period naming its period, required fields) is a publication rule
@@ -183,6 +215,8 @@ def evaluate(
         definition = registry.field(name)
         if definition is None:  # callers check the shape first; stay safe regardless
             errors[NON_FIELD] = "unknown_field"
+        elif definition.derived:
+            errors[name] = "not_editable"
         elif raw is None:
             values[name] = None
         elif not definition.applies_to(purpose, category, subtype):
@@ -193,4 +227,20 @@ def evaluate(
                 errors[name] = code
             else:
                 values[name] = value
+    _check_marla_basis(current, values, errors)
     return values, errors
+
+
+def _check_marla_basis(current, values, errors) -> None:
+    """A marla basis applies only while the RESULTING unit is marla or kanal. A basis sent for any
+    other unit is `not_applicable`; changing the unit away clears a stored basis (the service
+    keeps stored data consistent), which is reported as `None` in `values`."""
+    if "area_unit" in errors or "marla_basis" in errors:
+        return
+    unit = values["area_unit"] if "area_unit" in values else current.get("area_unit")
+    if unit in MARLA_UNITS:
+        return
+    if values.get("marla_basis") is not None:
+        errors["marla_basis"] = "not_applicable"
+    elif "marla_basis" not in values and current.get("marla_basis") is not None:
+        values["marla_basis"] = None

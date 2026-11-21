@@ -10,6 +10,7 @@ from types import MappingProxyType
 
 LISTING = "listing"  # a column of PropertyListing
 TERMS = "terms"  # a column of ListingTerms
+AREA = "area"  # a column of ListingArea
 
 # Chosen when the Draft starts and never edited (Story 2.1); stored on PropertyListing.
 IDENTITY_FIELDS = ("purpose", "category", "subtype")
@@ -22,10 +23,23 @@ STORAGE = MappingProxyType(
         "asking_price": TERMS,
         "price_basis": TERMS,
         "rental_period": TERMS,
+        "area_value": AREA,
+        "area_unit": AREA,
+        "marla_basis": AREA,
     }
 )
+
+# Registry fields the service computes: on the wire and in revisions, never accepted as input and
+# never in `EDITABLE_FIELDS`. Value: the table holding them.
+DERIVED = MappingProxyType({"area_sqft": AREA})
 
 EDITABLE_FIELDS = tuple(STORAGE)
 LISTING_FIELDS = tuple(name for name, table in STORAGE.items() if table == LISTING)
 TERMS_FIELDS = tuple(name for name, table in STORAGE.items() if table == TERMS)
-WIRE_FIELDS = (*IDENTITY_FIELDS, *EDITABLE_FIELDS)  # the order of `fields` on the wire
+AREA_FIELDS = tuple(name for name, table in STORAGE.items() if table == AREA)
+DERIVED_FIELDS = tuple(DERIVED)
+WIRE_FIELDS = (
+    *IDENTITY_FIELDS,
+    *EDITABLE_FIELDS,
+    *DERIVED_FIELDS,
+)  # the order of `fields` on the wire

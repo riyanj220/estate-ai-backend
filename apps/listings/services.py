@@ -16,15 +16,26 @@ from apps.kernel.actor import Actor, ActorKind, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.kernel.events import emit
 from apps.listings import lifecycle, validation
+from apps.listings.area import normalised_sqft
 from apps.listings.events import ListingModelInputsChanged
-from apps.listings.fields import EDITABLE_FIELDS, LISTING, STORAGE, TERMS_FIELDS
+from apps.listings.fields import (
+    AREA,
+    AREA_FIELDS,
+    DERIVED,
+    EDITABLE_FIELDS,
+    LISTING,
+    STORAGE,
+    TERMS,
+    TERMS_FIELDS,
+)
 from apps.listings.lifecycle import ListingStatus, Origin
-from apps.listings.models import ListingRevision, ListingTerms, PropertyListing
+from apps.listings.models import ListingArea, ListingRevision, ListingTerms, PropertyListing
 from apps.listings.selectors import (
-    MONEY_FORMAT,
     ListingView,
+    area_of,
     canonical_uuid,
     clean_provenance,
+    field_text,
     terms_of,
     view_of,
 )
@@ -138,11 +149,14 @@ def create_draft(actor: Actor, purpose, category, subtype) -> ListingView:
     return view_of(row)
 
 
-def _recorded(value) -> str | None:
-    """A field value as a string (money with two decimals) or None, for revision rows."""
-    if value is None:
-        return None
-    return MONEY_FORMAT.format(value) if isinstance(value, Decimal) else str(value)
+def _stored(name: str, owner) -> object:
+    """A stored column as the validated value type: the marla basis as its enum string."""
+    return field_text(name, getattr(owner, name)) if name == "marla_basis" else getattr(owner, name)
+
+
+def _column(name: str, value) -> object:
+    """A validated value as the column type (the marla basis string is NUMERIC(6,2))."""
+    return Decimal(value) if name == "marla_basis" and value is not None else value
 
 
 def _locked_owned(key, actor) -> PropertyListing:
@@ -211,8 +225,13 @@ def apply_updates(
         stored_terms = terms is not None
         if terms is None:
             terms = ListingTerms(listing=row)
-        owners = {LISTING: row, "terms": terms}
-        current = {name: getattr(owners[STORAGE[name]], name) for name in EDITABLE_FIELDS}
+        area = area_of(row)
+        stored_area = area is not None
+        if area is None:
+            area = ListingArea(listing=row)
+        owners = {LISTING: row, TERMS: terms, AREA: area}
+        current = {name: _stored(name, owners[STORAGE[name]]) for name in EDITABLE_FIELDS}
+        current.update({name: getattr(owners[table], name) for name, table in DERIVED.items()})
         values, errors = validation.evaluate(
             row.purpose, row.category, row.subtype, current, updates
         )
@@ -228,11 +247,25 @@ def apply_updates(
             if value != current[name]
             or (value is not None and origin is Origin.MANUAL and provenance.get(name) != stamp)
         }
+        if stored_area or any(name in AREA_FIELDS for name in changed):
+            # Derived, recomputed from the RESULTING value, unit and basis in this transaction;
+            # a stored figure that differs (stale or repaired data) is a change too.
+            resulting = {name: values.get(name, current[name]) for name in AREA_FIELDS}
+            sqft = normalised_sqft(
+                resulting["area_value"],
+                resulting["area_unit"],
+                _column("marla_basis", resulting["marla_basis"]),
+            )
+            if sqft != current["area_sqft"]:
+                changed["area_sqft"] = sqft
         if not changed:
-            return view_of(row, terms if stored_terms else None)
+            return view_of(row, terms if stored_terms else None, area if stored_area else None)
         now = timezone.now()
         for name, value in changed.items():
-            setattr(owners[STORAGE[name]], name, value)
+            table = DERIVED[name] if name in DERIVED else STORAGE[name]
+            setattr(owners[table], name, _column(name, value))
+            if name in DERIVED:
+                continue
             if value is None:
                 provenance.pop(name, None)
             else:
@@ -253,15 +286,18 @@ def apply_updates(
         if not stored_terms or any(name in TERMS_FIELDS for name in changed):
             terms.updated_at = now
             terms.save()
+        if any(name in AREA_FIELDS or name in DERIVED for name in changed):
+            area.updated_at = now
+            area.save()
         ListingRevision.objects.create(
             listing=row,
             revision=row.revision,
             origin=origin.value,
             actor_account_id=actor.account_id,
-            changes={name: _recorded(value) for name, value in changed.items()},
+            changes={name: field_text(name, value) for name, value in changed.items()},
             created_at=now,
         )
-        view = view_of(row, terms)
+        view = view_of(row, terms, area if area.pk else None)
         if any(registry.field(n).valuation_input for n in changed if changed[n] != current[n]):
             emit(ListingModelInputsChanged(listing_id=row.id))  # last: after-commit
     return view

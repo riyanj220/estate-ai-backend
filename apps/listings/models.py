@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from functools import reduce
 from operator import or_
 
@@ -8,6 +9,7 @@ from django.db.models.lookups import GreaterThanOrEqual, LessThanOrEqual
 from django.utils import timezone
 
 from apps.catalog import registry
+from apps.listings import area
 from apps.listings.lifecycle import ListingStatus, Origin
 
 
@@ -71,6 +73,45 @@ def terms_constraints() -> list[models.CheckConstraint]:
             condition=models.Q(rental_period__isnull=True)
             | models.Q(rental_period__in=list(period.allowed_values)),
             name="listings_terms_period_valid",
+        ),
+    ]
+
+
+def area_constraints() -> list[models.CheckConstraint]:
+    """Bounds, enum and consistency CHECKs of the area, generated from the current registry."""
+    value, unit, basis = _def("area_value"), _def("area_unit"), _def("marla_basis")
+    sqft = _def("area_sqft")
+    # `IN` on a NULL unit is NULL, which a CHECK lets through: name the NULL case explicitly.
+    needs_basis = models.Q(area_unit__in=list(area.MARLA_UNITS), area_unit__isnull=False)
+    computable = (
+        models.Q(area_value__isnull=False)
+        & models.Q(area_unit__isnull=False)
+        & (~needs_basis | models.Q(marla_basis__isnull=False))
+    )
+    return [
+        models.CheckConstraint(
+            condition=models.Q(area_value__isnull=True)
+            | models.Q(area_value__gte=value.minimum, area_value__lte=value.maximum),
+            name="listings_area_value_range",
+        ),
+        models.CheckConstraint(
+            condition=models.Q(area_unit__isnull=True)
+            | models.Q(area_unit__in=list(unit.allowed_values)),
+            name="listings_area_unit_valid",
+        ),
+        models.CheckConstraint(
+            condition=models.Q(marla_basis__isnull=True)
+            | models.Q(marla_basis__in=[Decimal(v) for v in basis.allowed_values]),
+            name="listings_area_basis_valid",
+        ),
+        models.CheckConstraint(
+            condition=models.Q(marla_basis__isnull=True) | needs_basis,
+            name="listings_area_basis_applies",
+        ),
+        models.CheckConstraint(
+            condition=models.Q(area_sqft__isnull=True)
+            | (models.Q(area_sqft__gte=sqft.minimum, area_sqft__lte=sqft.maximum) & computable),
+            name="listings_area_sqft_consistent",
         ),
     ]
 
@@ -163,3 +204,18 @@ class ListingTerms(models.Model):
 
     class Meta:
         constraints = terms_constraints()
+
+
+class ListingArea(models.Model):
+    """Area of a Listing (one row, created lazily). `area_sqft` is derived by the service from
+    the value, unit and marla basis (`listings.area`) and is never accepted from a client."""
+
+    listing = models.OneToOneField(PropertyListing, on_delete=models.CASCADE, related_name="area")
+    area_value = models.DecimalField(max_digits=14, decimal_places=4, null=True)
+    area_unit = models.CharField(max_length=16, null=True)
+    marla_basis = models.DecimalField(max_digits=6, decimal_places=2, null=True)
+    area_sqft = models.DecimalField(max_digits=20, decimal_places=4, null=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = area_constraints()
