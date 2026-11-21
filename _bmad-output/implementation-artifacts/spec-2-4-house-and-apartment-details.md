@@ -2,7 +2,7 @@
 title: 'Story 2.4: House and Apartment details (backend half, then frontend half)'
 type: 'feature'
 created: '2026-11-21'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -98,6 +98,8 @@ Decisions beyond the story text: `covered_area_sqft` is always square feet (no u
 ## Spec Change Log
 
 ## Review Triage Log
+
+Backend half (three reviewers). Patched: `invalid_floor` is reported on `floor_number` and also on `building_floors` when that was sent; echo-leak assertions restored to whole-body checks (only the request id removed, which had made a test flaky in CI); a floor-rule test that really reaches a violating stored pair; null on a not-applicable field pinned as a no-op; stored out-of-range value revalidated; docs and annotation fixes. Deferred: dead floor guard, floor equal to building floors accepted, RESPONSE_SHAPE_VERSION stays 3 (no new keys). Verification: lint-imports 13 kept, ruff, pytest 3208 passed, no migration drift, openapi regenerated.
 
 ## Design Notes
 

@@ -1,7 +1,7 @@
 # Listings
 
 `apps/listings` owns the canonical Listing. Story 2.1 adds starting a Draft, Story 2.2 conflict-safe editing of title,
-description and price, Story 2.3 the area and its unit; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
+description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
 
 ## Model (`listings.models`, written only by `listings.services`)
 
@@ -20,8 +20,18 @@ description and price, Story 2.3 the area and its unit; later stories add more f
   from the registry (`models.area_constraints`): value within the bounds, unit and basis in their enums, a basis only
   while the unit is marla or kanal, and `area_sqft` null unless the area is computable (a value, a unit and, for marla
   and kanal, a basis). `tests/listings/test_constraints.py` fails when migration 0003 and the registry disagree.
+- `ListingResidential` (Story 2.4, migration `0004_residential`): one row per Listing holding the House and Apartment
+  details, one nullable typed column per registry field (integers `IntegerField`, yes/no answers nullable booleans,
+  enums text, `covered_area_sqft` NUMERIC(14,4), `maintenance_charges` NUMERIC(14,2)) and `updated_at`. **The row is
+  created lazily, only when a residential field is first saved with a non-null value**: never by `create_draft`, by a
+  read, by a clear (`null`) or by an edit of other fields. Once it exists, clearing a field sets its column NULL and the
+  row stays. Unanswered is always `NULL`, never `0` or `false`; booleans have no default. CHECKs generated from the
+  registry (`models.residential_constraints`, named `listings_res_<field>_range` or `_valid`): integer, decimal and
+  money bounds, enum sets, plus `listings_res_floor_within_building` (floor not above the building's floors when both
+  are set). `tests/listings/test_constraints.py` style drift tests in `tests/listings/test_residential.py` fail when
+  migration 0004 and the registry disagree.
 - `ListingRevision`: `listing`, `revision`, `origin` (`manual` or `ai`), `actor_account_id`, `changes` (the registry
-  fields set at that revision and their new values as strings or null), unique (`listing`, `revision`). Edits are
+  fields set at that revision and their new values: strings, JSON integers and booleans, or null), unique (`listing`, `revision`). Edits are
   recorded by these rows; there is no separate audit action for them.
 
 Models never leave the app: callers get frozen `ListingView` values. Other apps import only `listings.services`,
@@ -49,7 +59,7 @@ no `edit_drafts` capability `forbidden` (Suspended, Deactivated; evaluated after
 shape, `validation_error` with all failing fields at once and codes only: `base_revision` must be a positive integer
 (`required`, `invalid`), `updates` a non-empty mapping (`required`, `not_a_dict`, `empty`), every key a registry field id
 that is editable (`title`, `description`, `asking_price`, `price_basis`, `rental_period`, `area_value`, `area_unit`,
-`marla_basis`): other registry ids such as `purpose`, and the derived `area_sqft`, are `not_editable`, unknown ids (`owner_account_id`, `status`, `origin`, ...) are `unknown_field`
+`marla_basis` and the residential details below): other registry ids such as `purpose`, and the derived `area_sqft`, are `not_editable`, unknown ids (`owner_account_id`, `status`, `origin`, ...) are `unknown_field`
 under `non_field_errors` so a client-chosen key is never echoed.
 
 Then, in ONE transaction that locks only the listing row (`select_for_update`):
@@ -84,7 +94,7 @@ Blank or whitespace-only text clears a field (the same as `null`).
 
 ### Where fields are stored: `listings/fields.py`
 
-`STORAGE` is the single map from editable registry field id to its table (`listing` column or `terms` column).
+`STORAGE` is the single map from editable registry field id to its table (`listing`, `terms`, `area` or `residential`).
 Validation, the edit service, the read views and the API serializers all derive their field sets from it, so adding an
 editable field is one entry, its registry definition and a migration; `tests/listings/test_fields.py` fails, naming the
 field, when the registry and the map disagree.
@@ -141,6 +151,47 @@ field, when the registry and the map disagree.
 - `area_value`, `area_unit` and `marla_basis` are `valuation_input` fields: a change to any of them (including a basis
   cleared by a unit change) emits `listing.model_inputs_changed` after commit. `area_sqft` is not (it is computed from them).
 
+### House and Apartment details (Story 2.4)
+
+Registry version 4 adds the new types `integer` (`min`, `max`) and `boolean` and 30 fields, stored in `ListingResidential`
+(`listings.fields.RESIDENTIAL`). All are class public and `ai_extractable`; applicability is by Subtype and is judged from
+the Draft's identity, which never changes, so a field sent for another Subtype (or for a plot or commercial Draft, which
+get their own details in Story 2.5) is `not_applicable` whatever its value.
+
+- House and Apartment: `bedrooms` and `bathrooms` (0 to 50, `required_for_publication`, `searchable`, `valuation_input`),
+  `construction_year` (1900 to 2100, `recommended` for both Subtypes, `valuation_input`), `condition` (`new`,
+  `excellent`, `good`, `needs_renovation`; `valuation_input`), `furnishing` (`unfurnished`, `semi_furnished`,
+  `furnished`; `searchable`), `parking_spaces` (0 to 50, `searchable`), `occupancy_status` (`owner_occupied`,
+  `tenant_occupied`, `vacant`) and `covered_area_sqft` (decimal, scale 4, `0.0001` to `9999999999.9999`,
+  `valuation_input`; always square feet, independent of `area_unit`, and NOT required to be below `area_sqft`, as
+  units may be unknown or loose).
+- House only: `total_floors` (1 to 200), `kitchens` (0 to 50), `construction_status` (`completed`, `under_construction`,
+  `grey_structure`), optional room counts `drawing_rooms`, `dining_rooms`, `tv_lounges`, `study_rooms`, `prayer_rooms`,
+  `store_rooms`, `laundry_rooms`, `powder_rooms`, `servant_quarters` (0 to 50) and optional yes/no `basement`.
+- Apartment only: `floor_number` (0 to 200, 0 is the ground floor), `building_floors` (1 to 200), yes/no `lift`,
+  `backup_electricity`, `building_security` (recommended), optional yes/no `balcony_or_terrace`, `building_lobby`,
+  `intercom`, and optional money `maintenance_charges` (PKR per month, `0` to `999999999999.99`, the money rules of
+  `asking_price`, `invalid_price`: a decimal string or a bare JSON integer is accepted, floats and booleans never; zero is allowed).
+
+Validation (`listings.validation`): an integer is accepted only as a JSON integer (a string, a float such as `3.0`, a
+boolean, a list or an object is `invalid`) and outside the registry bounds is `invalid_range`; a boolean only as JSON
+`true` or `false` (`1`, `"yes"` and the like are `invalid`); enums are `invalid_choice` for a string that is not a value and `invalid` for a non-string (a number, boolean, list); the covered area follows the
+decimal rules (`invalid`, `invalid_area`); `null` clears. Applicability is judged before the value, but a `null` is never judged for applicability: on a field that
+does not apply to the Subtype it is a `200` no-op when nothing is stored (no revision, no row), and it clears a value
+stored under an older registry. A stored value outside today's bounds that is sent again unchanged is `invalid_range`
+(stored values are revalidated only when sent). One cross-field rule,
+on the RESULTING state and only when the request touches `floor_number` or `building_floors`: for an apartment a
+`floor_number` above `building_floors` (both set) is `invalid_floor` on `floor_number` and ALSO on `building_floors` when the request sent it (so the client finds the code
+under a field it sent); a failure on either field's own
+rules suppresses it, and stored data is not re-judged by unrelated edits. Both new codes are in the kernel messages
+catalogue.
+
+Wire and revisions: integers are JSON integers, booleans JSON booleans, the covered area a string with four decimals,
+the charges a string with two decimals; every unknown or not-applicable field is `null`. `changes` in a `ListingRevision`
+uses the same native values. A change to a `valuation_input` field (bedrooms, bathrooms, construction year, condition,
+covered area) emits one `listing.model_inputs_changed` per save, after commit; a clear of one counts as a change.
+`PATCH` still needs a current `base_revision` (409 with `current` otherwise).
+
 ### Provenance
 
 `origin` is an argument chosen by the calling layer: the owner API passes `manual`, the future Assistant passes `ai`. It
@@ -191,11 +242,12 @@ edits of Published Listings.
 
 ## Wire shape (AD-24)
 
+Wire order of `fields`: identity, the editable fields in `STORAGE` order, `area_sqft` last.
 `{id, status, visibility, revision, registry_version, fields: {purpose, category, subtype, title, description,
-asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [], amenities: []}`.
+asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, <the 30 residential details>, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [], amenities: []}`.
 `visibility` is `private` for Drafts (`listings.lifecycle.Visibility`, extended by Story 2.12). `fields` is keyed by flat
 registry ids and returns `null` for unknown; `asking_price`, `area_value` (four decimals), `marla_basis` (`"225"`,
-`"250"`, `"272.25"`) and `area_sqft` (four decimals, `null` when not computable) are strings, never numbers. Provenance covers
+`"250"`, `"272.25"`) and `area_sqft` (four decimals, `null` when not computable) are strings, never numbers; the residential integers and yes/no answers are JSON integers and booleans. Provenance covers
 the editable fields, not `area_sqft`. No owner or other internal column is returned. `tests/api/test_listings_api.py`
 asserts the shape and the OpenAPI schema.
 

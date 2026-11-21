@@ -11,7 +11,7 @@ The Field registry (AD-4) is the one definition of which Listing fields exist. I
 ## File format
 
 ```yaml
-version: 3                     # positive integer
+version: 4                     # positive integer
 taxonomy:
   purposes: [sale, rent]       # code-defined, snake_case ids
   categories:
@@ -42,6 +42,14 @@ fields:
     max: "9999999999.9999"
     scale: 4
     ...
+  - id: bedrooms
+    type: integer              # integer: min, max (YAML integers, 0 to 1 000 000 000, min <= max)
+    min: 0
+    max: 50
+    ...
+  - id: lift
+    type: boolean              # boolean: no extra keys; the answer is true, false or unknown (null)
+    ...
   - id: area_sqft
     type: decimal
     derived: true              # computed by the service; never input (optional, not ai_extractable or a model input)
@@ -59,7 +67,7 @@ Field types: `enum` (`allowed_values`), `text` (`max_length` 1 to 20 000, option
 characters after normalisation), `money` (`min`, `max` as quoted decimal strings, never YAML numbers, at most two
 decimals and at most 999 999 999 999.99, `currency` must be `PKR`; the column is NUMERIC(14,2)), `decimal` (`min`, `max`
 as quoted decimal strings with at most `scale` decimals and at most 16 whole digits, `scale` from 1 to 8; money stays its
-own type), and the declared but not yet editable `integer`, `boolean`. An enum value may carry a decimal part (`"272.25"`) only when every value of that enum is a number that fits
+own type), `integer` (`min`, `max` as YAML integers from 0 to 1 000 000 000, `min` at most `max`; no scale or currency; the column is a 32-bit integer) and `boolean` (tri-state: true, false, or unknown as null; no extra keys). An enum value may carry a decimal part (`"272.25"`) only when every value of that enum is a number that fits
 NUMERIC(6,2) (up to 4 whole digits and 2 decimals) and no two are numerically equal (`225` and `225.00`).
 `derived: true` marks a field the service computes from others: it must be `optional` and not `ai_extractable`,
 `valuation_input` or `quota_identity`, it is rejected on input as `not_editable`. The loader enforces only the derived field's own rules (the flag and its
@@ -88,6 +96,13 @@ code-defined in `listings.area`; `ai_extractable`, `valuation_input`) and the de
 `searchable`, `sortable`, not a valuation input). `area_value` and `area_unit` are `required_for_publication`; the
 others are `optional`; all apply to every Category and Subtype. See `docs/listings.md` for the conversion rules.
 
+Version 4 (Story 2.4) adds the `integer` and `boolean` types and the House and Apartment detail fields from
+`bedrooms` to `maintenance_charges` (30 fields, applicability by Subtype; see `docs/listings.md`). Every one is class
+public and `ai_extractable`; `bedrooms`, `bathrooms`, `construction_year`, `condition` and `covered_area_sqft` are
+`valuation_input`, and `bedrooms`, `bathrooms`, `furnishing` and `parking_spaces` are `searchable`.
+`construction_year` has one requirement level in the registry (`recommended`) for both Subtypes. Integer bounds are
+served in `min` and `max` as decimal strings (`"0"`, `"50"`), like money and decimal bounds.
+
 Only these keys are allowed. A Subtype belongs to exactly one Category; Plot File is a Subtype of Plot, distinct from
 Residential Plot.
 
@@ -114,10 +129,10 @@ tells the developer to bump the version and run the script.
 
 `GET /api/v1/registry` is public: `{version, taxonomy: {categories: [{id, subtypes}], purposes}, fields: [...]}`, each
 field with `id, type, requirement, applicability, allowed_values (null unless an enum), allowed_values_by_purpose (null
-unless narrowed), min_length and max_length (text only), min and max (money and decimal, plain decimal notation, never an exponent), currency (money only), scale (decimal only),
-derived, description (null unless documented), class` and the five flags (`RESPONSE_SHAPE_VERSION` is 3: the `scale`, `derived` and
+unless narrowed), min_length and max_length (text only), min and max (money, decimal and integer, plain decimal notation, never an exponent), currency (money only), scale (decimal only),
+derived, description (null unless documented), class` and the five flags (`RESPONSE_SHAPE_VERSION` stays 3 in version 4, which adds no key: the `scale`, `derived` and
 `description` keys were added).
-`Cache-Control: public, max-age=300` and a strong `ETag` (`"<version>-<content hash>"`); `If-None-Match` gets `304`.
+`Cache-Control: public, max-age=300` and a strong `ETag` (`"<version>-<content hash>-<RESPONSE_SHAPE_VERSION>"`); `If-None-Match` gets `304`.
 OpenAPI enums for purpose, category and subtype are generated from the registry (`PurposeEnum`, `CategoryEnum`,
 `SubtypeEnum`), never copied by hand. Cities, localities and amenities are database reference data, not registry values.
 
@@ -135,7 +150,8 @@ OpenAPI enums for purpose, category and subtype are generated from the registry 
   `listings_propertylisting`, so a taxonomy change needs a `listings` migration as well as a version bump
   (`tests/listings/test_constraints.py` fails when the migration and the registry disagree). The same holds for the
   generated CHECKs on `title`, `description`, `ListingTerms` (price range, basis and period values) and `ListingArea`
-  (value and square-foot bounds, unit and basis values, the marla and kanal units a basis applies to): changing those
+  (value and square-foot bounds, unit and basis values, the marla and kanal units a basis applies to) and
+  `ListingResidential` (integer, decimal and money bounds, enum sets, the floor rule): changing those
   registry bounds or values needs a migration.
 - **Private fields are listed.** Private-class fields appear in the public registry response by design: it is field
   metadata for owner forms, never values. `ai_extractable` and `quota_identity` are allowed on private fields; only
