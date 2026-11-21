@@ -84,6 +84,7 @@ FIELD_MESSAGES: dict[str, str] = {
     "too_short": "This text is too short.",
     "too_long": "This text is too long.",
     "invalid_price": "Enter an amount above zero with at most two decimals.",
+    "invalid_area": "Enter an area above zero with at most four decimals, using digits only.",
 }
 DEFAULT_FIELD_MESSAGE = "Enter a valid value."
 

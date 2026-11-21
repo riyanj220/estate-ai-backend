@@ -26,7 +26,10 @@ CLASSES = ("public", "private")
 FLAGS = ("searchable", "sortable", "ai_extractable", "valuation_input", "quota_identity")
 PRIVATE_FORBIDDEN_FLAGS = ("searchable", "sortable", "valuation_input")
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
-_VALUE = re.compile(r"^[a-z0-9_]{1,48}$")  # enum values may start with a digit
+# A decimal part is only for an enum whose values are ALL numbers that fit NUMERIC(6,2)
+# (`272.25`, square feet per marla); see `_check_numeric_enum`.
+_VALUE_OR_NUMBER = re.compile(r"^(?:[a-z0-9_]{1,48}|\d{1,4}\.\d{1,2})$")
+_NUMBER = re.compile(r"^\d{1,4}(?:\.\d{1,2})?$")
 TAXONOMY_ID_MAX = 32  # the Listing columns are CharField(max_length=32)
 _TOP_KEYS = {"version", "taxonomy", "fields"}
 _TAXONOMY_KEYS = {"purposes", "categories"}
@@ -34,12 +37,17 @@ _CATEGORY_KEYS = {"id", "subtypes"}
 _REQUIRED_FIELD_KEYS = {"id", "type", "requirement", "applicability", "class"}
 _TEXT_KEYS = {"min_length", "max_length"}
 _MONEY_KEYS = {"min", "max", "currency"}
+_DECIMAL_KEYS = {"min", "max", "scale"}
 _FIELD_KEYS = (
     _REQUIRED_FIELD_KEYS
-    | {"allowed_values", "allowed_values_by_purpose", *FLAGS}
+    | {"allowed_values", "allowed_values_by_purpose", "derived", "description", *FLAGS}
     | _TEXT_KEYS
     | _MONEY_KEYS
+    | _DECIMAL_KEYS
 )
+DESCRIPTION_MAX = 200
+DECIMAL_SCALE_MAX = 8
+DECIMAL_WHOLE_DIGITS = 16  # NUMERIC(20,4) holds 16 whole digits
 CURRENCY = "PKR"  # the only currency; money columns are NUMERIC(14,2)
 MONEY_DECIMALS = 2
 MONEY_CEILING = Decimal("999999999999.99")  # what NUMERIC(14,2) holds
@@ -85,6 +93,11 @@ class FieldDef:
     currency: str | None = None
     # enum narrowed by Listing purpose: ((purpose, (value, ...)), ...); None means no narrowing
     allowed_values_by_purpose: tuple[tuple[str, tuple[str, ...]], ...] | None = None
+    # decimal: inclusive bounds (`minimum`, `maximum`) and the number of decimals stored
+    scale: int | None = None
+    # derived: computed by the service from other fields; never accepted as input
+    derived: bool = False
+    description: str | None = None
 
     def values_for(self, purpose: str | None) -> tuple[str, ...] | None:
         """The enum values allowed for a Listing of this purpose (all of them without a map)."""
@@ -210,7 +223,7 @@ def _by_purpose(entry: dict, values, purposes) -> tuple | None:
         _fail("allowed_values_by_purpose must list every purpose and only purposes")
     pairs = []
     for purpose in purposes:
-        subset = _id_list(raw[purpose], "allowed_values_by_purpose", _VALUE)
+        subset = _id_list(raw[purpose], "allowed_values_by_purpose", _VALUE_OR_NUMBER)
         if not subset or set(subset) - set(values):
             _fail("allowed_values_by_purpose must be a non-empty subset of allowed_values")
         pairs.append((purpose, subset))
@@ -248,6 +261,8 @@ def _money_amount(entry: dict, key: str) -> Decimal:
 
 def _money_rules(entry: dict) -> dict:
     present = _MONEY_KEYS & set(entry)
+    if entry["type"] == "decimal":
+        return {}  # judged by _decimal_rules
     if entry["type"] != "money":
         if present:
             _fail("only a money field has min, max or currency")
@@ -260,6 +275,43 @@ def _money_rules(entry: dict) -> dict:
     if minimum > maximum:
         _fail("min is above max")
     return {"minimum": minimum, "maximum": maximum, "currency": CURRENCY}
+
+
+def _decimal_amount(entry: dict, key: str, scale: int) -> Decimal:
+    value = entry.get(key)
+    pattern = rf"^\d{{1,{DECIMAL_WHOLE_DIGITS}}}(?:\.\d{{1,{scale}}})?$"
+    if not isinstance(value, str) or not re.fullmatch(pattern, value, re.ASCII):
+        _fail(f"{key} must be a decimal string with at most {scale} decimals")
+    return Decimal(value)
+
+
+def _decimal_rules(entry: dict) -> dict:
+    if entry["type"] != "decimal":
+        if "scale" in entry:
+            _fail("only a decimal field has scale")
+        return {}
+    if "currency" in entry:
+        _fail("a decimal field has no currency")
+    if _DECIMAL_KEYS - set(entry):
+        _fail("a decimal field needs min, max and scale")
+    scale = entry["scale"]
+    if isinstance(scale, bool) or not isinstance(scale, int) or not 1 <= scale <= DECIMAL_SCALE_MAX:
+        _fail(f"scale must be an integer from 1 to {DECIMAL_SCALE_MAX}")
+    minimum, maximum = _decimal_amount(entry, "min", scale), _decimal_amount(entry, "max", scale)
+    if minimum > maximum:
+        _fail("min is above max")
+    return {"minimum": minimum, "maximum": maximum, "scale": scale}
+
+
+def _check_numeric_enum(values: tuple[str, ...]) -> None:
+    """A value with a decimal point needs every value to be a NUMERIC(6,2) number, all different
+    as numbers (`225` and `225.00` would be the same stored value)."""
+    if not any("." in v for v in values):
+        return
+    if not all(_NUMBER.fullmatch(v) for v in values):
+        _fail("a decimal enum value needs every value to be a number of up to 4 + 2 digits")
+    if len({Decimal(v) for v in values}) != len(values):
+        _fail("enum values are numerically equal")
 
 
 def _field(entry, purposes, categories) -> FieldDef:
@@ -294,9 +346,10 @@ def _field(entry, purposes, categories) -> FieldDef:
         _fail("a private field cannot be searchable, sortable or a valuation input")
     values = None
     if entry["type"] == "enum":
-        values = _id_list(entry.get("allowed_values"), "allowed_values", _VALUE)
+        values = _id_list(entry.get("allowed_values"), "allowed_values", _VALUE_OR_NUMBER)
         if not values:
             _fail("an enum has no allowed values")
+        _check_numeric_enum(values)
         bound = {
             "purpose": list(purposes),
             "category": [c.id for c in categories],
@@ -309,6 +362,22 @@ def _field(entry, purposes, categories) -> FieldDef:
     by_purpose = _by_purpose(entry, values, purposes)
     text_rules = _text_rules(entry)
     money_rules = _money_rules(entry)
+    decimal_rules = _decimal_rules(entry)
+    derived = entry.get("derived", False)
+    if not isinstance(derived, bool):
+        _fail("derived must be true or false")
+    if derived and (
+        entry["requirement"] != "optional"
+        or flags["ai_extractable"]
+        or flags["valuation_input"]
+        or flags["quota_identity"]
+    ):
+        _fail("a derived field is optional and cannot be ai_extractable or a model input")
+    description = entry.get("description")
+    if description is not None and (
+        not isinstance(description, str) or not 1 <= len(description) <= DESCRIPTION_MAX
+    ):
+        _fail(f"description must be text of 1 to {DESCRIPTION_MAX} characters")
     return FieldDef(
         id=entry["id"],
         type=entry["type"],
@@ -319,7 +388,10 @@ def _field(entry, purposes, categories) -> FieldDef:
         **flags,
         **text_rules,
         **money_rules,
+        **decimal_rules,
         allowed_values_by_purpose=by_purpose,
+        derived=derived,
+        description=description,
     )
 
 
