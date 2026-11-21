@@ -100,6 +100,8 @@ Decision beyond the story text: the basis also applies to kanal (a kanal is 20 m
 
 ## Review Triage Log
 
+Backend half (three reviewers: blind, edge-case, verification-gap). Patched: area text shape is strict (`^\d{1,10}(\.\d{1,4})?$`, no padding or whitespace); registry decimal bounds never use exponent form; `area_sqft` is recomputed from the resulting state on every save when an area row exists, so a stale value is repaired (costs one revision); tests for clearing the basis, after-commit event delivery and rollback, the registry bounds and shape version, a rounding tie and a unit-conversion drift test; stale registry docs fixed; the loader allows a decimal part in an enum only when every value is numeric and fits the column. Spec wording corrected: the loader enforces the derived field's own rules and `tests/listings/test_fields.py` enforces the storage mapping (the catalog cannot import the listings field map). Deferred: `view_of` sentinel (one extra query), float-grep test left in, AI-origin edits clear a stored basis (documented), padded/Unicode whitespace leniency does not apply to area. Verification: lint-imports 13 kept, ruff, pytest 3022 passed, no migration drift, openapi regenerated.
+
 ## Design Notes
 
 Area is its own table (not more `ListingTerms` columns) so later detail tables (2.4, 2.5) follow one pattern: one table per concern, one `STORAGE` kind each. The derived square-feet value is stored (not computed on read) so later search can index and sort on it. Acre is exact (43,560 sq ft); square yards exact (9); marla and kanal depend on the owner's stated basis.

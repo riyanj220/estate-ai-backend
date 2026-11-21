@@ -1,7 +1,7 @@
 # Listings
 
 `apps/listings` owns the canonical Listing. Story 2.1 adds starting a Draft, Story 2.2 conflict-safe editing of title,
-description and price; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
+description and price, Story 2.3 the area and its unit; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
 
 ## Model (`listings.models`, written only by `listings.services`)
 
@@ -14,6 +14,12 @@ description and price; later stories add more fields, media and publication (`_b
 - `ListingTerms`: one row per Listing (`listing` one-to-one), created with the Draft and lazily by `apply_updates` for
   older Drafts: `asking_price` NUMERIC(14,2) nullable (CHECK between the registry bounds), `price_basis` and
   `rental_period` nullable (CHECKs generated from the registry values), `updated_at`. Money is NUMERIC, never a float.
+- `ListingArea` (Story 2.3, migration `0003_area`): one row per Listing, created lazily by `apply_updates` the first
+  time an area field changes (never by `create_draft`): `area_value` NUMERIC(14,4), `area_unit`, `marla_basis`
+  NUMERIC(6,2) (square feet per marla), `area_sqft` NUMERIC(20,4) (derived), `updated_at`, all nullable. CHECKs generated
+  from the registry (`models.area_constraints`): value within the bounds, unit and basis in their enums, a basis only
+  while the unit is marla or kanal, and `area_sqft` null unless the area is computable (a value, a unit and, for marla
+  and kanal, a basis). `tests/listings/test_constraints.py` fails when migration 0003 and the registry disagree.
 - `ListingRevision`: `listing`, `revision`, `origin` (`manual` or `ai`), `actor_account_id`, `changes` (the registry
   fields set at that revision and their new values as strings or null), unique (`listing`, `revision`). Edits are
   recorded by these rows; there is no separate audit action for them.
@@ -42,8 +48,8 @@ actor's account `not_found` (another owner, an administrator, a system actor and
 no `edit_drafts` capability `forbidden` (Suspended, Deactivated; evaluated after the not-found rule); then the request
 shape, `validation_error` with all failing fields at once and codes only: `base_revision` must be a positive integer
 (`required`, `invalid`), `updates` a non-empty mapping (`required`, `not_a_dict`, `empty`), every key a registry field id
-that this story makes editable (`title`, `description`, `asking_price`, `price_basis`, `rental_period`): other registry
-ids such as `purpose` are `not_editable`, unknown ids (`owner_account_id`, `status`, `origin`, ...) are `unknown_field`
+that is editable (`title`, `description`, `asking_price`, `price_basis`, `rental_period`, `area_value`, `area_unit`,
+`marla_basis`): other registry ids such as `purpose`, and the derived `area_sqft`, are `not_editable`, unknown ids (`owner_account_id`, `status`, `origin`, ...) are `unknown_field`
 under `non_field_errors` so a client-chosen key is never echoed.
 
 Then, in ONE transaction that locks only the listing row (`select_for_update`):
@@ -104,6 +110,37 @@ field, when the registry and the map disagree.
   period, and every `required_for_publication` field, is a **publication rule** checked in Story 2.15.
 - Errors are reported per registry field id, as codes only: a submitted value is never echoed and never logged.
 
+### Area and units (Story 2.3)
+
+- `area_value` (registry type `decimal`, scale 4): text only (a JSON string; JSON numbers, floats, booleans, commas,
+  exponents, whitespace, zero-padding such as `0010` and non-ASCII digits are refused, `invalid`). Valid text is
+  ASCII `^\d{1,10}(\.\d{1,4})?$` without leading zeros; a well-formed number that is zero, negative, below `0.0001`,
+  above `9999999999.9999` (so also more than ten whole digits) or has more than four decimals is `invalid_area`. Stored
+  NUMERIC(14,4) and serialised exactly as stored, `"10.0000"` (the client formats it).
+- `area_unit` (`sqft`, `sqyd`, `marla`, `kanal`, `acre`): anything else is `invalid_choice`.
+- `marla_basis` (`"225"`, `"250"`, `"272.25"`: square feet in one marla; a kanal is 20 marla so it applies to `marla`
+  and `kanal`): only those exact strings are accepted (`invalid_choice` otherwise, JSON numbers included). Stored as
+  NUMERIC(6,2) and mapped back to the enum string on the wire. Cross-field, judged on the RESULTING state: a basis while
+  the resulting unit is not marla or kanal is `not_applicable` on `marla_basis`. When an edit changes the unit away from
+  marla or kanal while a basis is stored and the request does not mention the basis, the service clears it (stored data
+  stays consistent); the response shows `null`, the provenance entry is removed and the revision row records
+  `marla_basis: null`.
+- `null` clears any area field. A value without a unit, or a unit without a value, is allowed in a Draft; completeness
+  (`area_value` and `area_unit` are `required_for_publication`) is a Story 2.15 matter.
+- `area_sqft` is DERIVED: registry `derived: true`, in `listings.fields.DERIVED` (never in `EDITABLE_FIELDS`), rejected on
+  input as `not_editable`, never given provenance. `apply_updates` recomputes it inside the same transaction whenever the
+  value, unit or basis changes, with exact `Decimal` arithmetic (`listings.area.normalised_sqft`, no float anywhere):
+  `sqft` value, `sqyd` value x 9, `acre` value x 43 560, `marla` value x basis, `kanal` value x 20 x basis, rounded half
+  up to four decimals. A missing value or unit, or marla and kanal without a basis, give `null`. On every edit of a
+  Listing that has an area row the figure is recomputed from the resulting state; when the stored `area_sqft` differs
+  it is written and recorded in the revision as a normal change entry, so a stale or null stored figure is repaired
+  by any save (even one that looks like a no-op, which then costs a revision).
+- **An unknown basis does not block saving or later publication.** The Listing simply has `area_sqft = null`. Excluding
+  such Listings from area-range filtering, and giving them no price estimate, is implemented by the later stories
+  (search and valuation) by reading `area_sqft is null`; this story only guarantees the value is null, never a guess.
+- `area_value`, `area_unit` and `marla_basis` are `valuation_input` fields: a change to any of them (including a basis
+  cleared by a unit change) emits `listing.model_inputs_changed` after commit. `area_sqft` is not (it is computed from them).
+
 ### Provenance
 
 `origin` is an argument chosen by the calling layer: the owner API passes `manual`, the future Assistant passes `ai`. It
@@ -155,9 +192,11 @@ edits of Published Listings.
 ## Wire shape (AD-24)
 
 `{id, status, visibility, revision, registry_version, fields: {purpose, category, subtype, title, description,
-asking_price, price_basis, rental_period}, provenance: {<field id>: {origin, confirmed}}, media: [], amenities: []}`.
+asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [], amenities: []}`.
 `visibility` is `private` for Drafts (`listings.lifecycle.Visibility`, extended by Story 2.12). `fields` is keyed by flat
-registry ids and returns `null` for unknown; `asking_price` is a decimal string. No owner or other internal column is returned. `tests/api/test_listings_api.py`
+registry ids and returns `null` for unknown; `asking_price`, `area_value` (four decimals), `marla_basis` (`"225"`,
+`"250"`, `"272.25"`) and `area_sqft` (four decimals, `null` when not computable) are strings, never numbers. Provenance covers
+the editable fields, not `area_sqft`. No owner or other internal column is returned. `tests/api/test_listings_api.py`
 asserts the shape and the OpenAPI schema.
 
 ## Adding fields later

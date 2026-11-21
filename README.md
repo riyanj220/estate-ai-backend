@@ -76,11 +76,12 @@ New apps are added to `INSTALLED_APPS` only when they own models.
 ## Listings and the Field registry
 
 `apps/listings` owns the canonical `PropertyListing` (Story 2.1: start a Draft; Story 2.2: `PATCH /api/v1/listings/{id}`
-with `{base_revision, fields}` saves title, description, Asking price, price basis and rental period through
+with `{base_revision, fields}` saves title, description, Asking price, price basis, rental period and (Story 2.3) the area, its unit and the marla
+basis (the derived square feet are computed server-side) through
 `listings.services.apply_updates`, the only write path for Listing fields: a stale `base_revision` is `409 stale_revision`
 with the current Listing under `current`, every field carries `provenance` set by the service, every change writes a
 `ListingRevision`, and contact details in text are refused) and `apps/catalog` owns the Field registry,
-`apps/catalog/registry/fields.yaml` (version 2, field types `enum`, `text`, `money`), validated at start-up and served at
+`apps/catalog/registry/fields.yaml` (version 3, field types `enum`, `text`, `money`, `decimal`), validated at start-up and served at
 `GET /api/v1/registry`. Editing the registry needs a version bump and `uv run python scripts/registry_lock.py`. See
 `docs/listings.md`, `docs/registry.md` and `docs/privacy-patterns.md`.
 
