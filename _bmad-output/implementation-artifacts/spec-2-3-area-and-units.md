@@ -2,7 +2,7 @@
 title: 'Story 2.3: Area and measurement units (backend half, then frontend half)'
 type: 'feature'
 created: '2026-11-21'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -101,6 +101,8 @@ Decision beyond the story text: the basis also applies to kanal (a kanal is 20 m
 ## Review Triage Log
 
 Backend half (three reviewers: blind, edge-case, verification-gap). Patched: area text shape is strict (`^\d{1,10}(\.\d{1,4})?$`, no padding or whitespace); registry decimal bounds never use exponent form; `area_sqft` is recomputed from the resulting state on every save when an area row exists, so a stale value is repaired (costs one revision); tests for clearing the basis, after-commit event delivery and rollback, the registry bounds and shape version, a rounding tie and a unit-conversion drift test; stale registry docs fixed; the loader allows a decimal part in an enum only when every value is numeric and fits the column. Spec wording corrected: the loader enforces the derived field's own rules and `tests/listings/test_fields.py` enforces the storage mapping (the catalog cannot import the listings field map). Deferred: `view_of` sentinel (one extra query), float-grep test left in, AI-origin edits clear a stored basis (documented), padded/Unicode whitespace leniency does not apply to area. Verification: lint-imports 13 kept, ruff, pytest 3022 passed, no migration drift, openapi regenerated.
+
+Frontend half (three reviewers). Patched: conflict banner could stick after "Use latest" on the unit (rows count only while their control is shown; basis reset when the unit needs none); basis error left after the control was hidden; typed basis lost silently when another session moved the unit (reset with a banner sentence); area text comparison by amount only for the real shape and the registry scale; wording ("I don't know yet", "Area unit" for screen readers); derived line marked as the saved figure while edits are unsaved; nine added tests (kanal note, extra error codes, exact control set, scale-6, padded text, conflict cases). Deferred: stub edge-code differences (non-string unit, over-long digits), redundant privacy assertion. Verification: lint, typecheck, build, api:check, full Playwright 886 passed.
 
 ## Design Notes
 
