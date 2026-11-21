@@ -5,6 +5,7 @@ from django.test import Client
 
 from apps.catalog import registry
 from apps.presentation.api.registry import RESPONSE_SHAPE_VERSION
+from tests.listings.support import RESIDENTIAL_IDS
 
 URL = "/api/v1/registry"
 FIELD_KEYS = {
@@ -36,7 +37,7 @@ def test_served_publicly_with_the_defined_shape():
     assert response.status_code == 200
     body = response.json()
     assert list(body) == ["version", "taxonomy", "fields"]
-    assert body["version"] == 3
+    assert body["version"] == 4
     assert body["taxonomy"] == {
         "categories": [
             {"id": "house", "subtypes": ["house"]},
@@ -59,6 +60,7 @@ def test_served_publicly_with_the_defined_shape():
         "area_unit",
         "marla_basis",
         "area_sqft",
+        *RESIDENTIAL_IDS,
     ]
     for field in body["fields"]:
         assert set(field) == FIELD_KEYS
@@ -113,7 +115,7 @@ def test_cache_headers_and_strong_etag():
     response = Client().get(URL)
     assert response.headers["Cache-Control"] == "public, max-age=300"
     tag = response.headers["ETag"]
-    assert tag == f'"3-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
+    assert tag == f'"4-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
         "W/"
     )
 
@@ -170,3 +172,37 @@ def test_the_shape_version_is_pinned_and_the_area_fields_are_served_in_full():
     assert served["title"]["description"] is None and served["title"]["scale"] is None
     assert served["asking_price"]["min"] == "0.01" and served["asking_price"]["scale"] is None
     assert "E" not in "".join(f"{f['min']}{f['max']}" for f in served.values() if f["min"])
+
+
+def test_the_residential_fields_are_served_in_registry_order_with_their_rules():
+    served = {f["id"]: f for f in Client().get(URL).json()["fields"]}
+    bedrooms = served["bedrooms"]
+    assert (bedrooms["type"], bedrooms["min"], bedrooms["max"]) == ("integer", "0", "50")
+    assert bedrooms["requirement"] == "required_for_publication"
+    assert bedrooms["searchable"] and bedrooms["valuation_input"] and bedrooms["ai_extractable"]
+    assert bedrooms["applicability"] == {
+        "purposes": [],
+        "categories": [],
+        "subtypes": ["house", "apartment"],
+    }
+    assert bedrooms["scale"] is None and bedrooms["currency"] is None
+    assert bedrooms["allowed_values"] is None
+    assert (served["construction_year"]["min"], served["construction_year"]["max"]) == (
+        "1900",
+        "2100",
+    )
+    assert served["lift"]["type"] == "boolean" and served["lift"]["min"] is None
+    assert served["lift"]["applicability"]["subtypes"] == ["apartment"]
+    assert served["kitchens"]["applicability"]["subtypes"] == ["house"]
+    assert served["condition"]["allowed_values"] == ["new", "excellent", "good", "needs_renovation"]
+    covered = served["covered_area_sqft"]
+    assert (covered["type"], covered["scale"], covered["max"]) == (
+        "decimal",
+        4,
+        "9999999999.9999",
+    )
+    charges = served["maintenance_charges"]
+    assert (charges["type"], charges["min"], charges["currency"]) == ("money", "0", "PKR")
+    assert charges["requirement"] == "optional"
+    assert "E" not in "".join(f"{f['min']}{f['max']}" for f in served.values() if f["min"])
+    assert {"integer", "boolean"} <= {f["type"] for f in served.values()}

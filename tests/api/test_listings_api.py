@@ -13,8 +13,14 @@ from apps.catalog import registry
 from apps.identity import services as identity_services
 from apps.kernel.errors import field_message
 from apps.kernel.models import AuditRecord
-from apps.listings.models import ListingArea, ListingRevision, ListingTerms, PropertyListing
-from tests.listings.support import PASSWORD, SYSTEM, make_account, seed_cap
+from apps.listings.models import (
+    ListingArea,
+    ListingResidential,
+    ListingRevision,
+    ListingTerms,
+    PropertyListing,
+)
+from tests.listings.support import PASSWORD, RESIDENTIAL_IDS, SYSTEM, make_account, seed_cap
 
 CREATE = "/api/v1/listings"
 MINE = "/api/v1/me/listings"
@@ -43,6 +49,7 @@ NEW_FIELDS = {
     "area_unit": None,
     "marla_basis": None,
     "area_sqft": None,
+    **dict.fromkeys(RESIDENTIAL_IDS),
 }
 
 
@@ -98,7 +105,7 @@ def test_create_returns_the_wire_shape(kind):
     body = response.json()
     assert set(body) == WIRE_KEYS
     assert body["status"] == "draft" and body["visibility"] == "private"
-    assert (body["revision"], body["registry_version"]) == (1, 3)
+    assert (body["revision"], body["registry_version"]) == (1, 4)
     assert body["fields"] == {**BODY, **NEW_FIELDS} and body["provenance"] == {}
     assert body["media"] == [] and body["amenities"] == []
     uuid.UUID(body["id"])
@@ -361,6 +368,7 @@ def test_listing_resource_is_exactly_the_wire_shape():
         "area_value",
         "area_unit",
         "marla_basis",
+        *RESIDENTIAL_IDS,
         "area_sqft",
     ]
 
@@ -426,6 +434,15 @@ def edit(client, listing, fields, base=None):
 
 def draft(client, body=BODY):
     return post(client, CREATE, body).json()
+
+
+def body_text(response) -> str:
+    """The whole body as text without the volatile request id, so an echoed value anywhere else
+    (message, fields) is found and a random id cannot collide with a needle."""
+    body = response.json()
+    if isinstance(body.get("error"), dict):
+        body["error"].pop("request_id", None)
+    return json.dumps(body, ensure_ascii=False)
 
 
 def field_codes(response):
@@ -520,7 +537,7 @@ def test_money_errors(value, message):
     response = edit(client, created, {"asking_price": value})
     assert (response.status_code, code(response)) == (400, "validation_error")
     assert field_codes(response) == {"asking_price": [message]}
-    assert len(value) < 3 or value not in response.content.decode()
+    assert len(value) < 3 or value not in body_text(response)
 
 
 def test_a_json_number_for_money_is_refused_as_a_float():
@@ -547,7 +564,8 @@ def test_text_errors_and_the_contact_detail_explanation_without_echo(caplog):
         "title": ["This text cannot contain phone numbers, email addresses or street addresses."],
         "description": ["This text is too long."],
     }
-    assert "0300" not in response.content.decode() and "0300" not in caplog.text
+    assert "0300" not in body_text(response)
+    assert "0300" not in caplog.text
     assert field_codes(edit(client, created, {"title": "short"})) == {
         "title": ["This text is too short."]
     }
@@ -824,6 +842,7 @@ def test_openapi_describes_the_patch_route_and_the_409_with_current(tmp_path):
         "area_value",
         "area_unit",
         "marla_basis",
+        *RESIDENTIAL_IDS,
     }
     fields = schemas["ListingFields"]["properties"]
     assert set(fields) == {"purpose", "category", "subtype", *NEW_FIELDS}
@@ -1003,7 +1022,7 @@ def test_the_area_error_messages_are_catalogue_text_without_the_value():
     assert message["area_value"] == [
         "Enter an area above zero with at most four decimals, using digits only."
     ]
-    assert "-5" not in response.content.decode()
+    assert "-5" not in body_text(response)
 
 
 def test_a_stale_area_edit_is_409_with_the_current_area_and_a_replay_is_too():
@@ -1050,3 +1069,135 @@ def test_openapi_describes_the_area_fields_and_the_registry_serves_them(tmp_path
     assert registry_fields["area_sqft"]["derived"] is True
     assert registry_fields["area_value"]["scale"] == 4
     assert registry_fields["marla_basis"]["allowed_values"] == ["225", "250", "272.25"]
+
+
+# --- House and Apartment details (Story 2.4) ------------------------------------------------------
+
+APARTMENT_BODY = {"purpose": "sale", "category": "apartment", "subtype": "apartment"}
+
+
+def test_house_details_over_http_use_native_json_types_and_stay_null_when_unknown():
+    client = signed_in()
+    created = draft(client)
+    assert all(created["fields"][name] is None for name in RESIDENTIAL_IDS)
+    response = edit(
+        client,
+        created,
+        {"bedrooms": 4, "bathrooms": 3, "basement": False, "covered_area_sqft": "2400"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2 and body["registry_version"] == 4
+    assert body["fields"]["bedrooms"] == 4 and type(body["fields"]["bedrooms"]) is int
+    assert body["fields"]["basement"] is False
+    assert body["fields"]["covered_area_sqft"] == "2400.0000"
+    assert body["fields"]["kitchens"] is None and body["fields"]["lift"] is None
+    assert set(body["provenance"]) == {"bedrooms", "bathrooms", "basement", "covered_area_sqft"}
+    assert client.get(detail(created["id"])).json() == body
+    assert ListingResidential.objects.get().bedrooms == 4
+
+
+def test_an_apartment_over_http_and_the_floor_rule():
+    client = signed_in()
+    created = draft(client, APARTMENT_BODY)
+    bad = edit(client, created, {"floor_number": 10, "building_floors": 5})
+    assert (bad.status_code, code(bad)) == (400, "validation_error")
+    assert field_codes(bad) == {
+        "floor_number": [field_message("invalid_floor")],
+        "building_floors": [field_message("invalid_floor")],
+    }
+    assert ListingResidential.objects.count() == 0
+    good = edit(
+        client,
+        created,
+        {"floor_number": 5, "building_floors": 12, "lift": True, "maintenance_charges": "5000"},
+    ).json()
+    assert good["fields"]["lift"] is True and good["fields"]["maintenance_charges"] == "5000.00"
+
+
+@pytest.mark.parametrize(
+    ("body", "fields", "expected"),
+    [
+        (BODY, {"bedrooms": "3"}, "invalid"),
+        (BODY, {"bedrooms": 3.0}, "invalid"),
+        (BODY, {"bedrooms": True}, "invalid"),
+        (BODY, {"bedrooms": 51}, "invalid_range"),
+        (BODY, {"bedrooms": -1}, "invalid_range"),
+        (BODY, {"construction_year": 1899}, "invalid_range"),
+        (BODY, {"basement": "yes"}, "invalid"),
+        (BODY, {"basement": 1}, "invalid"),
+        (BODY, {"condition": "mint"}, "invalid_choice"),
+        (BODY, {"covered_area_sqft": "0"}, "invalid_area"),
+        (BODY, {"covered_area_sqft": "abc"}, "invalid"),
+        (BODY, {"lift": True}, "not_applicable"),
+        (APARTMENT_BODY, {"kitchens": 1}, "not_applicable"),
+        (APARTMENT_BODY, {"maintenance_charges": "-1"}, "invalid_price"),
+        (APARTMENT_BODY, {"maintenance_charges": "abc"}, "invalid"),
+        (
+            {"purpose": "sale", "category": "plot", "subtype": "residential_plot"},
+            {"bedrooms": 2},
+            "not_applicable",
+        ),
+        (
+            {"purpose": "rent", "category": "commercial", "subtype": "shop"},
+            {"bedrooms": 2},
+            "not_applicable",
+        ),
+    ],
+)
+def test_residential_error_codes_over_http(body, fields, expected):
+    client = signed_in()
+    created = draft(client, body)
+    response = edit(client, created, fields)
+    assert (response.status_code, code(response)) == (400, "validation_error")
+    name = next(iter(fields))
+    assert field_codes(response) == {name: [field_message(expected)]}
+    if isinstance(fields[name], str) and len(fields[name]) >= 3:
+        assert fields[name] not in body_text(response)  # the value is never echoed
+    assert not ListingResidential.objects.exists()
+    assert client.get(detail(created["id"])).json()["revision"] == 1
+
+
+def test_the_new_error_messages_are_catalogue_text():
+    assert field_message("invalid_range") == "Enter a whole number within the allowed range."
+    assert field_message("invalid_floor").startswith("The floor cannot be above")
+
+
+def test_a_clear_over_http_and_a_stale_edit_is_409_with_the_details():
+    client = signed_in()
+    created = draft(client)
+    saved = edit(client, created, {"bedrooms": 3, "kitchens": 2}).json()
+    stale = edit(client, created, {"bedrooms": 9})
+    assert (stale.status_code, code(stale)) == (409, "stale_revision")
+    assert stale.json()["current"] == saved and stale.json()["current"]["fields"]["kitchens"] == 2
+    cleared = edit(client, saved, {"kitchens": None}).json()
+    assert cleared["fields"]["kitchens"] is None and "kitchens" not in cleared["provenance"]
+    assert ListingResidential.objects.get().kitchens is None
+
+
+def test_a_never_edited_draft_has_no_row_after_clears_and_reads():
+    client = signed_in()
+    created = draft(client)
+    response = edit(client, created, {"bedrooms": None, "basement": None})
+    assert response.status_code == 200 and response.json()["revision"] == 1
+    client.get(detail(created["id"]))
+    client.get(MINE)
+    assert not ListingResidential.objects.exists()
+
+
+def test_openapi_describes_the_residential_fields_with_native_types(tmp_path):
+    target = tmp_path / "openapi.yaml"
+    call_command("spectacular", "--validate", "--file", str(target))
+    schemas = yaml.safe_load(target.read_text())["components"]["schemas"]
+    for schema in ("ListingFields", "ListingFieldsUpdateRequest"):
+        props = schemas[schema]["properties"]
+        assert props["bedrooms"]["type"] == "integer" and props["bedrooms"]["nullable"] is True
+        assert (props["bedrooms"]["minimum"], props["bedrooms"]["maximum"]) == (0, 50)
+        assert props["construction_year"]["minimum"] == 1900
+        assert props["lift"]["type"] == "boolean" and props["lift"]["nullable"] is True
+        assert props["covered_area_sqft"]["type"] == "string"
+        assert props["maintenance_charges"]["type"] == "string"
+        assert "never text" in props["bedrooms"]["description"]
+    assert schemas["ConditionEnum"]["enum"] == list(registry.field("condition").allowed_values)
+    update = yaml.safe_load(target.read_text())["paths"]["/api/v1/listings/{listing_id}"]["patch"]
+    assert "invalid_floor" in update["description"] and "invalid_range" in update["description"]

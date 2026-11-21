@@ -10,6 +10,7 @@ import yaml
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.catalog import registry
+from tests.listings.support import RESIDENTIAL_IDS
 
 GOOD = yaml.safe_load(registry.FIELDS_PATH.read_text())
 
@@ -51,7 +52,7 @@ def add_field(**overrides):
 
 def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
     loaded = registry.load()
-    assert loaded.version == 3
+    assert loaded.version == 4
     assert [f.id for f in registry.fields()] == [
         "purpose",
         "category",
@@ -65,6 +66,7 @@ def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
         "area_unit",
         "marla_basis",
         "area_sqft",
+        *RESIDENTIAL_IDS,
     ]
     assert registry.purposes() == ("sale", "rent")
     assert [c.id for c in registry.categories()] == ["house", "apartment", "plot", "commercial"]
@@ -78,6 +80,11 @@ def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
         "area_value",
         "area_unit",
         "marla_basis",
+        "bedrooms",
+        "bathrooms",
+        "construction_year",
+        "condition",
+        "covered_area_sqft",
     }
 
 
@@ -118,7 +125,7 @@ def test_plot_file_is_a_distinct_subtype_of_plot():
 
 
 def test_accessors_return_immutable_values():
-    assert registry.registry_version() == 3
+    assert registry.registry_version() == 4
     assert registry.field("purpose").allowed_values == ("sale", "rent")
     assert registry.field("nope") is None
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -258,7 +265,7 @@ def test_startup_fails_on_an_invalid_file(monkeypatch, tmp_path):
     finally:
         monkeypatch.undo()
         registry.load.cache_clear()
-    assert registry.load().version == 3
+    assert registry.load().version == 4
 
 
 def test_catalog_ready_loads_the_registry(monkeypatch):
@@ -314,18 +321,18 @@ def test_lock_script_refuses_a_change_without_a_bump(monkeypatch, tmp_path, caps
     monkeypatch.setattr(registry, "LOCK_PATH", lock)
     with pytest.raises(SystemExit, match="bump"):
         script.main()
-    fields.write_text(text(lambda d: (add_field()(d), d.update(version=4))))
+    fields.write_text(text(lambda d: (add_field()(d), d.update(version=5))))
     script.main()
-    assert registry.read_lock(lock.read_text())[0] == 4
-    assert "version 4" in capsys.readouterr().out
+    assert registry.read_lock(lock.read_text())[0] == 5
+    assert "version 5" in capsys.readouterr().out
 
 
 def test_the_files_are_found_from_any_working_directory(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     registry.load.cache_clear()
     try:
-        assert registry.load().version == 3
-        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 3
+        assert registry.load().version == 4
+        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 4
     finally:
         registry.load.cache_clear()
 
@@ -657,3 +664,78 @@ def test_a_description_is_short_text():
     for bad in ("", "x" * 201, 5, ["a"]):
         refused(add_field(description=bad))
     assert registry.field("title").description is None
+
+
+# --- integer, boolean and the version 4 residential fields (Story 2.4) --------------------------
+
+
+def integer_field(**overrides):
+    base = {"id": "rooms", "type": "integer", "min": 0, "max": 50}
+    base.update(overrides)
+    return add_field(**base)
+
+
+def test_an_integer_field_carries_whole_number_bounds():
+    parsed = registry.parse(text(integer_field()))
+    rooms = parsed.fields[-1]
+    assert (rooms.type, rooms.minimum, rooms.maximum) == ("integer", Decimal(0), Decimal(50))
+    assert rooms.scale is None and rooms.currency is None
+    assert registry.parse(text(integer_field(min=5, max=5))).fields[-1].minimum == Decimal(5)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"min": "0"},
+        {"max": "50"},
+        {"min": 0.5},
+        {"max": 50.0},
+        {"min": True},
+        {"max": False},
+        {"min": -1},
+        {"min": 10, "max": 5},
+        {"max": 10**10},
+        {"currency": "PKR"},
+        {"scale": 2},
+        {"min": None},
+    ],
+)
+def test_bad_integer_definitions(overrides):
+    refused(integer_field(**overrides))
+
+
+def test_an_integer_needs_min_and_max():
+    for key in ("min", "max"):
+
+        def drop(data, key=key):
+            integer_field()(data)
+            data["fields"][-1].pop(key)
+
+        refused(drop, "needs min and max")
+
+
+def test_a_boolean_field_takes_no_bounds_values_or_scale():
+    parsed = registry.parse(text(add_field(id="has_lift", type="boolean")))
+    assert parsed.fields[-1].type == "boolean" and parsed.fields[-1].minimum is None
+    for extra in (
+        {"min": 0},
+        {"max": 1},
+        {"allowed_values": ["a"]},
+        {"scale": 1},
+        {"currency": "PKR"},
+    ):
+        refused(add_field(id="has_lift", type="boolean", **extra))
+    refused(add_field(type="text", min=1), "only a money field")
+
+
+def test_the_residential_fields_are_defined_by_the_registry():
+    assert registry.registry_version() == 4
+    bedrooms = registry.field("bedrooms")
+    assert bedrooms.requirement == "required_for_publication"
+    assert bedrooms.searchable and bedrooms.valuation_input and bedrooms.ai_extractable
+    assert registry.field("construction_year").requirement == "recommended"
+    assert registry.field("floor_number").applies_to("sale", "apartment", "apartment")
+    assert not registry.field("floor_number").applies_to("sale", "house", "house")
+    assert not registry.field("bedrooms").applies_to("sale", "plot", "residential_plot")
+    assert registry.field("bedrooms").applies_to("rent", "house", "house")
+    assert registry.field("lift").type == "boolean"

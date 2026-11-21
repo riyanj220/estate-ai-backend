@@ -42,3 +42,46 @@ def user(view) -> Actor:
 
 def random_email() -> str:
     return f"{uuid.uuid4().hex[:10]}@example.com"
+
+
+APARTMENT = ("sale", "apartment", "apartment")
+
+# The residential details (Story 2.4), in registry order; an independent list, not read from the
+# registry, so a field dropped or reordered in the registry fails a test.
+BOTH_FIELDS = (
+    "bedrooms",
+    "bathrooms",
+    "construction_year",
+    "condition",
+    "furnishing",
+    "parking_spaces",
+    "occupancy_status",
+    "covered_area_sqft",
+)
+HOUSE_FIELDS = (
+    "total_floors",
+    "kitchens",
+    "construction_status",
+    "drawing_rooms",
+    "dining_rooms",
+    "tv_lounges",
+    "study_rooms",
+    "prayer_rooms",
+    "store_rooms",
+    "laundry_rooms",
+    "powder_rooms",
+    "servant_quarters",
+    "basement",
+)
+APARTMENT_FIELDS = (
+    "floor_number",
+    "building_floors",
+    "lift",
+    "backup_electricity",
+    "building_security",
+    "balcony_or_terrace",
+    "building_lobby",
+    "intercom",
+    "maintenance_charges",
+)
+RESIDENTIAL_IDS = (*BOTH_FIELDS, *HOUSE_FIELDS, *APARTMENT_FIELDS)
