@@ -1,7 +1,7 @@
 # The Field registry (AD-4). Every change needs a version bump and a new lock:
 #   uv run python scripts/registry_lock.py
 # Format and rules: docs/registry.md
-version: 3
+version: 4
 
 taxonomy:
   purposes: [sale, rent]
@@ -124,3 +124,242 @@ fields:
     class: public
     searchable: true
     sortable: true
+  - id: bedrooms
+    type: integer
+    requirement: required_for_publication
+    description: Number of bedrooms. 0 for a studio.
+    applicability: {purposes: [], categories: [], subtypes: [house, apartment]}
+    min: 0
+    max: 50
+    class: public
+    searchable: true
+    ai_extractable: true
+    valuation_input: true
+  - id: bathrooms
+    type: integer
+    requirement: required_for_publication
+    applicability: {purposes: [], categories: [], subtypes: [house, apartment]}
+    min: 0
+    max: 50
+    class: public
+    searchable: true
+    ai_extractable: true
+    valuation_input: true
+  - id: construction_year
+    type: integer
+    requirement: recommended
+    description: Year the building was built.
+    applicability: {purposes: [], categories: [], subtypes: [house, apartment]}
+    min: 1900
+    max: 2100
+    class: public
+    ai_extractable: true
+    valuation_input: true
+  - id: condition
+    type: enum
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: [house, apartment]}
+    allowed_values: [new, excellent, good, needs_renovation]
+    class: public
+    ai_extractable: true
+    valuation_input: true
+  - id: furnishing
+    type: enum
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: [house, apartment]}
+    allowed_values: [unfurnished, semi_furnished, furnished]
+    class: public
+    searchable: true
+    ai_extractable: true
+  - id: parking_spaces
+    type: integer
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: [house, apartment]}
+    min: 0
+    max: 50
+    class: public
+    searchable: true
+    ai_extractable: true
+  - id: occupancy_status
+    type: enum
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: [house, apartment]}
+    allowed_values: [owner_occupied, tenant_occupied, vacant]
+    class: public
+    ai_extractable: true
+  - id: covered_area_sqft
+    type: decimal
+    requirement: recommended
+    description: Covered area in square feet, whatever unit the area uses.
+    applicability: {purposes: [], categories: [], subtypes: [house, apartment]}
+    min: "0.0001"
+    max: "9999999999.9999"
+    scale: 4
+    class: public
+    ai_extractable: true
+    valuation_input: true
+  - id: total_floors
+    type: integer
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 1
+    max: 200
+    class: public
+    ai_extractable: true
+  - id: kitchens
+    type: integer
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 0
+    max: 50
+    class: public
+    ai_extractable: true
+  - id: construction_status
+    type: enum
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    allowed_values: [completed, under_construction, grey_structure]
+    class: public
+    ai_extractable: true
+  - id: drawing_rooms
+    type: integer
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 0
+    max: 50
+    class: public
+    ai_extractable: true
+  - id: dining_rooms
+    type: integer
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 0
+    max: 50
+    class: public
+    ai_extractable: true
+  - id: tv_lounges
+    type: integer
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 0
+    max: 50
+    class: public
+    ai_extractable: true
+  - id: study_rooms
+    type: integer
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 0
+    max: 50
+    class: public
+    ai_extractable: true
+  - id: prayer_rooms
+    type: integer
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 0
+    max: 50
+    class: public
+    ai_extractable: true
+  - id: store_rooms
+    type: integer
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 0
+    max: 50
+    class: public
+    ai_extractable: true
+  - id: laundry_rooms
+    type: integer
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 0
+    max: 50
+    class: public
+    ai_extractable: true
+  - id: powder_rooms
+    type: integer
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 0
+    max: 50
+    class: public
+    ai_extractable: true
+  - id: servant_quarters
+    type: integer
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    min: 0
+    max: 50
+    class: public
+    ai_extractable: true
+  - id: basement
+    type: boolean
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [house]}
+    class: public
+    ai_extractable: true
+  - id: floor_number
+    type: integer
+    requirement: recommended
+    description: Floor of the apartment. 0 is the ground floor.
+    applicability: {purposes: [], categories: [], subtypes: [apartment]}
+    min: 0
+    max: 200
+    class: public
+    ai_extractable: true
+  - id: building_floors
+    type: integer
+    requirement: recommended
+    description: Number of floors in the building.
+    applicability: {purposes: [], categories: [], subtypes: [apartment]}
+    min: 1
+    max: 200
+    class: public
+    ai_extractable: true
+  - id: lift
+    type: boolean
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: [apartment]}
+    class: public
+    ai_extractable: true
+  - id: backup_electricity
+    type: boolean
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: [apartment]}
+    class: public
+    ai_extractable: true
+  - id: building_security
+    type: boolean
+    requirement: recommended
+    applicability: {purposes: [], categories: [], subtypes: [apartment]}
+    class: public
+    ai_extractable: true
+  - id: balcony_or_terrace
+    type: boolean
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [apartment]}
+    class: public
+    ai_extractable: true
+  - id: building_lobby
+    type: boolean
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [apartment]}
+    class: public
+    ai_extractable: true
+  - id: intercom
+    type: boolean
+    requirement: optional
+    applicability: {purposes: [], categories: [], subtypes: [apartment]}
+    class: public
+    ai_extractable: true
+  - id: maintenance_charges
+    type: money
+    requirement: optional
+    description: Maintenance charges in PKR per month.
+    applicability: {purposes: [], categories: [], subtypes: [apartment]}
+    min: "0"
+    max: "999999999999.99"
+    currency: PKR
+    class: public
+    ai_extractable: true

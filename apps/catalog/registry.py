@@ -51,6 +51,7 @@ DECIMAL_WHOLE_DIGITS = 16  # NUMERIC(20,4) holds 16 whole digits
 CURRENCY = "PKR"  # the only currency; money columns are NUMERIC(14,2)
 MONEY_DECIMALS = 2
 MONEY_CEILING = Decimal("999999999999.99")  # what NUMERIC(14,2) holds
+INTEGER_CEILING = 1_000_000_000  # integer columns are 32-bit
 TEXT_LENGTH_CEILING = 20_000  # a text field longer than this is a different kind of field
 _MONEY_VALUE = re.compile(r"^\d{1,12}(?:\.\d{1,2})?$", re.ASCII)
 _APPLICABILITY_KEYS = ("purposes", "categories", "subtypes")
@@ -87,7 +88,7 @@ class FieldDef:
     # text: length bounds in characters after normalisation (`min_length` 0 means no minimum)
     min_length: int | None = None
     max_length: int | None = None
-    # money: inclusive bounds (the minimum is the smallest amount allowed), currency PKR
+    # money and integer: inclusive bounds (the minimum is the smallest amount allowed), currency PKR
     minimum: Decimal | None = None
     maximum: Decimal | None = None
     currency: str | None = None
@@ -261,8 +262,8 @@ def _money_amount(entry: dict, key: str) -> Decimal:
 
 def _money_rules(entry: dict) -> dict:
     present = _MONEY_KEYS & set(entry)
-    if entry["type"] == "decimal":
-        return {}  # judged by _decimal_rules
+    if entry["type"] in ("decimal", "integer"):
+        return {}  # judged by _decimal_rules and _integer_rules
     if entry["type"] != "money":
         if present:
             _fail("only a money field has min, max or currency")
@@ -275,6 +276,18 @@ def _money_rules(entry: dict) -> dict:
     if minimum > maximum:
         _fail("min is above max")
     return {"minimum": minimum, "maximum": maximum, "currency": CURRENCY}
+
+
+def _integer_rules(entry: dict) -> dict:
+    if entry["type"] != "integer":
+        return {}
+    if "currency" in entry:
+        _fail("an integer field has no currency")
+    if "min" not in entry or "max" not in entry:
+        _fail("an integer field needs min and max")
+    minimum = _int_bound(entry, "min", 0, INTEGER_CEILING)
+    maximum = _int_bound(entry, "max", minimum, INTEGER_CEILING)
+    return {"minimum": Decimal(minimum), "maximum": Decimal(maximum)}
 
 
 def _decimal_amount(entry: dict, key: str, scale: int) -> Decimal:
@@ -363,6 +376,7 @@ def _field(entry, purposes, categories) -> FieldDef:
     text_rules = _text_rules(entry)
     money_rules = _money_rules(entry)
     decimal_rules = _decimal_rules(entry)
+    integer_rules = _integer_rules(entry)
     derived = entry.get("derived", False)
     if not isinstance(derived, bool):
         _fail("derived must be true or false")
@@ -389,6 +403,7 @@ def _field(entry, purposes, categories) -> FieldDef:
         **text_rules,
         **money_rules,
         **decimal_rules,
+        **integer_rules,
         allowed_values_by_purpose=by_purpose,
         derived=derived,
         description=description,
