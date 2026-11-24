@@ -5,6 +5,7 @@ the cached registry loaded from `registry/fields.yaml` and return frozen values.
 file needs a version bump and a new lock (`scripts/registry_lock.py`); see `docs/registry.md`.
 """
 
+import datetime
 import hashlib
 import json
 import re
@@ -20,9 +21,10 @@ DIRECTORY = Path(__file__).resolve().parent / "registry"
 FIELDS_PATH = DIRECTORY / "fields.yaml"
 LOCK_PATH = DIRECTORY / "fields.lock"
 
-FIELD_TYPES = ("enum", "text", "money", "integer", "decimal", "boolean")
+FIELD_TYPES = ("enum", "text", "money", "integer", "decimal", "boolean", "date")
 REQUIREMENTS = ("required_for_publication", "recommended", "optional")
 CLASSES = ("public", "private")
+SECTIONS = ("details", "terms")  # where a form groups a field; `details` unless the file says
 FLAGS = ("searchable", "sortable", "ai_extractable", "valuation_input", "quota_identity")
 PRIVATE_FORBIDDEN_FLAGS = ("searchable", "sortable", "valuation_input")
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
@@ -47,6 +49,7 @@ _FIELD_KEYS = (
         "derived",
         "description",
         "seller_declared",
+        "section",
         "error_code",
         *FLAGS,
     }
@@ -63,6 +66,8 @@ MONEY_CEILING = Decimal("999999999999.99")  # what NUMERIC(14,2) holds
 INTEGER_CEILING = 1_000_000_000  # integer columns are 32-bit
 TEXT_LENGTH_CEILING = 20_000  # a text field longer than this is a different kind of field
 _MONEY_VALUE = re.compile(r"^\d{1,12}(?:\.\d{1,2})?$", re.ASCII)
+_ASCII_DIGITS = frozenset("0123456789")
+_DATE_KEYS = {"min", "max"}
 _APPLICABILITY_KEYS = ("purposes", "categories", "subtypes")
 
 
@@ -97,9 +102,10 @@ class FieldDef:
     # text: length bounds in characters after normalisation (`min_length` 0 means no minimum)
     min_length: int | None = None
     max_length: int | None = None
-    # money and integer: inclusive bounds (the minimum is the smallest amount allowed), currency PKR
-    minimum: Decimal | None = None
-    maximum: Decimal | None = None
+    # money, decimal and integer: inclusive bounds (the minimum is the smallest amount allowed),
+    # currency PKR; date: inclusive calendar dates (`datetime.date`, never a timestamp)
+    minimum: Decimal | datetime.date | None = None
+    maximum: Decimal | datetime.date | None = None
     currency: str | None = None
     # enum narrowed by Listing purpose: ((purpose, (value, ...)), ...); None means no narrowing
     allowed_values_by_purpose: tuple[tuple[str, tuple[str, ...]], ...] | None = None
@@ -109,6 +115,8 @@ class FieldDef:
     # a claim the owner makes (legal, approval, possession): shown as "Seller-declared" and never
     # as a platform-verified fact
     seller_declared: bool = False
+    # presentation grouping: `terms` (price and sale or rent terms) or `details` (the default)
+    section: str = "details"
     # decimal: the code for a well-formed value outside its rules (`invalid_measure` unless the
     # registry says `invalid_area`)
     error_code: str = "invalid_measure"
@@ -311,8 +319,8 @@ def _money_amount(entry: dict, key: str) -> Decimal:
 
 def _money_rules(entry: dict) -> dict:
     present = _MONEY_KEYS & set(entry)
-    if entry["type"] in ("decimal", "integer"):
-        return {}  # judged by _decimal_rules and _integer_rules
+    if entry["type"] in ("decimal", "integer", "date"):
+        return {}  # judged by _decimal_rules, _integer_rules and _date_rules
     if entry["type"] != "money":
         if present:
             _fail("only a money field has min, max or currency")
@@ -337,6 +345,51 @@ def _integer_rules(entry: dict) -> dict:
     minimum = _int_bound(entry, "min", 0, INTEGER_CEILING)
     maximum = _int_bound(entry, "max", minimum, INTEGER_CEILING)
     return {"minimum": Decimal(minimum), "maximum": Decimal(maximum)}
+
+
+def iso_date_shape(value) -> bool:
+    """Whether `value` is text written exactly `YYYY-MM-DD` in ASCII digits (checked by position,
+    never by a number-group pattern; whether the date exists is `calendar_date`'s question)."""
+    return (
+        isinstance(value, str)
+        and len(value) == 10
+        and value[4] == value[7] == "-"
+        and all(c in _ASCII_DIGITS for c in value[:4] + value[5:7] + value[8:])
+    )
+
+
+def calendar_date(value: str) -> datetime.date | None:
+    """The real calendar date written `YYYY-MM-DD`, or None (a date that does not exist, as in
+    `2027-02-30`, or year `0000`, is None). Only a plain `datetime.date`, never a timestamp."""
+    try:
+        return datetime.date(int(value[:4]), int(value[5:7]), int(value[8:]))
+    except ValueError:
+        return None
+
+
+def _date_bound(entry: dict, key: str) -> datetime.date:
+    value = entry.get(key)
+    if isinstance(value, datetime.date):  # YAML turned an unquoted 2000-01-01 into a date
+        _fail(f"{key} must be quoted text: quote the date")
+    if not iso_date_shape(value):
+        _fail(f"{key} must be a calendar date written YYYY-MM-DD")
+    parsed = calendar_date(value)
+    if parsed is None:
+        _fail(f"{key} must be a real calendar date")
+    return parsed
+
+
+def _date_rules(entry: dict) -> dict:
+    if entry["type"] != "date":
+        return {}
+    if "currency" in entry:
+        _fail("a date field has no currency")
+    if _DATE_KEYS - set(entry):
+        _fail("a date field needs min and max")
+    minimum, maximum = _date_bound(entry, "min"), _date_bound(entry, "max")
+    if minimum > maximum:
+        _fail("min is above max")
+    return {"minimum": minimum, "maximum": maximum}
 
 
 def _decimal_amount(entry: dict, key: str, scale: int) -> Decimal:
@@ -436,6 +489,9 @@ def _field(entry, purposes, categories) -> FieldDef:
         listed = applicability["categories"] or [c.id for c in categories]
         applicable = tuple(s for c in categories if c.id in listed for s in c.subtypes)
     by_subtype = _by_subtype(entry, values, applicable, by_purpose)
+    section = entry.get("section", "details")
+    if section not in SECTIONS:
+        _fail(f"section must be one of {', '.join(SECTIONS)}")
     seller_declared = entry.get("seller_declared", False)
     if not isinstance(seller_declared, bool):
         _fail("seller_declared must be true or false")
@@ -443,6 +499,7 @@ def _field(entry, purposes, categories) -> FieldDef:
     money_rules = _money_rules(entry)
     decimal_rules = _decimal_rules(entry)
     integer_rules = _integer_rules(entry)
+    date_rules = _date_rules(entry)
     derived = entry.get("derived", False)
     if not isinstance(derived, bool):
         _fail("derived must be true or false")
@@ -470,9 +527,11 @@ def _field(entry, purposes, categories) -> FieldDef:
         **money_rules,
         **decimal_rules,
         **integer_rules,
+        **date_rules,
         allowed_values_by_purpose=by_purpose,
         allowed_values_by_subtype=by_subtype,
         seller_declared=seller_declared,
+        section=section,
         derived=derived,
         description=description,
     )

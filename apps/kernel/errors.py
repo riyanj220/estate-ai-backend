@@ -83,12 +83,13 @@ FIELD_MESSAGES: dict[str, str] = {
     "not_applicable": "This field does not apply to this listing.",
     "too_short": "This text is too short.",
     "too_long": "This text is too long.",
-    "invalid_price": "Enter an amount above zero with at most two decimals.",
+    "invalid_price": "Enter an amount within the allowed range with at most two decimals.",
     "invalid_area": "Enter an area above zero with at most four decimals, using digits only.",
     "invalid_measure": (
         "Enter a number above zero within the allowed range, "
         "using digits and an optional decimal point."
     ),
+    "invalid_date": "Enter a date within the allowed range.",
     "invalid_range": "Enter a whole number within the allowed range.",
     "invalid_floor": "The floor cannot be above the number of floors in the building.",
 }

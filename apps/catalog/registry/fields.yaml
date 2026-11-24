@@ -1,7 +1,7 @@
 # The Field registry (AD-4). Every change needs a version bump and a new lock:
 #   uv run python scripts/registry_lock.py
 # Format and rules: docs/registry.md
-version: 5
+version: 6
 
 taxonomy:
   purposes: [sale, rent]
@@ -77,6 +77,7 @@ fields:
     searchable: true
   - id: rental_period
     type: enum
+    section: terms
     requirement: required_for_publication
     applicability: {purposes: [rent], categories: [], subtypes: []}
     allowed_values: [day, week, month, year]
@@ -561,5 +562,123 @@ fields:
     type: boolean
     requirement: optional
     applicability: {purposes: [], categories: [], subtypes: [office]}
+    class: public
+    ai_extractable: true
+  - id: price_negotiable
+    type: boolean
+    section: terms
+    requirement: optional
+    description: The price can be discussed.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    class: public
+    ai_extractable: true
+  - id: possession_availability
+    type: enum
+    section: terms
+    requirement: recommended
+    description: When the buyer can take possession, as the seller states it.
+    applicability: {purposes: [sale], categories: [], subtypes: []}
+    allowed_values: [available_now, within_one_month, within_three_months, after_three_months]
+    seller_declared: true
+    class: public
+  - id: security_deposit
+    type: money
+    section: terms
+    requirement: recommended
+    description: Security deposit in PKR.
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    min: "0"
+    max: "999999999999.99"
+    currency: PKR
+    class: public
+    ai_extractable: true
+  - id: availability_date
+    type: date
+    section: terms
+    requirement: recommended
+    description: The date the property is available from, as a calendar date (YYYY-MM-DD).
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    min: "2000-01-01"
+    max: "2100-12-31"
+    class: public
+    ai_extractable: true
+  - id: advance_rent
+    type: money
+    section: terms
+    requirement: optional
+    description: Rent paid in advance in PKR.
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    min: "0"
+    max: "999999999999.99"
+    currency: PKR
+    class: public
+    ai_extractable: true
+  - id: minimum_lease_months
+    type: integer
+    section: terms
+    requirement: optional
+    description: Shortest lease in months.
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    min: 1
+    max: 120
+    class: public
+    ai_extractable: true
+  - id: notice_period_days
+    type: integer
+    section: terms
+    requirement: optional
+    description: Notice period in days.
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    min: 0
+    max: 365
+    class: public
+    ai_extractable: true
+  - id: utility_electricity_included
+    type: boolean
+    section: terms
+    requirement: optional
+    description: Electricity is included in the rent.
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    class: public
+    ai_extractable: true
+  - id: utility_gas_included
+    type: boolean
+    section: terms
+    requirement: optional
+    description: Gas is included in the rent.
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    class: public
+    ai_extractable: true
+  - id: utility_water_included
+    type: boolean
+    section: terms
+    requirement: optional
+    description: Water is included in the rent.
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    class: public
+    ai_extractable: true
+  - id: utility_internet_included
+    type: boolean
+    section: terms
+    requirement: optional
+    description: Internet is included in the rent.
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    class: public
+    ai_extractable: true
+  - id: pets_allowed
+    type: boolean
+    section: terms
+    requirement: optional
+    description: Pets are allowed.
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    class: public
+    ai_extractable: true
+  - id: occupant_restrictions
+    type: enum
+    section: terms
+    requirement: optional
+    description: Who may rent, as the owner states it.
+    applicability: {purposes: [rent], categories: [], subtypes: []}
+    allowed_values: [no_restriction, families_only, bachelors_only]
     class: public
     ai_extractable: true
