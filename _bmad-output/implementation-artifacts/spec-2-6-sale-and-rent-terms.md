@@ -2,7 +2,7 @@
 title: 'Story 2.6: Sale and rent terms (backend half, then frontend half)'
 type: 'feature'
 created: '2026-11-24'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -95,6 +95,8 @@ Decisions beyond the story text: utilities are four independent tri-state boolea
 ## Review Triage Log
 
 Backend half (three reviewers). Patched: an explicit registry marker `section` (`terms`/`details`) now groups the terms fields (the spec's "purposes without subtypes" rule excluded `price_negotiable`); registry shape version 5; the after-commit rollback test now really fails without a rollback; ETag/date-bound tests do what their names say; unquoted YAML dates get a clear loader error; docs corrected (no purpose CHECK, zero deposit allowed, neutral invalid_price text, date bounds are ISO text, past availability dates allowed). The frontend grouping rule in this spec is superseded by the `section` marker. Deviations accepted: no purpose CHECK (the column lives on another table), `invalid_price` text made neutral. Verification: lint-imports 13 kept, ruff, pytest 3746 passed, no migration drift, openapi regenerated.
+
+Frontend half (three reviewers). Patched: a partly typed native date no longer saves as a clear (the save is blocked with "Finish the date or clear it."); the date/text control is chosen from the saved value and never flips while typing; date bounds from the registry fail closed (real dates only, min not after max); stub mirrors the backend's money (bare integers, trimmed text) and rejects a null for unknown ids; terms listed before details in the summary and given a heading; more preset coverage (House, Shop and Plot rent drafts); narrowed assertions restored. Deferred: nested legend names repeating in jump lists. Verification: lint, typecheck, build, api:check, full Playwright 995 passed in one final run.
 
 ## Design Notes
 
