@@ -1,6 +1,6 @@
-"""The contract of `selectors.image_for_serving`, the seam Story 2.12 rewires to the single
-visibility policy: whatever the policy becomes, these refusals and grants must still hold for
-a Draft."""
+"""The contract of `selectors.image_for_serving` for Drafts (Story 2.10). Since Story 2.12 the
+seam is the single visibility policy: these refusals and grants still hold for a Draft, and
+`test_visibility.py` covers the full matrix."""
 
 import uuid
 
@@ -13,7 +13,7 @@ from apps.kernel.actor import Actor
 from apps.kernel.errors import DomainError
 from apps.kernel.models import MediaAsset
 from apps.listings import selectors, services
-from apps.listings.models import ListingImage, PropertyListing
+from apps.listings.models import ListingImage
 from tests.imaging import make_image
 from tests.listings.support import (
     HOUSE,
@@ -131,15 +131,3 @@ def test_a_lost_file_or_asset_row_is_not_found():
     assert refused(user(account), view.id, image.id) == "not_found"
     assert refused(user(account), view.id, image.id, with_bytes=False) == "not_found"
     assert ListingImage.objects.filter(pk=image.id).exists()
-
-
-def test_a_listing_that_is_not_a_draft_is_not_found(monkeypatch):
-    account, view, image = draft_with_image()
-    monkeypatch.setattr(selectors, "ListingStatus", _Statuses)
-    assert PropertyListing.objects.get(pk=view.id).status == "draft"
-    assert refused(user(account), view.id, image.id) == "not_found"
-
-
-class _Statuses:
-    class DRAFT:
-        value = "something-else"

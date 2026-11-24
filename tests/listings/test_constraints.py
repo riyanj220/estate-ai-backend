@@ -41,7 +41,7 @@ def test_the_good_row_is_accepted(db):
         {"category": "castle"},
         {"category": "apartment", "subtype": "shop"},
         {"category": "plot", "subtype": "house"},
-        {"status": "published"},
+        {"status": "archived"},
         {"revision": 0},
         {"registry_version": 0},
     ],
@@ -335,3 +335,52 @@ def test_a_changed_area_bound_enum_or_unit_set_would_differ_from_the_migration(d
     monkeypatch.setattr(area_module, "MARLA_UNITS", ("marla",))
     drifted = {c.name: c.condition for c in area_constraints()}
     assert any(migrated[name] != drifted[name] for name in drifted)
+
+
+def test_published_is_a_valid_status_and_restricted_defaults_to_false(db):
+    """Story 2.12: the status CHECK allows `published`; `restricted` is not null, default false."""
+    row = listing(status="published")
+    assert row.restricted is False
+    assert PropertyListing.objects.get(pk=row.pk).restricted is False
+    with pytest.raises(IntegrityError), transaction.atomic():
+        PropertyListing.objects.filter(pk=row.pk).update(restricted=None)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT is_nullable FROM information_schema.columns "
+            "WHERE table_name = 'listings_propertylisting' AND column_name = 'restricted'"
+        )
+        assert cursor.fetchone() == ("NO",)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_migration_0009_gives_existing_rows_restricted_false_and_adds_the_public_index():
+    """A populated table at the 0008 state: rows that exist before the migration read as not
+    restricted afterwards, and the status CHECK then allows `published`."""
+    from django.db import connections
+    from django.db.migrations.executor import MigrationExecutor
+
+    conn = connections["default"]
+    executor = MigrationExecutor(conn)
+    try:
+        executor.migrate([("listings", "0008_cover")])
+        old = MigrationExecutor(conn).loader.project_state([("listings", "0008_cover")]).apps
+        before = old.get_model("listings", "PropertyListing")
+        assert not hasattr(before, "restricted")
+        old_ids = []
+        for n in range(3):
+            row = before.objects.create(**{**GOOD, "owner_account_id": uuid.UUID(int=100 + n)})
+            old_ids.append(row.pk)
+        MigrationExecutor(conn).migrate([("listings", "0009_visibility")])
+        rows = list(PropertyListing.objects.filter(pk__in=old_ids))
+        assert len(rows) == 3
+        assert [r.restricted for r in rows] == [False, False, False]
+        assert {r.status for r in rows} == {"draft"}
+        PropertyListing.objects.create(**{**GOOD, "status": "published"})  # CHECK now allows it
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT indexdef FROM pg_indexes WHERE indexname = 'listings_public_idx'"
+            )
+            (definition,) = cursor.fetchone()
+        assert "status, restricted, owner_account_id" in definition
+    finally:
+        MigrationExecutor(conn).migrate(MigrationExecutor(conn).loader.graph.leaf_nodes())

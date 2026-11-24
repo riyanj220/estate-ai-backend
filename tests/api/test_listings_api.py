@@ -324,7 +324,7 @@ def test_my_listings_status_filter_and_page_size_fallback():
 def test_bad_status_and_bad_cursor_are_validation_errors():
     client = signed_in()
     post(client, CREATE)
-    bad_status = client.get(MINE, {"status": "published"})
+    bad_status = client.get(MINE, {"status": "archived"})
     assert (bad_status.status_code, code(bad_status)) == (400, "validation_error")
     assert list(bad_status.json()["error"]["fields"]) == ["status"]
     for cursor in ("garbage", "e30", "a" * 400):

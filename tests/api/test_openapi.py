@@ -172,3 +172,14 @@ def test_the_profile_responses_gain_the_image_and_the_agency_ids(tmp_path):
     assert {"image"} <= set(schemas["Profile"]["properties"])
     assert {"image", "agency_id", "logo_url"} <= set(schemas["AgencyProfile"]["properties"])
     assert "agency_id" not in schemas["Profile"]["properties"]
+
+
+def test_listing_visibility_and_field_class_stay_separate_enums():
+    """`private`/`public` are both the Listing visibility and the registry field class; the two
+    must stay two components so generated frontend types keep their names."""
+    schemas = yaml.safe_load((ROOT / "openapi.yaml").read_text())["components"]["schemas"]
+    visibility = schemas["Listing"]["properties"]["visibility"]
+    assert visibility == {"$ref": "#/components/schemas/VisibilityEnum"}
+    assert schemas["VisibilityEnum"]["enum"] == ["private", "public"]
+    assert schemas["FieldClassEnum"]["enum"] == ["public", "private"]  # unchanged, same order
+    assert schemas["FieldClassEnum"]["description"] == "* `public` - public\n* `private` - private"

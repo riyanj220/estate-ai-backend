@@ -6,7 +6,6 @@ import logging
 import uuid
 
 import pytest
-from django.db import connection
 from django.test import Client
 from django.utils import timezone
 from PIL import Image
@@ -17,7 +16,7 @@ from apps.kernel import runtime, storage
 from apps.kernel.errors import field_message
 from apps.kernel.models import MediaAsset, RateLimitPolicy
 from apps.kernel.request_logging import JsonFormatter
-from apps.listings.models import ListingImage, ListingRevision, PropertyListing
+from apps.listings.models import ListingImage, ListingRevision
 from tests.api.test_listing_images_api import (
     csrf,
     expected_error,
@@ -584,16 +583,6 @@ def test_a_deactivated_owner_cannot_view():
     listing, (a,) = with_images(owner, 1)
     Account.objects.filter(id=owner.account_id).update(deactivated_at=timezone.now())
     assert_not_found(owner.get(a["url"]))
-
-
-def test_a_listing_that_is_not_a_draft_serves_nothing(monkeypatch):
-    client = signed_in()
-    listing, (a,) = with_images(client, 1)
-    assert client.get(a["url"]).status_code == 200
-    with connection.cursor() as cursor:  # undone with the test's transaction
-        cursor.execute("ALTER TABLE listings_propertylisting DROP CONSTRAINT listings_status_valid")
-    PropertyListing.objects.filter(id=listing["id"]).update(status="published")
-    assert_not_found(client.get(a["url"]))
 
 
 def test_a_removed_image_is_gone_and_a_lost_file_is_404_without_leaking(

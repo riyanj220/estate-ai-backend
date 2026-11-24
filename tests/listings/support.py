@@ -172,3 +172,22 @@ def seed_media_policies(individual=None, agency=None):
         scope="image_order",
         defaults={"limit": 120, "window_seconds": 3600, "key_kind": "account", "note": "t"},
     )
+
+
+def set_account_state(account_id, state):
+    """Move an existing account to a state (`unverified`, `active`, `suspended`, `deactivated`)."""
+    now = timezone.now()
+    Account.objects.filter(id=account_id).update(
+        email_verified_at=None if state == "unverified" else now,
+        suspended_at=now if state == "suspended" else None,
+        suspension_reason="r" if state == "suspended" else "",
+        deactivated_at=now if state == "deactivated" else None,
+    )
+
+
+def set_listing_visibility(listing_id, status="published", restricted=False):
+    """Put a Listing in a status and restricted state directly through the model. Nothing in the
+    product sets `published` or `restricted` yet (Story 2.15 and moderation do), so fixtures do."""
+    from apps.listings.models import PropertyListing
+
+    PropertyListing.objects.filter(id=listing_id).update(status=status, restricted=restricted)
