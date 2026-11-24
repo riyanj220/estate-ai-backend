@@ -55,6 +55,7 @@ from apps.listings.selectors import (
     clean_provenance,
     commercial_of,
     field_text,
+    image_url,
     plot_of,
     residential_of,
     terms_of,
@@ -393,9 +394,10 @@ def require_image_access(actor: Actor, listing_id) -> None:
     _owned_editable(actor, listing_id)
 
 
-def _lock_for_images(actor: Actor, key: uuid.UUID):
+def _lock_for_images(actor: Actor, key: uuid.UUID, check_status: bool = True):
     """Inside a transaction: the account (the state is decided again from the locked snapshot),
-    then the Listing row, which must still be an editable Draft. Returns both."""
+    then the Listing row, which must still be an editable Draft (unless the caller decides the
+    status itself, after its revision check). Returns both."""
     account = lock_account(actor.account_id)
     if (
         account.type == ADMIN_ACCOUNT_TYPE
@@ -403,13 +405,14 @@ def _lock_for_images(actor: Actor, key: uuid.UUID):
     ):
         raise DomainError("forbidden")
     row = _locked_owned(key, actor)
-    if row.status not in lifecycle.EDITABLE_STATUSES:
+    if check_status and row.status not in lifecycle.EDITABLE_STATUSES:
         raise DomainError("forbidden")
     return account, row
 
 
-def _bump(row: PropertyListing, actor: Actor, count: int) -> None:
-    """One revision for an image change; the revision row records only the image count."""
+def _bump(row: PropertyListing, actor: Actor, count: int, **flags: bool) -> None:
+    """One revision for an image change; the revision row records only the image count (and, for
+    a reorder, whether the order and the cover changed): never an id."""
     now = timezone.now()
     row.revision += 1
     row.updated_at = now
@@ -419,9 +422,41 @@ def _bump(row: PropertyListing, actor: Actor, count: int) -> None:
         revision=row.revision,
         origin=Origin.MANUAL.value,
         actor_account_id=actor.account_id,
-        changes={"images": count},
+        changes={"images": count, **flags},
         created_at=now,
     )
+
+
+def _live_image_count(listing_id) -> int:
+    """Images of the Listing whose asset row exists (a link without one is a ghost: nothing can
+    be shown, served or counted for it)."""
+    assets = list(
+        ListingImage.objects.filter(listing_id=listing_id).values_list("asset_id", flat=True)
+    )
+    return len(media.assets_by_id(assets))
+
+
+def _normalise_images(row: PropertyListing) -> bool:
+    """Under the Listing lock: delete ghost links (no asset row), renumber the positions
+    contiguously 0..n-1 and make sure exactly one image is the cover while any remain. Returns
+    whether anything was changed. Every mutating image service calls it first, so a lost asset
+    row or a stale position never makes the set unmanageable; the repair rides on that call's
+    own revision write."""
+    links = sorted(ListingImage.objects.select_for_update().filter(listing=row), key=_position)
+    live = media.assets_by_id(link.asset_id for link in links)
+    ghosts = [link for link in links if link.asset_id not in live]
+    kept = [link for link in links if link.asset_id in live]
+    changed = bool(ghosts)
+    if ghosts:
+        ListingImage.objects.filter(pk__in=[link.pk for link in ghosts]).delete()
+    for index, link in enumerate(kept):  # the unique check is deferred to commit
+        if link.position != index:
+            ListingImage.objects.filter(pk=link.pk).update(position=index)
+            changed = True
+    if kept and not any(link.is_cover for link in kept):
+        ListingImage.objects.filter(pk=kept[0].pk).update(is_cover=True)
+        changed = True
+    return changed
 
 
 def upload_image(actor: Actor, listing_id, data: bytes) -> ImageView:
@@ -434,21 +469,24 @@ def upload_image(actor: Actor, listing_id, data: bytes) -> ImageView:
     (`kernel.images`: `ImageRejected` with a reason code, or `Busy`), and in one transaction that
     locks the account and the Listing: the account, status and image count are decided again, the
     storage cap is enforced atomically (`storage_cap_exceeded`), the file and asset row are written,
-    the `ListingImage` is attached, and the Listing `revision` rises by one with a
-    `ListingRevision` whose `changes` is `{"images": count}`. If the transaction fails after the
+    the `ListingImage` is attached at the end (position = the number of images already there;
+    the first image of a Listing becomes its cover, a later one never changes it), and the
+    Listing `revision` rises by one with a `ListingRevision` whose `changes` is
+    `{"images": count}`. If the transaction fails after the
     file was written, the file is removed again. No `base_revision` is needed.
     """
     key = _owned_editable(actor, listing_id)
     listing = PropertyListing.objects.filter(id=key).values("status").first()
     if listing is None or listing["status"] not in lifecycle.EDITABLE_STATUSES:
         raise DomainError("forbidden")
-    if ListingImage.objects.filter(listing_id=key).count() >= MAX_IMAGES:
+    if _live_image_count(key) >= MAX_IMAGES:  # ghosts (lost asset rows) are not counted
         raise DomainError("too_many_images")
     processed = media.process_upload(actor, data)
     asset = None
     try:
         with transaction.atomic():
             account, row = _lock_for_images(actor, key)
+            _normalise_images(row)  # ghosts out, positions contiguous, one cover
             existing = list(
                 ListingImage.objects.filter(listing=row).values_list("position", flat=True)
             )
@@ -458,7 +496,8 @@ def upload_image(actor: Actor, listing_id, data: bytes) -> ImageView:
             image = ListingImage.objects.create(
                 listing=row,
                 asset_id=asset.id,
-                position=max(existing, default=0) + 1,
+                position=max(existing, default=-1) + 1,
+                is_cover=not existing,
                 created_at=timezone.now(),
             )
             _bump(row, actor, len(existing) + 1)
@@ -469,10 +508,12 @@ def upload_image(actor: Actor, listing_id, data: bytes) -> ImageView:
     return ImageView(
         id=image.id,
         position=image.position,
+        is_cover=image.is_cover,
         content_type=asset.content_type,
         width=asset.width,
         height=asset.height,
         bytes=asset.bytes,
+        url=image_url(key, image.id),
     )
 
 
@@ -480,7 +521,9 @@ def remove_image(actor: Actor, listing_id, image_id) -> None:
     """Remove an image from one of the owner's Drafts: the `ListingImage` and its asset go in one
     transaction (the storage usage is given back once), the file after commit, and the Listing
     `revision` rises by one. Same refusals as `upload_image`; an unknown image, another Listing's
-    image and a repeat are `not_found`."""
+    image and a repeat are `not_found`. The positions of the rest are renumbered 0..n-1, and
+    removing the cover makes the image with the lowest remaining position the cover (none left:
+    no cover). Ghost links (no asset row) are removed in the same transaction."""
     key = _owned_editable(actor, listing_id)
     image_key = canonical_uuid(image_id)
     if image_key is None:
@@ -493,4 +536,82 @@ def remove_image(actor: Actor, listing_id, image_id) -> None:
         asset_id = image.asset_id
         image.delete()
         media.delete_asset(actor, asset_id, missing_ok=True)  # a lost asset row is no obstacle
+        _normalise_images(row)  # renumbered; the lowest position is the cover if none is left
         _bump(row, actor, ListingImage.objects.filter(listing=row).count())
+
+
+def set_image_order(actor: Actor, listing_id, base_revision, order, cover_id=None) -> ListingView:
+    """Reorder a Draft's images and/or choose its cover in one revision-checked step (Story 2.10).
+
+    `order` is the full list of the Listing's image ids in the wanted order; `cover_id` is
+    optional (None keeps the current cover). Refusals, in order: Visitor `unauthenticated`; not
+    owned (another owner, an administrator, unknown or malformed id) `not_found`; no `edit_drafts`
+    `forbidden`; a bad shape (`base_revision` not a positive integer, `order` not a list of ids)
+    `validation_error` (`FieldsInvalid`, codes only). In one transaction that locks the account
+    and the Listing row: a `base_revision` that is not the stored one raises `StaleRevision` with
+    the current view and nothing is written; a status outside `lifecycle.EDITABLE_STATUSES` is
+    `forbidden`; `order` that is not exactly the current set of ids (a missing, duplicate, unknown
+    or foreign id) is `invalid` on `order`, a `cover_id` that is not one of the images `invalid`
+    on `cover_id` (both reported together). A request that changes nothing returns the current
+    view: no revision bump, no revision row. Otherwise positions become 0..n-1 in the given order,
+    exactly one image is the cover, the revision rises by one and one `ListingRevision` records
+    `{"images": n, "order": bool, "cover": bool}` (counts and flags, never ids; plus
+    `"repaired": true` when ghost links, positions or the cover were repaired, which also counts
+    as a change). Files are never touched.
+    """
+    key = _owned_editable(actor, listing_id)
+    problems: dict[str, str] = {}
+    if base_revision is None:
+        problems["base_revision"] = "required"
+    elif isinstance(base_revision, bool) or not isinstance(base_revision, int) or base_revision < 1:
+        problems["base_revision"] = "invalid"
+    wanted: list[uuid.UUID] = []
+    if order is None:
+        problems["order"] = "required"
+    elif (
+        not isinstance(order, list)
+        or len(order) > MAX_IMAGES  # refused before anything else is looked at
+        or any(canonical_uuid(item) is None for item in order)
+    ):
+        problems["order"] = "invalid"
+    else:
+        wanted = [canonical_uuid(item) for item in order]
+    if cover_id is not None and canonical_uuid(cover_id) is None:
+        problems["cover_id"] = "invalid"
+    if problems:
+        raise FieldsInvalid(problems)
+    with transaction.atomic():
+        _, row = _lock_for_images(actor, key, check_status=False)
+        if row.revision != base_revision:
+            raise StaleRevision(view_of(row))
+        if row.status not in lifecycle.EDITABLE_STATUSES:
+            raise DomainError("forbidden")
+        repaired = _normalise_images(row)  # ghosts out, contiguous, one cover (counts as a change)
+        links = sorted(ListingImage.objects.select_for_update().filter(listing=row), key=_position)
+        current = [link.id for link in links]
+        cover = canonical_uuid(cover_id)
+        if len(set(wanted)) != len(wanted) or set(wanted) != set(current):
+            problems["order"] = "invalid"
+        if cover is not None and cover not in set(current):
+            problems["cover_id"] = "invalid"
+        if problems:
+            raise FieldsInvalid(problems)
+        old_cover = next((link.id for link in links if link.is_cover), None)
+        new_cover = cover or old_cover or (wanted[0] if wanted else None)
+        reordered, recovered = wanted != current, new_cover != old_cover
+        if not reordered and not recovered and not repaired:
+            return view_of(row)
+        by_id = {link.id: link for link in links}
+        for index, image_id in enumerate(wanted):
+            if by_id[image_id].position != index:  # the unique check waits for the commit
+                ListingImage.objects.filter(pk=image_id).update(position=index)
+        if recovered:
+            ListingImage.objects.filter(listing=row, is_cover=True).update(is_cover=False)
+            ListingImage.objects.filter(pk=new_cover).update(is_cover=True)
+        flags = {"repaired": True} if repaired else {}
+        _bump(row, actor, len(current), order=reordered, cover=recovered, **flags)
+        return view_of(row)
+
+
+def _position(link) -> int:
+    return link.position

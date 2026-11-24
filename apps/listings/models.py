@@ -412,23 +412,35 @@ MAX_IMAGES = 10
 
 
 class ListingImage(models.Model):
-    """An image attached to a Listing (Story 2.9). The file is a `kernel` media asset, referenced
-    by a plain UUID (no foreign key into the kernel); the number of images is limited by the
-    service under the Listing row lock, not by the database. `position` orders the images; the
-    cover is the lowest until Story 2.10 adds reordering."""
+    """An image attached to a Listing (Stories 2.9 and 2.10). The file is a `kernel` media asset,
+    referenced by a plain UUID (no foreign key into the kernel); the number of images is limited
+    by the service under the Listing row lock, not by the database.
+
+    `position` is 0-based and contiguous per Listing (0..n-1): a service-maintained invariant
+    (the database only forbids duplicates, and that check is deferred to commit so a reorder can
+    rewrite positions in any order). `is_cover` marks the cover: at most one per Listing (a
+    partial unique index), and the service keeps exactly one while the Listing has images."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     listing = models.ForeignKey(PropertyListing, on_delete=models.CASCADE, related_name="images")
     asset_id = models.UUIDField(unique=True)
     position = models.PositiveIntegerField()
+    is_cover = models.BooleanField(default=False)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["listing", "position"], name="listings_image_position_unique"
+                fields=["listing", "position"],
+                name="listings_image_position_unique",
+                deferrable=models.Deferrable.DEFERRED,
+            ),
+            models.UniqueConstraint(
+                fields=["listing"],
+                condition=models.Q(is_cover=True),
+                name="listings_image_one_cover",
             ),
             models.CheckConstraint(
-                condition=models.Q(position__gte=1), name="listings_image_position_gte_1"
+                condition=models.Q(position__gte=0), name="listings_image_position_gte_0"
             ),
         ]

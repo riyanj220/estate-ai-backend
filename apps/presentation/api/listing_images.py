@@ -1,35 +1,37 @@
-"""Draft image endpoints (Story 2.9): upload one image, remove one. Rules live in `listings`;
-the pixels are checked and re-encoded by `kernel.images`. No endpoint here serves a file."""
+"""Draft image endpoints: upload one image, remove one (Story 2.9), reorder and choose the cover,
+and the media endpoint that serves an image (Story 2.10). Rules live in `listings`; the pixels
+are checked and re-encoded by `kernel.images`."""
 
+from django.http import HttpResponse
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers, status
 from rest_framework.exceptions import ErrorDetail
-from rest_framework.parsers import MultiPartParser
+from rest_framework.negotiation import BaseContentNegotiation
+from rest_framework.parsers import JSONParser, MultiPartParser
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.kernel.images import MAX_BYTES, ImageRejected
+from apps.kernel.security_headers import MEDIA_CSP
 from apps.kernel.upload_limit import body_too_large
-from apps.listings import services
-from apps.listings.selectors import ImageView
+from apps.listings import selectors, services
 from apps.presentation.api.actors import get_actor
-from apps.presentation.api.bodies import field_errors
+from apps.presentation.api.bodies import ConflictWithCurrent, exact_fields, field_errors
+from apps.presentation.api.listings import (
+    CONTENT_TYPES,
+    ImageSerializer,
+    ListingConflictSerializer,
+    ListingSerializer,
+    image_data,
+    listing_data,
+)
 from apps.presentation.api.passwords import NoStoreMixin
-from apps.presentation.api.permissions import RequireSignedIn
+from apps.presentation.api.permissions import AllowPublic, RequireSignedIn
 from apps.presentation.api.throttling import PolicyThrottle
 
-CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp"]
-
-
-class ImageSerializer(serializers.Serializer):
-    """An attached image. There is no URL and no storage key: serving is Story 2.10."""
-
-    id = serializers.UUIDField()
-    position = serializers.IntegerField(help_text="1-based order; the lowest is the cover.")
-    content_type = serializers.ChoiceField(choices=CONTENT_TYPES)
-    width = serializers.IntegerField()
-    height = serializers.IntegerField()
-    bytes = serializers.IntegerField(help_text="Size of the stored (re-encoded) file.")
+ORDER_BODY = ("base_revision", "order", "cover_id")
 
 
 class ImageUploadSerializer(serializers.Serializer):
@@ -38,19 +40,6 @@ class ImageUploadSerializer(serializers.Serializer):
     file = serializers.FileField(
         help_text="A JPEG, PNG or WebP image of up to 5 MB (5,242,880 bytes)."
     )
-
-
-def _data(view: ImageView) -> dict:
-    return ImageSerializer(
-        {
-            "id": view.id,
-            "position": view.position,
-            "content_type": view.content_type,
-            "width": view.width,
-            "height": view.height,
-            "bytes": view.bytes,
-        }
-    ).data
 
 
 def _upload_bytes(request) -> bytes:
@@ -74,11 +63,51 @@ def _upload_bytes(request) -> bytes:
     return upload.read()  # the name and declared content type are never read or kept
 
 
+class ImageOrderSerializer(serializers.Serializer):
+    base_revision = serializers.IntegerField(
+        min_value=1, help_text="The `revision` of the Listing the client last read."
+    )
+    order = serializers.ListField(
+        child=serializers.UUIDField(),
+        help_text="Every image id of the Listing, exactly once, in the wanted order.",
+    )
+    cover_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        help_text="The image to make the cover; null or omitted keeps the current cover.",
+    )
+
+    # Same as the field PATCH: `base_revision` and `order` are always required.
+    @property
+    def partial(self):
+        return False
+
+    @partial.setter
+    def partial(self, value):
+        pass
+
+    def to_internal_value(self, data):
+        # Only the three keys are accepted; shapes and values are judged by the service.
+        values = exact_fields(data, ORDER_BODY)
+        return {name: values.get(name) for name in ORDER_BODY}
+
+
 class ListingImagesView(NoStoreMixin, APIView):
     permission_classes = [RequireSignedIn]
     parser_classes = [MultiPartParser]
     throttle_classes = [PolicyThrottle]
-    rate_limit_scope = "image_upload"
+
+    # `POST` uploads a file (multipart, the `image_upload` limit); `PATCH` is a small JSON edit
+    # (a 64 KiB body cap, its own `image_order` limit).
+    @property
+    def rate_limit_scope(self):
+        method = getattr(getattr(self, "request", None), "method", None)
+        return "image_order" if method == "PATCH" else "image_upload"
+
+    def get_parsers(self):
+        if self.request is not None and self.request.method == "PATCH":
+            return [JSONParser()]
+        return super().get_parsers()
 
     @extend_schema(
         operation_id="upload_listing_image",
@@ -102,7 +131,8 @@ class ListingImagesView(NoStoreMixin, APIView):
             "the stored size). `429` is the upload limit (30 per hour per account) with "
             "`Retry-After`. `503 busy` (with `Retry-After`) means image processing is at "
             "capacity or too slow: retry. The Listing `revision` rises by one, so a concurrent "
-            "editor gets `409 stale_revision`. Never cached; no URL or storage key is returned."
+            "editor gets `409 stale_revision`. Never cached. The first image of a Listing becomes "
+            "its cover; a later upload never changes it."
         ),
         request={"multipart/form-data": ImageUploadSerializer},
         responses={
@@ -119,7 +149,55 @@ class ListingImagesView(NoStoreMixin, APIView):
             view = services.upload_image(actor, listing_id, data)
         except ImageRejected as exc:
             raise field_errors({"file": exc.reason}) from None
-        return Response(_data(view), status=status.HTTP_201_CREATED)
+        return Response(image_data(view), status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        operation_id="set_listing_image_order",
+        summary="Reorder the images of an own Draft and/or choose its cover",
+        description=(
+            "Needs `X-CSRFToken`. Body: `{base_revision, order, cover_id?}` and nothing else (any "
+            "other key is `validation_error` `unknown_field`). `order` is the full list of the "
+            "Listing's image ids in the wanted order, each exactly once; the positions become "
+            "0..n-1 in that order. `cover_id` (optional; null or omitted keeps the cover) must "
+            "be one of the Listing's images. The Listing always has exactly one cover while it has "
+            "images. `400 validation_error` carries `invalid` under `fields.order` (a missing, "
+            "duplicate, unknown or another Listing's id, or not a list of ids), `fields.cover_id` "
+            "or `fields.base_revision` (`required` or `invalid`). A `base_revision` that is not "
+            "the current `revision` is `409 stale_revision` with the current Listing under "
+            "`current` and nothing written (a replay is also a 409: reload). A request that "
+            "changes nothing is `200` and keeps the revision; otherwise the revision rises by "
+            "one. Another account's, an unknown or a malformed Listing is `404 not_found`; an "
+            "account that may not edit, or a Listing that is not an editable Draft, is `403 "
+            "forbidden`. The body may be at most 64 KiB (`400` with `fields.order` `invalid`) and "
+            "the `image_order` limit (120 per hour per account) applies: `429` with `Retry-After`. "
+            "Files are never touched. Never cached."
+        ),
+        request=ImageOrderSerializer,
+        responses={
+            200: OpenApiResponse(ListingSerializer, description="The Listing, with its media"),
+            409: OpenApiResponse(
+                ListingConflictSerializer,
+                description="Stale revision: the Listing changed; `current` holds it",
+            ),
+        },
+    )
+    def patch(self, request, listing_id):
+        actor = get_actor(request)
+        services.require_image_access(actor, listing_id)  # ownership first, whatever the body is
+        if body_too_large(request):
+            raise field_errors({"order": "invalid"})
+        serializer = ImageOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        body = serializer.validated_data
+        try:
+            view = services.set_image_order(
+                actor, listing_id, body["base_revision"], body["order"], body["cover_id"]
+            )
+        except services.FieldsInvalid as exc:
+            raise field_errors(exc.fields) from None
+        except services.StaleRevision as exc:
+            raise ConflictWithCurrent(listing_data(exc.current)) from None
+        return Response(listing_data(view))
 
 
 class ListingImageDetailView(NoStoreMixin, APIView):
@@ -130,7 +208,9 @@ class ListingImageDetailView(NoStoreMixin, APIView):
         summary="Remove an image from one of the signed-in account's own Drafts",
         description=(
             "Needs `X-CSRFToken`. Deletes the image and its stored file, gives its bytes back to "
-            "the account's storage, and raises the Listing `revision` by one. `204` has no body. "
+            "the account's storage, renumbers the other images 0..n-1 (removing the cover makes "
+            "the image with the lowest remaining position the cover) and raises the Listing "
+            "`revision` by one. `204` has no body. "
             "Another account's, an unknown or an already removed image or Listing is `404 "
             "not_found`; an account that may not edit, or a Listing that is not an editable "
             "Draft, is `403 forbidden`. Never cached."
@@ -140,3 +220,73 @@ class ListingImageDetailView(NoStoreMixin, APIView):
     def delete(self, request, listing_id, image_id):
         services.remove_image(get_actor(request), listing_id, image_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class IgnoreAcceptNegotiation(BaseContentNegotiation):
+    """The media endpoint answers with the stored image whatever `Accept` says; errors are JSON."""
+
+    def select_parser(self, request, parsers):
+        return parsers[0] if parsers else None
+
+    def select_renderer(self, request, renderers, format_suffix=None):
+        renderer = JSONRenderer()
+        return renderer, renderer.media_type
+
+
+class ListingImageFileView(NoStoreMixin, APIView):
+    """THE media endpoint (AD-15, AD-22): the stored bytes of one image, authorised at request
+    time by `listings.selectors.image_for_serving`. Every refusal is the same `404 not_found`
+    (a Visitor included, so existence is never confirmed). `HEAD` works; `Range` and conditional
+    requests are ignored (always `200` with the whole file, no `ETag`)."""
+
+    permission_classes = [AllowPublic]
+    content_negotiation_class = IgnoreAcceptNegotiation
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        if response.status_code == status.HTTP_200_OK:
+            response["Cache-Control"] = "private, no-store"
+        return response
+
+    @extend_schema(
+        operation_id="get_listing_image_file",
+        summary="The bytes of one image of one of the signed-in account's own Drafts",
+        description=(
+            "The media endpoint: the only place an image is served. Applied at request time: a "
+            "Draft's image goes only to the owning account (Suspended and Email-unverified owners "
+            "included, a Deactivated one not). Anyone else (another account, an administrator, a "
+            "Visitor), an unknown or malformed id, another Listing's image and a Listing that is "
+            "not a Draft get the same `404 not_found` (a Visitor gets 404, never 401). The body is "
+            "the stored, re-encoded image with its stored `Content-Type` (`image/jpeg`, "
+            "`image/png` or `image/webp`), `Content-Length`, `Cache-Control: private, no-store`, "
+            "`X-Content-Type-Options: nosniff`, `Content-Disposition: inline` (no file name) and "
+            "`Content-Security-Policy: default-src 'none'; sandbox`; no cookie is set. `HEAD` "
+            "answers the same headers without a body. `Range` is ignored (always `200`, the "
+            "whole file) and there is no `ETag`. `Accept` is ignored."
+        ),
+        responses={
+            (200, content_type): OpenApiResponse(
+                OpenApiTypes.BINARY, description="The stored image bytes"
+            )
+            for content_type in CONTENT_TYPES
+        },
+    )
+    def get(self, request, listing_id, image_id):
+        served = selectors.image_for_serving(get_actor(request), listing_id, image_id)
+        return self._image(served, served.data)
+
+    def head(self, request, listing_id, image_id):
+        """Headers only: the same access decision, no file read (the size is the asset row's)."""
+        served = selectors.image_for_serving(
+            get_actor(request), listing_id, image_id, with_bytes=False
+        )
+        return self._image(served, b"")
+
+    @staticmethod
+    def _image(served, body: bytes) -> HttpResponse:
+        response = HttpResponse(body, content_type=served.content_type)
+        response["Content-Length"] = str(served.size)
+        response["Content-Disposition"] = "inline"
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Content-Security-Policy"] = MEDIA_CSP
+        return response

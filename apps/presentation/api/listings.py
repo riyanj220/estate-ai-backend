@@ -125,6 +125,29 @@ class ProvenanceEntrySerializer(serializers.Serializer):
     confirmed = serializers.BooleanField()
 
 
+CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp"]
+
+
+class ImageSerializer(serializers.Serializer):
+    """An attached image (AD-24). `url` is the relative path of the media endpoint; the asset id,
+    the storage key and the owner never appear."""
+
+    id = serializers.UUIDField()
+    position = serializers.IntegerField(
+        min_value=0, help_text="0-based and contiguous: 0 is the first image."
+    )
+    is_cover = serializers.BooleanField(help_text="Exactly one image of a Listing is the cover.")
+    content_type = serializers.ChoiceField(choices=CONTENT_TYPES)
+    width = serializers.IntegerField()
+    height = serializers.IntegerField()
+    bytes = serializers.IntegerField(help_text="Size of the stored (re-encoded) file.")
+    url = serializers.CharField(
+        help_text=(
+            "Relative path of the media endpoint, `/api/v1/listings/{id}/images/{image_id}/file`."
+        )
+    )
+
+
 class ListingSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     status = serializers.ChoiceField(choices=_choices(s.value for s in ListingStatus))
@@ -136,8 +159,8 @@ class ListingSerializer(serializers.Serializer):
         child=ProvenanceEntrySerializer(),
         help_text="Registry field id -> where the value came from; set fields only.",
     )
-    media = serializers.ListField(
-        child=serializers.DictField(), help_text="Empty until Story 2.10."
+    media = ImageSerializer(
+        many=True, help_text="The images in `position` order; empty when there are none."
     )
     amenities = serializers.ListField(
         child=serializers.CharField(), help_text="Empty until Story 2.8."
@@ -192,7 +215,22 @@ class ListingPageSerializer(serializers.Serializer):
     results = ListingSerializer(many=True)
 
 
-def _data(view: selectors.ListingView) -> dict:
+def image_data(view: selectors.ImageView) -> dict:
+    return ImageSerializer(
+        {
+            "id": view.id,
+            "position": view.position,
+            "is_cover": view.is_cover,
+            "content_type": view.content_type,
+            "width": view.width,
+            "height": view.height,
+            "bytes": view.bytes,
+            "url": view.url,
+        }
+    ).data
+
+
+def listing_data(view: selectors.ListingView) -> dict:
     return ListingSerializer(
         {
             "id": view.id,
@@ -202,7 +240,7 @@ def _data(view: selectors.ListingView) -> dict:
             "registry_version": view.registry_version,
             "fields": dict(view.fields),
             "provenance": {name: dict(entry) for name, entry in view.provenance.items()},
-            "media": list(view.media),
+            "media": [image_data(item) for item in view.media],
             "amenities": list(view.amenities),
         }
     ).data
@@ -239,7 +277,7 @@ class DraftCreateView(NoStoreMixin, APIView):
             )
         except services.FieldsInvalid as exc:
             raise field_errors(exc.fields) from None
-        return Response(_data(view), status=status.HTTP_201_CREATED)
+        return Response(listing_data(view), status=status.HTTP_201_CREATED)
 
 
 class ListingDetailView(NoStoreMixin, APIView):
@@ -255,7 +293,7 @@ class ListingDetailView(NoStoreMixin, APIView):
         responses={200: OpenApiResponse(ListingSerializer, description="The Listing")},
     )
     def get(self, request, listing_id):
-        return Response(_data(selectors.get_owned_listing(get_actor(request), listing_id)))
+        return Response(listing_data(selectors.get_owned_listing(get_actor(request), listing_id)))
 
     @extend_schema(
         operation_id="update_listing",
@@ -342,8 +380,8 @@ class ListingDetailView(NoStoreMixin, APIView):
         except services.FieldsInvalid as exc:
             raise field_errors(exc.fields) from None
         except services.StaleRevision as exc:
-            raise ConflictWithCurrent(_data(exc.current)) from None
-        return Response(_data(view))
+            raise ConflictWithCurrent(listing_data(exc.current)) from None
+        return Response(listing_data(view))
 
 
 def _page_size(request) -> int:
@@ -395,6 +433,6 @@ class MyListingsView(NoStoreMixin, APIView):
             {
                 "next": _link(request, page.next_cursor),
                 "previous": None,
-                "results": [_data(v) for v in page.items],
+                "results": [listing_data(v) for v in page.items],
             }
         )

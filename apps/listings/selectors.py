@@ -21,6 +21,7 @@ from django.db.models import Q
 from apps.catalog import registry
 from apps.identity.capabilities import Capability
 from apps.identity.policy import can
+from apps.kernel import media
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.listings.area import basis_text
@@ -38,6 +39,7 @@ from apps.listings.lifecycle import ListingStatus, Origin, visibility_of
 from apps.listings.models import (
     ListingArea,
     ListingCommercial,
+    ListingImage,
     ListingPlot,
     ListingResidential,
     ListingTerms,
@@ -72,14 +74,31 @@ class ListingView:
 
 @dataclass(frozen=True)
 class ImageView:
-    """An attached image as the wire shows it: never a URL and never the storage key."""
+    """An attached image as the wire shows it (AD-24): `url` is the relative path of the media
+    endpoint. Never the asset id, the storage key or the owner."""
 
     id: uuid.UUID
-    position: int
+    position: int  # 0-based, contiguous per Listing
+    is_cover: bool
     content_type: str
     width: int
     height: int
     bytes: int
+    url: str
+
+
+@dataclass(frozen=True)
+class ServedImage:
+    """The stored bytes of an image and the stored content type, for the media endpoint."""
+
+    content_type: str
+    data: bytes  # empty for a headers-only lookup
+    size: int  # the stored size (the asset row's), also for a headers-only lookup
+
+
+def image_url(listing_id, image_id) -> str:
+    """The relative path of the media endpoint for an image."""
+    return f"/api/v1/listings/{listing_id}/images/{image_id}/file"
 
 
 @dataclass(frozen=True)
@@ -176,6 +195,8 @@ def view_of(
     residential: ListingResidential | None = None,
     plot: ListingPlot | None = None,
     commercial: ListingCommercial | None = None,
+    *,
+    images: tuple[ImageView, ...] | None = None,
 ) -> ListingView:
     terms = terms if terms is not None else terms_of(row)
     area = area if area is not None else area_of(row)
@@ -206,7 +227,34 @@ def view_of(
         registry_version=row.registry_version,
         fields=MappingProxyType(fields),
         provenance=MappingProxyType(provenance),
+        media=images if images is not None else media_by_listing([row.id])[row.id],
     )
+
+
+def media_by_listing(listing_ids) -> dict[uuid.UUID, tuple[ImageView, ...]]:
+    """The images of each Listing in `position` order, in two queries. An image whose asset row
+    is lost is left out (nothing can be shown or served for it)."""
+    ids = list(listing_ids)
+    links = list(ListingImage.objects.filter(listing_id__in=ids).order_by("listing_id", "position"))
+    assets = media.assets_by_id(link.asset_id for link in links)
+    grouped: dict[uuid.UUID, list[ImageView]] = {key: [] for key in ids}
+    for link in links:
+        asset = assets.get(link.asset_id)
+        if asset is None:
+            continue
+        grouped[link.listing_id].append(
+            ImageView(
+                id=link.id,
+                position=link.position,
+                is_cover=link.is_cover,
+                content_type=asset.content_type,
+                width=asset.width,
+                height=asset.height,
+                bytes=asset.bytes,
+                url=image_url(link.listing_id, link.id),
+            )
+        )
+    return {key: tuple(items) for key, items in grouped.items()}
 
 
 def canonical_uuid(value) -> uuid.UUID | None:
@@ -296,4 +344,41 @@ def list_owned(
     more = len(page) > size
     page = page[:size]
     next_cursor = encode_cursor(page[-1].created_at, page[-1].id, status) if more else None
-    return ListingPage(tuple(view_of(r) for r in page), next_cursor)
+    images = media_by_listing(r.id for r in page)
+    return ListingPage(tuple(view_of(r, images=images[r.id]) for r in page), next_cursor)
+
+
+def image_for_serving(
+    actor: Actor, listing_id, image_id, *, with_bytes: bool = True
+) -> ServedImage:
+    """THE seam of the media endpoint (AD-15, AD-22): the stored bytes of one image the actor may
+    see, or `not_found` for everything else (the same answer for a Visitor, an administrator, a
+    non-owner, a Deactivated owner, unknown or malformed ids, another Listing's image, a lost
+    file and a Listing that is not a Draft).
+
+    Story 2.10 serves only the owner's Draft images (an owner with `view_drafts`; Suspended and
+    Email-unverified owners may see their own). Story 2.12 replaces this body with the single
+    visibility policy (public serving of Published listings); the endpoint does not change.
+
+    `with_bytes=False` (for `HEAD`) decides access the same way but reads no file: `data` is empty
+    and `size` comes from the asset row.
+    """
+    listing_key, image_key = canonical_uuid(listing_id), canonical_uuid(image_id)
+    if listing_key is None or image_key is None or not _owner_actor(actor):
+        raise DomainError("not_found")
+    owned = PropertyListing.objects.filter(
+        id=listing_key, owner_account_id=actor.account_id, status=ListingStatus.DRAFT.value
+    ).exists()
+    link = ListingImage.objects.filter(id=image_key, listing_id=listing_key).first()
+    if not owned or link is None:
+        raise DomainError("not_found")
+    if not with_bytes:
+        asset = media.assets_by_id([link.asset_id]).get(link.asset_id)
+        if asset is None:
+            raise DomainError("not_found")
+        return ServedImage(content_type=asset.content_type, data=b"", size=asset.bytes)
+    stored = media.read_asset(link.asset_id)
+    if stored is None:
+        raise DomainError("not_found")
+    asset, data = stored
+    return ServedImage(content_type=asset.content_type, data=data, size=len(data))
