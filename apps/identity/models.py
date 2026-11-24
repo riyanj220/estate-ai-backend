@@ -66,6 +66,9 @@ class IndividualProfile(models.Model):
     )
     full_name = models.CharField(max_length=80)
     phone = models.CharField(max_length=16)
+    # The profile picture: a kernel `MediaAsset` id (Story 2.11). A plain column, no foreign key
+    # into kernel; only `identity.services` writes it. Private to the owner.
+    image_asset_id = models.UUIDField(null=True, blank=True, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -91,6 +94,9 @@ class AgencyProfile(models.Model):
     city_id = models.UUIDField()  # public
     description = models.CharField(max_length=1000, blank=True, default="")  # public
     verification_status = models.CharField(max_length=16, default="unverified")
+    # The logo: a kernel `MediaAsset` id (Story 2.11), served publicly only while the Agency
+    # account is Active. A plain column, no foreign key into kernel.
+    image_asset_id = models.UUIDField(null=True, blank=True, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

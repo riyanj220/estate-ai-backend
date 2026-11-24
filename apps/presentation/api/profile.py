@@ -12,6 +12,7 @@ from apps.presentation.api.actors import get_actor
 from apps.presentation.api.bodies import exact_fields, field_errors, single_field
 from apps.presentation.api.passwords import NoStoreMixin
 from apps.presentation.api.permissions import AllowPublic, RequireSignedIn
+from apps.presentation.api.profile_images import ProfileImageSerializer, profile_image_data
 from apps.presentation.api.registrations import RegistrationAcceptedSerializer
 from apps.presentation.api.throttling import PolicyThrottle
 
@@ -25,6 +26,13 @@ class ProfileSerializer(serializers.Serializer):
     pending_email = serializers.CharField(
         allow_null=True,
         help_text="The address of the newest unused, unexpired email-change request, or null.",
+    )
+    image = ProfileImageSerializer(
+        allow_null=True,
+        help_text=(
+            "The profile picture, or null (none, or its file was lost). Private to the owner: "
+            "`url` is the owner-only route."
+        ),
     )
 
 
@@ -61,6 +69,23 @@ class AgencyProfileSerializer(serializers.Serializer):
     )
     verification_status = serializers.CharField(
         help_text="Read-only Agency Verification status (`unverified` until a later story)."
+    )
+    image = ProfileImageSerializer(
+        allow_null=True,
+        help_text="The logo as the owner sees it, or null (none, or its file was lost).",
+    )
+    agency_id = serializers.UUIDField(
+        help_text=(
+            "The public Agency profile id (not the account id), used in `logo_url`. "
+            "Returned only in the owner's own response."
+        )
+    )
+    logo_url = serializers.CharField(
+        allow_null=True,
+        help_text=(
+            "The public logo route `/api/v1/agencies/{agency_id}/logo`, or null without a logo. "
+            "It answers 404 unless the Agency account is Active."
+        ),
     )
 
 
@@ -134,6 +159,7 @@ def _profile_data(view: ProfileView) -> dict:
             "phone": view.phone,
             "email": view.email,
             "pending_email": view.pending_email,
+            "image": profile_image_data(view.image),
         }
     ).data
 
@@ -187,6 +213,9 @@ def _agency_profile_data(view: AgencyProfileView) -> dict:
             "email": view.email,
             "pending_email": view.pending_email,
             "verification_status": view.verification_status,
+            "image": profile_image_data(view.image),
+            "agency_id": view.agency_id,
+            "logo_url": view.logo_url,
         }
     ).data
 

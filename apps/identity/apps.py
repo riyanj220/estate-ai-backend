@@ -30,8 +30,12 @@ class IdentityConfig(AppConfig):
         for action in ("account.password_reset", "account.password_changed"):
             audit.register_action(action, {})  # no metadata: never a password, token or email
 
-        for action in ("account.profile_updated", "account.email_changed"):
-            audit.register_action(action, {})  # no metadata: never a phone, name or email
+        for action in (
+            "account.profile_updated",
+            "account.email_changed",
+            "account.profile_image_changed",
+        ):
+            audit.register_action(action, {})  # no metadata: never a phone, name, email or file
 
         for action in (
             "admin.provisioned",

@@ -23,6 +23,7 @@ from apps.identity.services._common import (
     _view,
     _void_email_change_links,
 )
+from apps.identity.services.profile_images import purge_profile_image
 from apps.identity.validation import (
     check_email,
 )
@@ -135,6 +136,7 @@ def deactivate(actor: Actor, account_id) -> AccountView:
         account.deactivated_at = timezone.now()
         account.save(update_fields=["deactivated_at", "updated_at"])
         _void_email_change_links(account, account.deactivated_at)
+        purge_profile_image(actor, account.id)  # AD-23: the picture or logo goes with the account
         audit.record(actor, "account.deactivated", "account", account.id)
         emit_session_ended(account.id, "deactivated")
         return _view(account.id)

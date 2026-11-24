@@ -22,6 +22,7 @@ from apps.identity.models import (
 )
 from apps.identity.policy import capabilities_for
 from apps.identity.state import AccountState
+from apps.kernel import media, storage
 from apps.kernel.errors import DomainError
 
 ACCOUNT_TYPES = tuple(t.value for t in AccountType)
@@ -176,6 +177,56 @@ def get_actor_summary(account_id) -> ActorSummary | None:
     return summarise(account)
 
 
+OWN_IMAGE_URLS = {
+    AccountType.INDIVIDUAL.value: "/api/v1/me/profile/image/file",
+    AccountType.AGENCY.value: "/api/v1/me/agency-profile/image/file",
+}
+
+
+def logo_url(agency_id: uuid.UUID) -> str:
+    return f"/api/v1/agencies/{agency_id}/logo"
+
+
+@dataclass(frozen=True)
+class ProfileImageView:
+    """A stored picture or logo as the owner sees it. No asset id, key or account id."""
+
+    content_type: str
+    width: int
+    height: int
+    bytes: int
+    url: str
+
+
+@dataclass(frozen=True)
+class ServedProfileImage:
+    content_type: str
+    data: bytes
+    size: int
+
+
+def image_view_of(asset: media.StoredAsset, kind: str) -> ProfileImageView:
+    """The owner's view of an asset already in hand (no read)."""
+    return ProfileImageView(
+        content_type=asset.content_type,
+        width=asset.width,
+        height=asset.height,
+        bytes=asset.bytes,
+        url=OWN_IMAGE_URLS[kind],
+    )
+
+
+def image_view(asset_id, kind: str) -> ProfileImageView | None:
+    """The image a profile points at, or None: no reference, or a ghost (the asset row is gone,
+    so there is nothing to show; the next write clears the stale reference)."""
+    if asset_id is None:
+        return None
+    asset = media.assets_by_id([asset_id]).get(asset_id)
+    if asset is None:
+        return None
+    return image_view_of(asset, kind)
+
+
 @dataclass(frozen=True)
 class ProfileView:
     """An Individual's own details. `phone` and both addresses are private: owner only."""
@@ -184,6 +235,7 @@ class ProfileView:
     phone: str = field(repr=False)
     email: str = field(repr=False)
     pending_email: str | None = field(repr=False)
+    image: ProfileImageView | None = None
 
 
 def _pending_email(account: Account) -> str | None:
@@ -202,7 +254,13 @@ def _pending_email(account: Account) -> str | None:
 
 
 def profile_view(account: Account, profile: IndividualProfile) -> ProfileView:
-    return ProfileView(profile.full_name, profile.phone, account.email, _pending_email(account))
+    return ProfileView(
+        profile.full_name,
+        profile.phone,
+        account.email,
+        _pending_email(account),
+        image_view(profile.image_asset_id, AccountType.INDIVIDUAL.value),
+    )
 
 
 def get_profile(actor_account_id) -> ProfileView:
@@ -234,9 +292,13 @@ class AgencyProfileView:
     email: str = field(repr=False)
     pending_email: str | None = field(repr=False)
     verification_status: str
+    image: ProfileImageView | None = None
+    agency_id: uuid.UUID | None = None  # public identifier, distinct from the account id
+    logo_url: str | None = None
 
 
 def agency_profile_view(account: Account, profile: AgencyProfile) -> AgencyProfileView:
+    image = image_view(profile.image_asset_id, AccountType.AGENCY.value)
     return AgencyProfileView(
         agency_name=profile.agency_name,
         description=profile.description,
@@ -246,6 +308,9 @@ def agency_profile_view(account: Account, profile: AgencyProfile) -> AgencyProfi
         email=account.email,
         pending_email=_pending_email(account),
         verification_status=profile.verification_status,
+        image=image,
+        agency_id=profile.id,
+        logo_url=logo_url(profile.id) if image else None,
     )
 
 
@@ -269,3 +334,54 @@ def get_agency_profile(actor_account_id) -> AgencyProfileView:
 def city_is_active(city_id) -> bool:
     """True when the id names an active city of the City reference list."""
     return catalog.get_city(city_id) is not None
+
+
+def own_image_for_serving(
+    actor_account_id, kind: str, *, with_bytes: bool = True
+) -> ServedProfileImage:
+    """THE seam of the owner's picture and logo routes: the bytes of the image of the profile of
+    type `kind` that belongs to this account, or `not_found` for everything else (a Visitor, an
+    administrator, another account, the other account type, a Deactivated account, no image, a
+    lost asset row or file). `with_bytes=False` (HEAD) reads no file: the size is the row's."""
+    key = parse_id(actor_account_id)
+    account = Account.objects.filter(id=key).first() if key else None
+    if account is None or account.state is AccountState.DEACTIVATED or account.account_type != kind:
+        raise DomainError("not_found")
+    model = IndividualProfile if kind == AccountType.INDIVIDUAL.value else AgencyProfile
+    asset_id = (
+        model.objects.filter(account_id=account.id).values_list("image_asset_id", flat=True).first()
+    )
+    return _served(asset_id, with_bytes)
+
+
+def logo_for_serving(agency_id, *, with_bytes: bool = True) -> ServedProfileImage:
+    """The public logo seam: the logo of the Agency profile with this PUBLIC id, only while its
+    account is Active. Suspended, Deactivated, Email-unverified, unknown or malformed ids and an
+    Agency without a logo (or with a lost one) are all the same `not_found`."""
+    key = parse_id(agency_id)
+    row = AgencyProfile.objects.select_related("account").filter(id=key).first() if key else None
+    if row is None or row.account.state is not AccountState.ACTIVE:
+        raise DomainError("not_found")
+    return _served(row.image_asset_id, with_bytes)
+
+
+def _file_exists(storage_key: str) -> bool:
+    try:
+        return storage.get_storage().exists(storage_key)
+    except (OSError, ValueError):
+        return False
+
+
+def _served(asset_id, with_bytes: bool) -> ServedProfileImage:
+    if asset_id is None:
+        raise DomainError("not_found")
+    if not with_bytes:
+        asset = media.assets_by_id([asset_id]).get(asset_id)
+        if asset is None or not _file_exists(asset.storage_key):
+            raise DomainError("not_found")  # HEAD agrees with GET about a lost file
+        return ServedProfileImage(asset.content_type, b"", asset.bytes)
+    stored = media.read_asset(asset_id)
+    if stored is None:
+        raise DomainError("not_found")
+    asset, data = stored
+    return ServedProfileImage(asset.content_type, data, len(data))
