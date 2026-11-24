@@ -1,6 +1,6 @@
-# Media: image upload pipeline, storage and serving (Stories 2.9 and 2.10)
+# Media: image upload pipeline, storage and serving (Stories 2.9, 2.10 and 2.11)
 
-Generic, reusable media code lives in `apps/kernel` (Story 2.11 reuses it for profile pictures and logos); the Listing
+Generic, reusable media code lives in `apps/kernel` (Story 2.11 reuses it for profile pictures and logos, see "Profile pictures and Agency logos" below); the Listing
 side lives in `apps/listings` (`ListingImage`, `upload_image`, `remove_image`, `set_image_order`). Story 2.9 stored
 images and served nothing; Story 2.10 adds the one media endpoint (see "Serving images" below). The storage port still
 produces no URL: a file is read only through that endpoint.
@@ -148,6 +148,72 @@ is read whole; a streaming or `X-Accel-Redirect` variant can replace that behind
 `kernel.media.read_asset` (bytes and row, no access check) and `assets_by_id` are the kernel's read side; the access
 decision lives in `listings`.
 
+## Profile pictures and Agency logos (Story 2.11)
+
+`identity` owns the reference: a nullable, unique `image_asset_id` UUID on `IndividualProfile` and `AgencyProfile` (a plain
+column, no foreign key into kernel; only `identity.services` writes it). The asset is the SAME kernel `MediaAsset` the
+Listing pipeline makes (same 5 MB, JPEG/PNG/WebP, bomb limits, re-encode and metadata stripping, random key, per-account
+cap counted for the owner, 24 hour retention for an unattached asset). Services (actor first, `kind` is `individual` or
+`agency`): `set_profile_image(actor, data, kind=...)`, `remove_profile_image(actor, kind=...)`,
+`require_profile_image_access(actor, kind=...)` (the body-less refusals, run before the body is read) and
+`purge_profile_image(actor, account_id)` (erasure, system or administrator only).
+
+| Route | Methods | Who |
+|---|---|---|
+| `/api/v1/me/profile/image` | `PUT` (upload or replace, `200` image object), `DELETE` (`204`) | Individual owner |
+| `/api/v1/me/profile/image/file` | `GET`, `HEAD` | Individual owner only |
+| `/api/v1/me/agency-profile/image`, `.../image/file` | the same | Agency owner |
+| `/api/v1/agencies/{agency_id}/logo` | `GET`, `HEAD` | anyone, only while the Agency account is Active |
+
+- **Write flow.** The upload is processed OUTSIDE any lock (`media.process_upload`). In one transaction under the account
+  lock (account, profile, then storage usage) the previous asset is deleted first (row, usage given back, file after
+  commit), so a replacement counts only its net size against the cap, the new asset is stored attached, the profile points
+  at it and audit record `account.profile_image_changed` (no metadata) is written. A failure anywhere, including after the
+  file write and after the reference update, rolls everything back and removes the new file; the old image, its file and the
+  usage are untouched. Removing deletes the asset and nulls the reference; a repeat (or removing when there is none) is a
+  harmless `204` that writes nothing.
+- **Ghosts.** A reference to a missing asset row reads as no image (`image` null, `logo_url` null, file routes `404`, public
+  logo `404`) and the next write replaces or clears it; usage is left as it is (no row, so the bytes are unknown).
+- **Gate.** Exactly the profile PATCH's own (no new capability): Visitor `401`, administrator `403`, the other account type
+  `403` (checked BEFORE the body is read, like Story 2.9's ownership rule), Deactivated or unknown account `401`
+  (`unauthenticated`); Active, Email-unverified and Suspended accounts may change the image (see `docs/account-states.md`).
+- **Limits.** One multipart part named `file`, errors and codes exactly as Story 2.9 (`fields.file`: `too_large`,
+  `unsupported_type`, `too_large_dimensions`, `too_small`, `invalid_image`, `required`, `invalid`; `409
+  storage_cap_exceeded`; `503 busy` with `Retry-After`). The request body is capped at 6 MiB for the two `PUT` routes by the
+  same `BodySizeMiddleware` and `BodyLimitASGI` wrapper as the Listing upload. Rate limit `profile_image_upload`: 10 per
+  hour per account, counted on `PUT` only (every attempt counts, accepted or not; `DELETE` is not limited); `429` with
+  `Retry-After`. Every owner route is `no-store` and needs CSRF on writes. A reverse proxy must cap the body at 6 MiB for
+  these two routes as well.
+- **Owner file routes** answer like the Story 2.10 media endpoint (`image_for_serving`'s sibling,
+  `identity.selectors.own_image_for_serving`): stored `Content-Type`, `Content-Length`, `Cache-Control: private,
+  no-store`, `nosniff`, `Content-Disposition: inline`, the media CSP, no cookie; `HEAD` reads no file but checks that the file exists (`storage.exists`), so it is `404` exactly when `GET` is. Anyone but the
+  owning account of that type (another account, the other type, an administrator, a Visitor), a Deactivated owner, no
+  image and a lost file or row are the same `404 not_found`. An Individual's picture has NO public route.
+- **Public logo** (`identity.selectors.logo_for_serving`). `agency_id` is `AgencyProfile.id`, a public identifier distinct
+  from the account id (a test pins it); it appears only in the owner's own agency profile response (`agency_id`,
+  `logo_url`). The logo is served to anyone only while the Agency account is Active. A Suspended, Deactivated,
+  Email-unverified (never active), unknown or malformed id, an Agency without a logo, a lost file or row, and an account id
+  used as the id are the identical `404` (`no-store`). The `200` carries `Cache-Control: public, max-age=60`, the stored
+  `Content-Type`, `Content-Length`, `nosniff`, `Content-Disposition: inline` and the media CSP, and never a cookie or
+  `Vary: Cookie` (the view has no authentication classes and clears a pending CSRF cookie reissue, so even a request with a
+  stale cookie gets a clean answer; a URL the resolver itself 404s, such as `/api/v1/agencies/a/b/logo`, never reaches
+  the view, so the CSRF middleware may still reissue its cookie there, which is a documented, harmless gap). Because the answer is cacheable, **a suspended Agency's logo may stay in a browser or
+  shared cache for up to 60 seconds**; reactivation shows it again with no further action (the asset is kept while
+  Suspended).
+- **Rate-limit order.** For `PUT` the account-type and state gate runs BEFORE the throttle count (`check_throttles`), so a
+  Visitor, administrator, wrong-type or Deactivated caller never consumes the 10-per-hour quota. The body is parsed after
+  the throttle, so an upload that fails validation (`400`), the cap (`409`) or processing (`503`) still counts.
+- **Known drift: a ghost near the cap.** If an asset row is lost (a ghost reference) its bytes stay counted in
+  `StorageUsage` (no row, so the size is unknown). Replacing or removing the ghost does not give them back, so an account
+  right at its cap can get a `409 storage_cap_exceeded` that the real stored bytes would not justify. No code corrects it
+  here; a maintenance job should recompute `StorageUsage.bytes_used` as the sum of the account's `MediaAsset.bytes`
+  (a later retention or administrator story).
+- **Erasure (AD-23).** There is no anonymisation path yet. `identity.services.deactivate` (the administrator's permanent
+  deactivation) calls `purge_profile_image` in its own transaction: the asset row, its usage and (after commit) its file go,
+  and the reference is nulled; a failing deactivation rolls it all back. The later erasure story calls the same helper
+  (`purge_profile_image(actor, account_id)`, idempotent, system or administrator only) for the account it anonymises.
+  `kernel.media.purge_owned_asset(actor, owner_account_id, asset_id)` is the kernel side (administrator or system only).
+
 ## Security properties
 
 - The `Content-Type` header and the file name are never trusted, stored or logged; no file name is kept anywhere.
@@ -155,12 +221,14 @@ decision lives in `listings`.
   access check, and no response carries a storage key or a filesystem path (the Listing's `media[].url` is the
   endpoint's relative path).
 - Logs and error bodies never contain file data, names, storage keys or decoder text (static messages, class-only logs).
-- The request body of the upload route is capped at 6 MiB, in layers and for that route only (`kernel.upload_limit`;
+- The request body of the upload route is capped at 6 MiB, in layers and for the image routes only (the Listing upload `POST` and the two profile image `PUT` routes; the Listing reorder `PATCH` has its own 64 KiB cap; `kernel.upload_limit`;
   every other route keeps Django's defaults, `DATA_UPLOAD_MAX_MEMORY_SIZE` included): `BodyLimitASGI` (wrapped around
   the application in `config/asgi.py`) refuses a declared `Content-Length` above the cap without reading a byte, and
   counts the bytes of a chunked or mis-declared body as they arrive, stopping at the cap, BEFORE Django buffers
   anything; `BodySizeMiddleware` (ahead of the CSRF check, which would otherwise parse a multipart body when the token
-  header is missing) flags an absent, malformed or oversize length and zeroes it. The refusal is `400 validation_error`
+  header is missing) flags an absent, malformed or oversize length and zeroes it. A chunked upload with NO `Content-Length` is therefore
+  refused by the middleware as `too_large` even when it is small (browsers send a length for multipart `FormData`; the
+  ASGI wrapper alone would count and admit it). The refusal is `400 validation_error`
   with `file: too_large` in the standard envelope (the ASGI refusal is sent before authentication, so it does not
   reveal whether a Listing exists). `FILE_UPLOAD_MAX_MEMORY_SIZE` is aligned and only the in-memory upload handler is
   enabled, so an upload never spills to a temp file. A reverse proxy in front of the application must cap the body too

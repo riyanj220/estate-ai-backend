@@ -28,6 +28,7 @@ whose permission is not explicit.
 | --- | --- | --- | --- |
 | `/api/v1/admin-session` | POST | public | `apps.presentation.api.sessions.AdminSessionView` |
 | `/api/v1/admin/me` | GET | admin | `apps.presentation.adminapi.me.AdminMeView` |
+| `/api/v1/agencies/<str:agency_id>/logo` | GET, HEAD | public | `apps.presentation.api.profile_images.AgencyLogoView` |
 | `/api/v1/csrf` | GET | public | `apps.presentation.api.sessions.CsrfView` |
 | `/api/v1/email-changes/confirm` | POST | public | `apps.presentation.api.profile.EmailChangeConfirmView` |
 | `/api/v1/email-verification-requests` | POST | public | `apps.presentation.api.verifications.VerificationRequestView` |
@@ -40,10 +41,14 @@ whose permission is not explicit.
 | `/api/v1/listings/<str:listing_id>/images/<str:image_id>/file` | GET, HEAD | public | `apps.presentation.api.listing_images.ListingImageFileView` |
 | `/api/v1/me` | GET | signed_in | `apps.presentation.api.sessions.MeView` |
 | `/api/v1/me/agency-profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.AgencyProfileDetailView` |
+| `/api/v1/me/agency-profile/image` | DELETE, PUT | signed_in | `apps.presentation.api.profile_images.AgencyProfileImageView` |
+| `/api/v1/me/agency-profile/image/file` | GET, HEAD | public | `apps.presentation.api.profile_images.AgencyProfileImageFileView` |
 | `/api/v1/me/email-change` | POST | signed_in | `apps.presentation.api.profile.EmailChangeRequestView` |
 | `/api/v1/me/listings` | GET | signed_in | `apps.presentation.api.listings.MyListingsView` |
 | `/api/v1/me/password` | POST | signed_in | `apps.presentation.api.passwords.ChangePasswordView` |
 | `/api/v1/me/profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.ProfileDetailView` |
+| `/api/v1/me/profile/image` | DELETE, PUT | signed_in | `apps.presentation.api.profile_images.ProfileImageView` |
+| `/api/v1/me/profile/image/file` | GET, HEAD | public | `apps.presentation.api.profile_images.ProfileImageFileView` |
 | `/api/v1/notifications` | GET | signed_in | `apps.presentation.api.notifications.NotificationListView` |
 | `/api/v1/notifications/<str:notification_id>/read` | POST | signed_in | `apps.presentation.api.notifications.MarkReadView` |
 | `/api/v1/notifications/read-all` | POST | signed_in | `apps.presentation.api.notifications.MarkAllReadView` |
@@ -57,6 +62,10 @@ whose permission is not explicit.
 | `/api/v1/schema` | GET | public | `apps.presentation.api.schema.PublicSchemaView` |
 | `/api/v1/session` | DELETE, POST | public | `apps.presentation.api.sessions.SessionView` |
 <!-- END GENERATED ROUTES -->
+
+Routes shown as `public` whose owner check lives in a selector: the Listing media endpoint (`image_for_serving`), the owner
+file routes of Story 2.11 (`own_image_for_serving`: a Visitor, another account, the other type and an administrator get 404)
+and the public Agency logo (`logo_for_serving`: served only while the Agency account is Active, otherwise 404).
 
 ## Extending the matrix in later phases
 

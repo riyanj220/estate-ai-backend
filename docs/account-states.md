@@ -108,3 +108,23 @@ capabilities in the summary; a Deactivated account cannot (the same generic `inv
 Deactivated account's sessions are also refused at authentication time.
 
 `identity.register_individual` (Story 1.15) creates the Email-unverified account and emits `account.registered` (field `account_id`) after commit for Story 1.16; see `docs/registration.md`.
+
+## Profile image and logo by state (Story 2.11)
+
+The picture and logo use the profile PATCH's own gate (no new capability; the table above is not changed). The profile
+PATCH reads no capability: only a Deactivated account (no session) is refused, so Email-unverified and Suspended accounts
+may edit, which the image routes inherit. Visibility differs by route:
+
+| State | Change picture / logo (`PUT`, `DELETE`) | Owner reads own image | Public logo `GET /api/v1/agencies/{agency_id}/logo` |
+|---|---|---|---|
+| email_unverified | yes | yes | `404` (never active) |
+| active | yes | yes | served (`public, max-age=60`) |
+| suspended | yes | yes | `404` (the asset is kept; may stay cached up to 60 seconds) |
+| deactivated | no (`401`, no session) | no (`404`) | `404`; the asset is removed on deactivation (AD-23) |
+
+Reactivation of a suspended Agency shows its logo again with no further action. An Individual's picture is owner-only in
+every state and has no public route. See `docs/media.md`.
+
+Note the difference from Listing images: uploading a Listing image needs `edit_drafts`, which a Suspended account lacks
+(`403`), while the profile picture and logo follow the profile PATCH, which a Suspended account may use. A Suspended
+Agency can therefore still change its logo, but the public route stays `404` until it is reactivated.

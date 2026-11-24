@@ -134,7 +134,13 @@ an absolute path that defaults to the git-ignored `./media`; tests use a tempora
 packages are needed. Story 2.10 adds the cover flag and a consistent 0-based order to `ListingImage`, the
 revision-checked `PATCH /api/v1/listings/{id}/images` (full order and optional cover), `media` entries on the Listing
 resource, and the single media endpoint `GET /api/v1/listings/{id}/images/{image_id}/file`, which serves a Draft's image
-only to its owner (everyone else gets the same 404; public serving comes with Story 2.12). See `docs/media.md`.
+only to its owner (everyone else gets the same 404; public serving comes with Story 2.12). Story 2.11 reuses the same
+pipeline for profile pictures and Agency logos: `PUT`/`DELETE /api/v1/me/profile/image` (Individual) and
+`/api/v1/me/agency-profile/image` (Agency) upload, replace or remove one image (6 MiB body, 5 MB image, 10 uploads per
+hour, the profile PATCH's account-state gate), the owner reads it at `.../image/file` (`private, no-store`), the profile
+answers carry `image`, and an Agency's logo is public at `GET /api/v1/agencies/{agency_id}/logo` only while the Agency
+account is Active (`public, max-age=60`; everything else is the same 404). An Individual's picture is never public.
+Deactivating an account removes its picture or logo. See `docs/media.md`.
 
 ## Audit trail
 

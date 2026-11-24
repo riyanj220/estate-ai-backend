@@ -213,3 +213,20 @@ by sending an empty string; send only the changed fields; show the verification 
 
 Confirming an email change raises the `account.email_changed` in-app notification for the account (empty payload,
 stored after commit, only if the change commits). The mail notice to the old address stays. See `docs/notifications.md`.
+
+## Profile picture and logo (Story 2.11)
+
+Both profile answers (`GET`/`PATCH /api/v1/me/profile` and `GET`/`PATCH /api/v1/me/agency-profile`) gain `image`: `null`
+or `{content_type, width, height, bytes, url}`, where `url` is the OWNER route (`/api/v1/me/profile/image/file` or
+`/api/v1/me/agency-profile/image/file`, `private, no-store`). A lost file shows `image: null`. The agency answer also gains
+`agency_id` (the public `AgencyProfile.id`, not the account id) and `logo_url` (`/api/v1/agencies/{agency_id}/logo`, or
+null without a logo), only in the owner's own response; the later public agency profile reuses `logo_url`. No asset id,
+storage key or account id appears anywhere. A text `PATCH` never touches the image.
+
+Operations `put_profile_image`, `delete_profile_image`, `get_profile_image_file`, `put_agency_logo`, `delete_agency_logo`,
+`get_agency_logo_file` and `get_agency_logo` (public). The upload is `PUT` with `multipart/form-data` and one `file` part;
+the rules, codes, limits (5 MB image, 6 MiB body, 10 uploads per hour), the account-state gate (the profile PATCH's own:
+Active, Email-unverified and Suspended may change it) and the public-logo rule are in `docs/media.md`, "Profile pictures
+and Agency logos". Frontend hand-off: render `image.url` in a same-origin `<img>`; treat `404` on it as "no image"; show
+the shared `fields.file` codes of the Listing upload; a Suspended owner's change is allowed, but their public logo is
+hidden (and cached for up to a minute).
