@@ -169,3 +169,54 @@ class Notification(models.Model):
             models.Index(fields=["created_at"], name="notification_created_idx"),
             models.Index(fields=["read_at"], name="notification_read_at_idx"),
         ]
+
+
+class MediaAsset(models.Model):
+    """One stored, processed image (Story 2.9). Written only by `kernel.media`.
+
+    Holds no file name and no original bytes: `storage_key` is random and opaque, and `bytes` is the
+    size of the re-encoded file, which is what counts against the account's storage cap.
+    `attached_at` is null until a feature (a Listing, a profile) takes the asset; assets still
+    unattached after 24 hours are removed by retention.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner_account_id = models.UUIDField()  # plain UUID: kernel never points at another app's table
+    storage_key = models.CharField(max_length=64, unique=True)
+    content_type = models.CharField(max_length=32)
+    bytes = models.PositiveIntegerField()
+    width = models.PositiveIntegerField()
+    height = models.PositiveIntegerField()
+    created_at = models.DateTimeField()
+    attached_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["owner_account_id"], name="media_asset_owner_idx"),
+            models.Index(
+                fields=["created_at"],
+                name="media_asset_unattached_idx",
+                condition=models.Q(attached_at__isnull=True),
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(content_type__in=["image/jpeg", "image/png", "image/webp"]),
+                name="media_asset_type_valid",
+            ),
+            models.CheckConstraint(condition=models.Q(bytes__gt=0), name="media_asset_bytes_gt_0"),
+        ]
+
+
+class StorageUsage(models.Model):
+    """Bytes stored per account, locked (`select_for_update`) to check the cap atomically."""
+
+    account_id = models.UUIDField(primary_key=True)
+    bytes_used = models.BigIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(bytes_used__gte=0), name="storage_usage_bytes_gte_0"
+            ),
+        ]

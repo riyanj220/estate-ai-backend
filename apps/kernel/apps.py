@@ -10,6 +10,7 @@ class KernelConfig(AppConfig):
             ai_log,
             flags,
             idempotency,
+            media,
             notifications,
             ratelimit,
             retention,
@@ -21,4 +22,5 @@ class KernelConfig(AppConfig):
         retention.register("kernel.ratelimit", ratelimit.purge_expired)
         retention.register("kernel.ai_request_log", ai_log.purge_expired)
         retention.register("kernel.notifications", notifications.purge_expired)
+        retention.register("kernel.media_orphans", media.purge_orphans)
         subscribers.ensure_subscribed()

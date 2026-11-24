@@ -10,6 +10,7 @@ dependencies = [
     "djangorestframework>=3.16,<4",
     "drf-spectacular>=0.28,<0.31",
     "pyyaml>=6.0.3",
+    "pillow>=13.0,<14",
 ]
 
 [dependency-groups]
@@ -40,7 +41,7 @@ select = ["E", "F", "I", "B", "UP", "S"]
 "tests/**" = ["S101", "S105", "S106"]
 
 [tool.importlinter]
-root_packages = ["apps", "django"]
+root_packages = ["apps", "django", "PIL"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -149,4 +150,11 @@ name = "Domain apps never import HTTP or WebSocket code"
 type = "forbidden"
 source_modules = ["apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.governance"]
 forbidden_modules = ["django.http", "django.shortcuts", "django.views", "django.urls", "django.template.response", "django.core.handlers", "rest_framework", "channels"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Pillow is imported only inside kernel"
+type = "forbidden"
+source_modules = ["apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.governance", "apps.presentation"]
+forbidden_modules = ["PIL"]
 allow_indirect_imports = true

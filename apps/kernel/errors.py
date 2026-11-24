@@ -26,6 +26,8 @@ CATALOGUE: dict[str, ErrorCode] = _catalogue(
     ErrorCode("method_not_allowed", 405, "This method is not allowed for this resource."),
     ErrorCode("not_acceptable", 406, "The requested response format is not available."),
     ErrorCode("stale_revision", 409, "The resource changed since it was loaded."),
+    ErrorCode("storage_cap_exceeded", 409, "Your storage limit is reached. Remove an image first."),
+    ErrorCode("too_many_images", 409, "A listing can have at most 10 images."),
     ErrorCode("link_used", 409, "This link has already been used or replaced by a newer one."),
     ErrorCode("link_expired", 410, "This link has expired. Request a new one."),
     ErrorCode("unsupported_media_type", 415, "The request content type is not supported."),
@@ -34,6 +36,7 @@ CATALOGUE: dict[str, ErrorCode] = _catalogue(
     ),
     ErrorCode("throttled", 429, "Too many requests. Try again later."),
     ErrorCode("server_error", 500, "Something went wrong on our side."),
+    ErrorCode("busy", 503, "This feature is busy right now. Try again shortly."),
 )
 
 # Static field messages keyed by DRF validation error code. Default DRF messages can
@@ -91,6 +94,13 @@ FIELD_MESSAGES: dict[str, str] = {
     ),
     "invalid_date": "Enter a date within the allowed range.",
     "invalid_range": "Enter a whole number within the allowed range.",
+    "too_large": "The image is too large. Use a file of up to 5 MB.",
+    "unsupported_type": "Use a JPEG, PNG or WebP image.",
+    "too_large_dimensions": (
+        "The image has too many pixels. Use at most 10,000 pixels on a side and 40 megapixels."
+    ),
+    "too_small": "The image is too small. Use at least 200 by 200 pixels.",
+    "invalid_image": "The file is not a usable image.",
     "invalid_floor": "The floor cannot be above the number of floors in the building.",
 }
 DEFAULT_FIELD_MESSAGE = "Enter a valid value."

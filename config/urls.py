@@ -3,6 +3,7 @@ from django.urls import path
 from apps.presentation.adminapi.me import AdminMeView
 from apps.presentation.api.handlers import bad_request, forbidden, not_found, server_error
 from apps.presentation.api.health import health
+from apps.presentation.api.listing_images import ListingImageDetailView, ListingImagesView
 from apps.presentation.api.listings import DraftCreateView, ListingDetailView, MyListingsView
 from apps.presentation.api.notifications import (
     MarkAllReadView,
@@ -97,6 +98,16 @@ urlpatterns = [
     path("api/v1/registry", RegistryView.as_view(), name="registry"),
     path("api/v1/listings", DraftCreateView.as_view(), name="listings"),
     path("api/v1/listings/<str:listing_id>", ListingDetailView.as_view(), name="listing"),
+    path(
+        "api/v1/listings/<str:listing_id>/images",
+        ListingImagesView.as_view(),
+        name="listing-images",
+    ),
+    path(
+        "api/v1/listings/<str:listing_id>/images/<str:image_id>",
+        ListingImageDetailView.as_view(),
+        name="listing-image",
+    ),
     path("api/v1/me/listings", MyListingsView.as_view(), name="me-listings"),
     path("api/v1/schema", PublicSchemaView.as_view(), name="schema"),
 ]

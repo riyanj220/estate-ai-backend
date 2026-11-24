@@ -1,7 +1,9 @@
+import os
+
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.kernel.runtime import validate_limits
-from config.env import env, env_int
+from config.env import BASE_DIR, env, env_int
 
 ROOT_URLCONF = "config.urls"
 ASGI_APPLICATION = "config.asgi.application"
@@ -23,6 +25,7 @@ MIDDLEWARE = [
     "apps.kernel.security_headers.SecurityHeadersMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "apps.kernel.upload_limit.BodySizeMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
 ]
 
@@ -68,6 +71,18 @@ DEFAULT_FROM_EMAIL = env("MAIL_FROM", "EstateAI <no-reply@localhost>")
 MAIL_SEND_INLINE = False
 
 STATIC_URL = "static/"
+
+# Media (Story 2.9). Uploaded images are stored under MEDIA_ROOT through the `kernel.storage` port;
+# the directory is never served by this application. The default sits in the project, git-ignored.
+MEDIA_ROOT = env("MEDIA_ROOT", str(BASE_DIR / "media"))
+if not os.path.isabs(MEDIA_ROOT):
+    raise ImproperlyConfigured("MEDIA_ROOT must be an absolute path.")
+# One upload is at most 5 MiB of image inside a request of at most 6 MiB (`kernel.images`,
+# `kernel.upload_limit`, image routes only). DATA_UPLOAD_MAX_MEMORY_SIZE stays at Django's default;
+# the file limit is aligned so an upload is held in memory and never spills to a temp file.
+MAX_REQUEST_BODY_BYTES = 6 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_REQUEST_BODY_BYTES
+FILE_UPLOAD_HANDLERS = ["django.core.files.uploadhandler.MemoryFileUploadHandler"]
 
 # Cookies: never readable by scripts, never sent cross-site on subrequests.
 # Secure is on here and switched off only in local and test settings.
