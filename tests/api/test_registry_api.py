@@ -5,7 +5,7 @@ from django.test import Client
 
 from apps.catalog import registry
 from apps.presentation.api.registry import RESPONSE_SHAPE_VERSION
-from tests.listings.support import DETAIL_IDS
+from tests.listings.support import TAIL_IDS, TERMS_IDS
 
 URL = "/api/v1/registry"
 FIELD_KEYS = {
@@ -23,6 +23,7 @@ FIELD_KEYS = {
     "allowed_values_by_purpose",
     "allowed_values_by_subtype",
     "seller_declared",
+    "section",
     "min_length",
     "max_length",
     "min",
@@ -39,7 +40,7 @@ def test_served_publicly_with_the_defined_shape():
     assert response.status_code == 200
     body = response.json()
     assert list(body) == ["version", "taxonomy", "fields"]
-    assert body["version"] == 5
+    assert body["version"] == 6
     assert body["taxonomy"] == {
         "categories": [
             {"id": "house", "subtypes": ["house"]},
@@ -62,7 +63,7 @@ def test_served_publicly_with_the_defined_shape():
         "area_unit",
         "marla_basis",
         "area_sqft",
-        *DETAIL_IDS,
+        *TAIL_IDS,
     ]
     for field in body["fields"]:
         assert set(field) == FIELD_KEYS
@@ -117,7 +118,7 @@ def test_cache_headers_and_strong_etag():
     response = Client().get(URL)
     assert response.headers["Cache-Control"] == "public, max-age=300"
     tag = response.headers["ETag"]
-    assert tag == f'"5-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
+    assert tag == f'"6-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
         "W/"
     )
 
@@ -154,7 +155,7 @@ def test_a_shape_change_alone_changes_the_etag(monkeypatch):
 
 
 def test_the_shape_version_is_pinned_and_the_area_fields_are_served_in_full():
-    assert RESPONSE_SHAPE_VERSION == 4
+    assert RESPONSE_SHAPE_VERSION == 5
     served = {f["id"]: f for f in Client().get(URL).json()["fields"]}
     value = served["area_value"]
     assert (value["type"], value["min"], value["max"], value["scale"]) == (
@@ -211,7 +212,9 @@ def test_the_residential_fields_are_served_in_registry_order_with_their_rules():
 
 
 def test_seller_declared_and_the_by_subtype_map_are_served_and_the_shape_is_bumped():
-    assert RESPONSE_SHAPE_VERSION == 4  # the payload gained two keys per field
+    assert (
+        RESPONSE_SHAPE_VERSION >= 4
+    )  # the payload gained two keys per field in version 5 of the registry
     served = {f["id"]: f for f in Client().get(URL).json()["fields"]}
     assert {n for n, f in served.items() if f["seller_declared"]} == {
         "possession_status",
@@ -219,6 +222,7 @@ def test_seller_declared_and_the_by_subtype_map_are_served_and_the_shape_is_bump
         "development_status",
         "approval_authority",
         "plot_file_status",
+        "possession_availability",
     }
     for field in served.values():
         assert isinstance(field["seller_declared"], bool)
@@ -239,14 +243,14 @@ def test_seller_declared_and_the_by_subtype_map_are_served_and_the_shape_is_bump
     ]
     assert [n for n, f in served.items() if f["allowed_values_by_subtype"] is not None] == [
         "possession_status"
-    ]
+    ]  # no new map in version 6
     assert served["condition"]["seller_declared"] is False
     assert served["condition"]["allowed_values_by_subtype"] is None
 
 
 def test_the_plot_and_commercial_fields_are_served_in_registry_order_with_their_rules():
     body = Client().get(URL).json()
-    assert [f["id"] for f in body["fields"]][-len(DETAIL_IDS) :] == list(DETAIL_IDS)
+    assert [f["id"] for f in body["fields"]][-len(TAIL_IDS) :] == list(TAIL_IDS)
     served = {f["id"]: f for f in body["fields"]}
     width = served["plot_width"]
     assert (width["type"], width["min"], width["max"], width["scale"]) == (
@@ -284,6 +288,121 @@ def test_the_plot_and_commercial_fields_are_served_in_registry_order_with_their_
             assert field[key] is None or "E" not in field[key].upper()
 
 
-def test_the_etag_names_version_five_and_the_new_shape():
+def test_the_etag_names_version_six_and_the_new_shape():
     tag = Client().get(URL).headers["ETag"]
-    assert tag == f'"5-{registry.content_hash()}-4"'
+    assert tag == f'"6-{registry.content_hash()}-5"'
+
+
+def test_the_date_type_and_the_terms_are_served_in_the_existing_keys_without_a_shape_bump():
+    assert RESPONSE_SHAPE_VERSION == 5  # `section` was added; a date serves `min` and `max`
+    body = Client().get(URL).json()
+    served = {f["id"]: f for f in body["fields"]}
+    for field in body["fields"]:
+        assert set(field) == FIELD_KEYS
+    availability = served["availability_date"]
+    assert availability["type"] == "date" and availability["requirement"] == "recommended"
+    assert (availability["min"], availability["max"]) == ("2000-01-01", "2100-12-31")
+    assert availability["applicability"] == {"purposes": ["rent"], "categories": [], "subtypes": []}
+    assert availability["currency"] is None and availability["scale"] is None
+    assert availability["allowed_values"] is None and availability["seller_declared"] is False
+    dates = [f["id"] for f in body["fields"] if f["type"] == "date"]
+    assert dates == ["availability_date"]
+    # only a date serves date text; the others keep decimal strings or null
+    assert all(
+        f["min"] is None or f["type"] == "date" or "-" not in f["min"] for f in served.values()
+    )
+    deposit = served["security_deposit"]
+    assert (deposit["type"], deposit["min"], deposit["max"], deposit["currency"]) == (
+        "money",
+        "0",
+        "999999999999.99",
+        "PKR",
+    )
+    assert deposit["requirement"] == "recommended"
+    assert served["advance_rent"]["requirement"] == "optional"
+    assert (served["minimum_lease_months"]["min"], served["minimum_lease_months"]["max"]) == (
+        "1",
+        "120",
+    )
+    assert (served["notice_period_days"]["min"], served["notice_period_days"]["max"]) == (
+        "0",
+        "365",
+    )
+    rent_only = {"purposes": ["rent"], "categories": [], "subtypes": []}
+    for name in (
+        "security_deposit",
+        "availability_date",
+        "advance_rent",
+        "minimum_lease_months",
+        "notice_period_days",
+        "utility_electricity_included",
+        "utility_gas_included",
+        "utility_water_included",
+        "utility_internet_included",
+        "pets_allowed",
+        "occupant_restrictions",
+    ):
+        assert served[name]["applicability"] == rent_only, name
+    possession = served["possession_availability"]
+    assert possession["applicability"] == {"purposes": ["sale"], "categories": [], "subtypes": []}
+    assert possession["allowed_values"] == [
+        "available_now",
+        "within_one_month",
+        "within_three_months",
+        "after_three_months",
+    ]
+    assert possession["seller_declared"] is True and possession["ai_extractable"] is False
+    assert served["price_negotiable"]["applicability"] == {
+        "purposes": [],
+        "categories": [],
+        "subtypes": [],
+    }
+    assert served["occupant_restrictions"]["allowed_values"] == [
+        "no_restriction",
+        "families_only",
+        "bachelors_only",
+    ]
+    assert served["occupant_restrictions"]["seller_declared"] is False
+    assert served["rental_period"]["requirement"] == "required_for_publication"
+    assert served["rental_period"]["applicability"]["purposes"] == ["rent"]
+    assert not any(f["valuation_input"] for n, f in served.items() if n in TERMS_IDS)
+    assert not any(f["searchable"] or f["sortable"] for n, f in served.items() if n in TERMS_IDS)
+
+
+def test_the_etag_changes_with_a_date_bound_and_the_conditional_get_follows_it(monkeypatch):
+    first = Client().get(URL)
+    tag = first.headers["ETag"]
+    assert Client().get(URL, HTTP_IF_NONE_MATCH=tag).status_code == 304
+    assert Client().get(URL, HTTP_IF_NONE_MATCH='"5-abc-4"').status_code == 200
+    # a registry whose date window differs has another hash, hence another tag and a full 200
+    changed = registry.parse(registry.FIELDS_PATH.read_text().replace("2100-12-31", "2099-12-31"))
+    assert changed.content_hash != registry.content_hash()
+    monkeypatch.setattr(registry, "load", lambda: changed)
+    after = Client().get(URL)
+    assert after.headers["ETag"] != tag
+    assert any(f["max"] == "2099-12-31" for f in after.json()["fields"])
+    assert Client().get(URL, HTTP_IF_NONE_MATCH=tag).status_code == 200
+
+
+def test_the_section_marker_is_served_for_every_field():
+    served = {f["id"]: f for f in Client().get(URL).json()["fields"]}
+    terms = {
+        "price_negotiable",
+        "possession_availability",
+        "security_deposit",
+        "availability_date",
+        "advance_rent",
+        "minimum_lease_months",
+        "notice_period_days",
+        "utility_electricity_included",
+        "utility_gas_included",
+        "utility_water_included",
+        "utility_internet_included",
+        "pets_allowed",
+        "occupant_restrictions",
+        "rental_period",
+    }
+    assert {n for n, f in served.items() if f["section"] == "terms"} == terms
+    assert {f["section"] for f in served.values()} == {"details", "terms"}
+    assert served["asking_price"]["section"] == "details"
+    assert served["bedrooms"]["section"] == "details"

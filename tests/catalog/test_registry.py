@@ -10,7 +10,7 @@ import yaml
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.catalog import registry
-from tests.listings.support import DETAIL_IDS
+from tests.listings.support import TAIL_IDS, TERMS_IDS
 
 GOOD = yaml.safe_load(registry.FIELDS_PATH.read_text())
 
@@ -52,7 +52,7 @@ def add_field(**overrides):
 
 def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
     loaded = registry.load()
-    assert loaded.version == 5
+    assert loaded.version == 6
     assert [f.id for f in registry.fields()] == [
         "purpose",
         "category",
@@ -66,7 +66,7 @@ def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
         "area_unit",
         "marla_basis",
         "area_sqft",
-        *DETAIL_IDS,
+        *TAIL_IDS,
     ]
     assert registry.purposes() == ("sale", "rent")
     assert [c.id for c in registry.categories()] == ["house", "apartment", "plot", "commercial"]
@@ -131,7 +131,7 @@ def test_plot_file_is_a_distinct_subtype_of_plot():
 
 
 def test_accessors_return_immutable_values():
-    assert registry.registry_version() == 5
+    assert registry.registry_version() == 6
     assert registry.field("purpose").allowed_values == ("sale", "rent")
     assert registry.field("nope") is None
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -271,7 +271,7 @@ def test_startup_fails_on_an_invalid_file(monkeypatch, tmp_path):
     finally:
         monkeypatch.undo()
         registry.load.cache_clear()
-    assert registry.load().version == 5
+    assert registry.load().version == 6
 
 
 def test_catalog_ready_loads_the_registry(monkeypatch):
@@ -327,18 +327,19 @@ def test_lock_script_refuses_a_change_without_a_bump(monkeypatch, tmp_path, caps
     monkeypatch.setattr(registry, "LOCK_PATH", lock)
     with pytest.raises(SystemExit, match="bump"):
         script.main()
-    fields.write_text(text(lambda d: (add_field()(d), d.update(version=6))))
+    bumped = registry.registry_version() + 1
+    fields.write_text(text(lambda d: (add_field()(d), d.update(version=bumped))))
     script.main()
-    assert registry.read_lock(lock.read_text())[0] == 6
-    assert "version 6" in capsys.readouterr().out
+    assert registry.read_lock(lock.read_text())[0] == bumped
+    assert f"version {bumped}" in capsys.readouterr().out
 
 
 def test_the_files_are_found_from_any_working_directory(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     registry.load.cache_clear()
     try:
-        assert registry.load().version == 5
-        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 5
+        assert registry.load().version == 6
+        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 6
     finally:
         registry.load.cache_clear()
 
@@ -406,7 +407,8 @@ def test_lock_script_refuses_a_lower_version(monkeypatch, tmp_path):
     fields = tmp_path / "fields.yaml"
     fields.write_text(registry.FIELDS_PATH.read_text())
     lock = tmp_path / "fields.lock"
-    lock.write_text("version: 6\nsha256: " + "0" * 64 + "\n")
+    higher = registry.registry_version() + 1
+    lock.write_text(f"version: {higher}\nsha256: " + "0" * 64 + "\n")
     monkeypatch.setattr(registry, "FIELDS_PATH", fields)
     monkeypatch.setattr(registry, "LOCK_PATH", lock)
     with pytest.raises(SystemExit, match="lower"):
@@ -735,7 +737,7 @@ def test_a_boolean_field_takes_no_bounds_values_or_scale():
 
 
 def test_the_residential_fields_are_defined_by_the_registry():
-    assert registry.registry_version() == 5
+    assert registry.registry_version() == 6
     bedrooms = registry.field("bedrooms")
     assert bedrooms.requirement == "required_for_publication"
     assert bedrooms.searchable and bedrooms.valuation_input and bedrooms.ai_extractable
@@ -889,6 +891,7 @@ def test_the_seller_declared_fields_are_exactly_the_legal_and_possession_claims(
         "development_status",
         "approval_authority",
         "plot_file_status",
+        "possession_availability",  # Story 2.6: the seller's own claim about possession
     }
 
 
@@ -1004,3 +1007,195 @@ def test_error_code_is_a_decimal_property_defaulting_to_invalid_measure():
         "area_value",
         "covered_area_sqft",
     }
+
+
+# --- the date type and the version 6 terms (Story 2.6) -------------------------------------------
+
+
+def date_field(**overrides):
+    base = {"id": "move_in", "type": "date", "min": "2000-01-01", "max": "2100-12-31"}
+    base.update(overrides)
+    return add_field(**base)
+
+
+def test_a_date_field_carries_calendar_date_bounds():
+    import datetime
+
+    parsed = registry.parse(text(date_field())).fields[-1]
+    assert parsed.type == "date"
+    assert (parsed.minimum, parsed.maximum) == (
+        datetime.date(2000, 1, 1),
+        datetime.date(2100, 12, 31),
+    )
+    assert type(parsed.minimum) is datetime.date  # a date, never a timestamp or a Decimal
+    assert parsed.currency is None and parsed.scale is None and parsed.allowed_values is None
+    same_day = registry.parse(text(date_field(min="2027-03-01", max="2027-03-01"))).fields[-1]
+    assert same_day.minimum == same_day.maximum
+    leap = registry.parse(text(date_field(min="2028-02-29"))).fields[-1]
+    assert leap.minimum == datetime.date(2028, 2, 29)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"min": "2000-1-1"},
+        {"min": "20000101"},
+        {"min": "2000-01-01T00:00:00"},
+        {"min": " 2000-01-01"},
+        {"min": "2000-01-01\n"},
+        {"min": "٢٠٠٠-٠١-٠١"},
+        {"min": "2000/01/01"},
+        {"min": ""},
+        {"min": 2000},
+        {"min": 20000101},
+        {"min": None},
+        {"min": True},
+        {"max": "2100-12-3"},
+        {"max": "2100-12-31 "},
+        {"max": 2100},
+        {"max": None},
+    ],
+)
+def test_a_date_bound_must_be_plain_iso_text(overrides):
+    refused(date_field(**overrides), "must be a calendar date written YYYY-MM-DD")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"min": "2027-02-29"},
+        {"min": "2027-02-30"},
+        {"min": "2000-13-01"},
+        {"min": "2000-00-10"},
+        {"min": "0000-01-01"},
+        {"max": "2100-04-31"},
+    ],
+)
+def test_a_date_bound_must_be_a_real_calendar_date(overrides):
+    refused(date_field(**overrides), "must be a real calendar date")
+
+
+def test_a_date_window_is_ordered_and_needs_both_bounds():
+    refused(date_field(min="2100-12-31", max="2000-01-01"), "min is above max")
+    for key in ("min", "max"):
+
+        def drop(data, key=key):
+            date_field()(data)
+            data["fields"][-1].pop(key)
+
+        refused(drop, "a date field needs min and max")
+
+
+def test_a_date_field_takes_no_currency_scale_values_or_lengths():
+    refused(date_field(currency="PKR"), "a date field has no currency")
+    refused(date_field(scale=2), "only a decimal field has scale")
+    refused(date_field(allowed_values=["a"]), "only an enum has allowed values")
+    refused(date_field(error_code="invalid_measure"), "only a decimal field has error_code")
+
+    def with_length(data):
+        date_field()(data)
+        data["fields"][-1]["max_length"] = 5
+
+    refused(with_length, "only a text field has min_length or max_length")
+
+
+def test_only_a_date_may_carry_date_text_in_its_bounds():
+    refused(
+        add_field(id="amount", type="money", min="2000-01-01", max="2100-12-31", currency="PKR")
+    )
+    refused(add_field(id="rooms", type="integer", min="2000-01-01", max="2100-12-31"))
+    refused(add_field(id="width", type="decimal", min="2000-01-01", max="2100-12-31", scale=2))
+    refused(add_field(id="flag", type="boolean", min="2000-01-01"), "only a money field")
+    refused(add_field(type="text", min="2000-01-01"), "only a money field")
+
+
+def test_a_date_field_is_served_with_iso_text_bounds_and_the_loader_hash_changes():
+    parsed = registry.parse(text(date_field()))
+    assert parsed.content_hash != registry.parse(text()).content_hash
+    assert "date" in registry.FIELD_TYPES
+
+
+def test_a_private_date_field_is_allowed_but_cannot_be_searchable():
+    assert (
+        registry.parse(text(date_field(**{"class": "private"}))).fields[-1].field_class == "private"
+    )
+    refused(date_field(**{"class": "private", "searchable": True}), "private field")
+
+
+def test_version_6_adds_the_terms_after_every_details_field():
+    assert registry.registry_version() == 6
+    ids = [f.id for f in registry.fields()]
+    assert ids[-len(TAIL_IDS) :] == list(TAIL_IDS)
+    assert registry.field("availability_date").type == "date"
+    assert [f.id for f in registry.fields() if f.type == "date"] == ["availability_date"]
+
+
+def test_the_terms_applicability_is_by_purpose_only():
+    for name in TERMS_IDS:
+        scope = registry.field(name).applicability
+        assert scope.categories == () and scope.subtypes == (), name
+    assert registry.field("price_negotiable").applicability.purposes == ()
+    assert registry.field("possession_availability").applicability.purposes == ("sale",)
+    assert registry.field("possession_availability").applies_to("sale", "house", "house")
+    assert not registry.field("possession_availability").applies_to("rent", "house", "house")
+    assert registry.field("security_deposit").applies_to("rent", "plot", "plot_file")
+    assert not registry.field("security_deposit").applies_to("sale", "plot", "plot_file")
+    assert registry.field("rental_period").applicability.purposes == ("rent",)
+
+
+def test_the_unsupported_terms_are_not_in_the_registry():
+    for name in (
+        "payment_type",
+        "down_payment",
+        "total_installment_price",
+        "monthly_installment",
+        "remaining_installments",
+        "ownership_document_type",
+        "title_document_type",
+        "approval_information",
+        "installment_available",
+    ):
+        assert registry.field(name) is None
+
+
+def test_a_date_bound_change_changes_the_loader_hash():
+    base = registry.parse(text(date_field())).content_hash
+    assert registry.parse(text(date_field(max="2100-12-30"))).content_hash != base
+    assert registry.parse(text(date_field(min="2000-01-02"))).content_hash != base
+    assert registry.parse(text(date_field())).content_hash == base
+
+
+def test_an_unquoted_yaml_date_asks_for_quotes():
+    for key in ("min", "max"):
+        raw = yaml.safe_dump(
+            {**GOOD, "fields": [*GOOD["fields"], _unquoted(**{key: "2027-03-01"})]}
+        ).replace("'2027-03-01'", "2027-03-01")
+        with pytest.raises(ImproperlyConfigured, match="quote the date"):
+            registry.parse(raw)
+
+
+def _unquoted(**overrides):
+    return {
+        "id": "move_in",
+        "type": "date",
+        "min": "2000-01-01",
+        "max": "2100-12-31",
+        "requirement": "optional",
+        "applicability": {"purposes": [], "categories": [], "subtypes": []},
+        "class": "public",
+        **overrides,
+    }
+
+
+def test_section_is_terms_or_details_and_defaults_to_details():
+    assert registry.parse(text(add_field())).fields[-1].section == "details"
+    assert registry.parse(text(add_field(section="details"))).fields[-1].section == "details"
+    assert registry.parse(text(add_field(section="terms"))).fields[-1].section == "terms"
+    for bad in ("Terms", "price", "", None, 1, True, ["terms"]):
+        refused(add_field(section=bad), "section must be one of details, terms")
+
+
+def test_the_shipped_terms_fields_are_in_the_terms_section():
+    terms = {f.id for f in registry.fields() if f.section == "terms"}
+    assert terms == {*TERMS_IDS, "rental_period"}
+    assert registry.field("asking_price").section == "details"

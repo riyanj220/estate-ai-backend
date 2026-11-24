@@ -897,7 +897,7 @@ def test_another_owner_gets_not_found_and_no_row():
     assert caught.value.code == "not_found" and no_rows()
 
 
-def test_a_draft_from_an_older_registry_is_revalidated_under_version_5():
+def test_a_draft_from_an_older_registry_is_revalidated_under_version_6():
     account, view = draft(PLOT_FILE)
     PropertyListing.objects.update(registry_version=4)
     assert codes(account, view, {"possession_status": "possession_ready"}) == {
@@ -905,8 +905,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_under_version_5():
     }
     assert PropertyListing.objects.get().registry_version == 4
     saved = update(account, view, {"possession_status": "file_only"})
-    assert saved.registry_version == registry.registry_version() == 5
-    assert PropertyListing.objects.get().registry_version == 5
+    assert saved.registry_version == registry.registry_version() == 6
+    assert PropertyListing.objects.get().registry_version == 6
 
 
 def drop_constraint(table, name):
@@ -1208,4 +1208,8 @@ def test_storage_follows_the_single_map():
 
 
 def test_seller_declared_fields_are_flagged_in_the_registry_and_nowhere_else():
-    assert {f.id for f in registry.fields() if f.seller_declared} == SELLER_DECLARED
+    # `possession_availability` (a sale term, Story 2.6) is the one claim outside these tables
+    assert {f.id for f in registry.fields() if f.seller_declared} == {
+        *SELLER_DECLARED,
+        "possession_availability",
+    }

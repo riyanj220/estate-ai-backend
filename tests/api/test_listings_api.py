@@ -22,7 +22,16 @@ from apps.listings.models import (
     ListingTerms,
     PropertyListing,
 )
-from tests.listings.support import DETAIL_IDS, PASSWORD, SYSTEM, make_account, seed_cap
+from tests.listings.support import (
+    DETAIL_IDS,
+    PASSWORD,
+    RENT_TERMS,
+    SYSTEM,
+    TAIL_IDS,
+    TERMS_IDS,
+    make_account,
+    seed_cap,
+)
 
 CREATE = "/api/v1/listings"
 MINE = "/api/v1/me/listings"
@@ -51,7 +60,7 @@ NEW_FIELDS = {
     "area_unit": None,
     "marla_basis": None,
     "area_sqft": None,
-    **dict.fromkeys(DETAIL_IDS),
+    **dict.fromkeys(TAIL_IDS),
 }
 
 
@@ -107,7 +116,7 @@ def test_create_returns_the_wire_shape(kind):
     body = response.json()
     assert set(body) == WIRE_KEYS
     assert body["status"] == "draft" and body["visibility"] == "private"
-    assert (body["revision"], body["registry_version"]) == (1, 5)
+    assert (body["revision"], body["registry_version"]) == (1, 6)
     assert body["fields"] == {**BODY, **NEW_FIELDS} and body["provenance"] == {}
     assert body["media"] == [] and body["amenities"] == []
     uuid.UUID(body["id"])
@@ -370,7 +379,7 @@ def test_listing_resource_is_exactly_the_wire_shape():
         "area_value",
         "area_unit",
         "marla_basis",
-        *DETAIL_IDS,
+        *TAIL_IDS,
         "area_sqft",
     ]
 
@@ -526,10 +535,10 @@ def test_rent_terms_and_the_purpose_rules():
 @pytest.mark.parametrize(
     ("value", "message"),
     [
-        ("0", "Enter an amount above zero with at most two decimals."),
-        ("-5", "Enter an amount above zero with at most two decimals."),
-        ("1.234", "Enter an amount above zero with at most two decimals."),
-        ("1000000000000", "Enter an amount above zero with at most two decimals."),
+        ("0", "Enter an amount within the allowed range with at most two decimals."),
+        ("-5", "Enter an amount within the allowed range with at most two decimals."),
+        ("1.234", "Enter an amount within the allowed range with at most two decimals."),
+        ("1000000000000", "Enter an amount within the allowed range with at most two decimals."),
         ("12abc", "Enter a valid value."),
     ],
 )
@@ -844,7 +853,7 @@ def test_openapi_describes_the_patch_route_and_the_409_with_current(tmp_path):
         "area_value",
         "area_unit",
         "marla_basis",
-        *DETAIL_IDS,
+        *TAIL_IDS,
     }
     fields = schemas["ListingFields"]["properties"]
     assert set(fields) == {"purpose", "category", "subtype", *NEW_FIELDS}
@@ -1089,7 +1098,7 @@ def test_house_details_over_http_use_native_json_types_and_stay_null_when_unknow
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["revision"] == 2 and body["registry_version"] == 5
+    assert body["revision"] == 2 and body["registry_version"] == 6
     assert body["fields"]["bedrooms"] == 4 and type(body["fields"]["bedrooms"]) is int
     assert body["fields"]["basement"] is False
     assert body["fields"]["covered_area_sqft"] == "2400.0000"
@@ -1241,7 +1250,7 @@ def test_plot_details_over_http_use_native_types_and_decimal_strings():
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["revision"] == 2 and body["registry_version"] == 5
+    assert body["revision"] == 2 and body["registry_version"] == 6
     assert body["fields"]["plot_width"] == "35.00" and body["fields"]["plot_depth"] == "70.50"
     assert body["fields"]["road_width_ft"] == "40.00"
     assert body["fields"]["corner_plot"] is True and body["fields"]["water"] is False
@@ -1438,7 +1447,7 @@ def test_openapi_describes_the_plot_and_commercial_fields(tmp_path):
     schemas = document["components"]["schemas"]
     for schema in ("ListingFields", "ListingFieldsUpdateRequest"):
         props = schemas[schema]["properties"]
-        for name in DETAIL_IDS:
+        for name in TAIL_IDS:
             assert name in props, (schema, name)
         assert props["plot_width"]["type"] == "string" and props["plot_width"]["nullable"] is True
         assert "never a JSON number" in props["plot_width"]["description"]
@@ -1456,3 +1465,231 @@ def test_openapi_describes_the_plot_and_commercial_fields(tmp_path):
     registry_schema = schemas["RegistryField"]["properties"]
     assert "seller_declared" in registry_schema and "allowed_values_by_subtype" in registry_schema
     assert "invalid_measure" in update
+
+
+# --- Sale and rent terms (Story 2.6) -------------------------------------------------------------
+
+SALE_BODY = {"purpose": "sale", "category": "apartment", "subtype": "apartment"}
+RENT_BODY = {"purpose": "rent", "category": "apartment", "subtype": "apartment"}
+RENT_TERMS_SAVE = {
+    "asking_price": "25000",
+    "price_basis": "rental_period",
+    "rental_period": "month",
+    "security_deposit": "50000",
+    "availability_date": "2027-03-01",
+    "advance_rent": "25000.50",
+    "minimum_lease_months": 12,
+    "notice_period_days": 30,
+    "utility_electricity_included": False,
+    "utility_gas_included": True,
+    "pets_allowed": False,
+    "occupant_restrictions": "families_only",
+    "price_negotiable": True,
+}
+
+
+def test_rent_terms_over_http_use_native_types_and_a_plain_date():
+    client = signed_in()
+    created = draft(client, RENT_BODY)
+    assert all(created["fields"][name] is None for name in TERMS_IDS)
+    response = edit(client, created, RENT_TERMS_SAVE)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2 and body["registry_version"] == 6
+    wire = body["fields"]
+    assert wire["availability_date"] == "2027-03-01"  # a date, never a timestamp
+    assert wire["security_deposit"] == "50000.00" and wire["advance_rent"] == "25000.50"
+    assert wire["minimum_lease_months"] == 12 and wire["notice_period_days"] == 30
+    assert wire["pets_allowed"] is False and wire["utility_electricity_included"] is False
+    assert wire["utility_gas_included"] is True and wire["utility_water_included"] is None
+    assert wire["occupant_restrictions"] == "families_only" and wire["price_negotiable"] is True
+    assert wire["possession_availability"] is None
+    assert set(body["provenance"]) == set(RENT_TERMS_SAVE)
+    assert client.get(detail(created["id"])).json() == body
+    assert client.get(MINE).json()["results"][0] == body
+    assert list(wire) == list(created["fields"])  # the wire order never depends on what is set
+    assert ListingTerms.objects.count() == 1 and not detail_rows()
+
+
+def test_sale_terms_over_http_and_the_rent_terms_stay_null():
+    client = signed_in()
+    created = draft(client, SALE_BODY)
+    saved = edit(
+        client,
+        created,
+        {"price_negotiable": False, "possession_availability": "within_three_months"},
+    ).json()
+    assert saved["fields"]["price_negotiable"] is False
+    assert saved["fields"]["possession_availability"] == "within_three_months"
+    assert all(saved["fields"][name] is None for name in RENT_TERMS)
+    assert ListingTerms.objects.get().possession_availability == "within_three_months"
+
+
+def test_the_terms_come_after_the_details_in_the_json_and_the_area_stays_last():
+    client = signed_in()
+    names = list(draft(client, RENT_BODY)["fields"])
+    assert names[-len(TAIL_IDS) - 1 : -1] == list(TAIL_IDS) and names[-1] == "area_sqft"
+
+
+@pytest.mark.parametrize(
+    ("body", "fields", "expected"),
+    [
+        (RENT_BODY, {"security_deposit": "-1"}, "invalid_price"),
+        (RENT_BODY, {"security_deposit": "1.234"}, "invalid_price"),
+        (RENT_BODY, {"advance_rent": "1000000000000"}, "invalid_price"),
+        (RENT_BODY, {"advance_rent": "letters"}, "invalid"),
+        (RENT_BODY, {"advance_rent": 1.5}, "invalid"),
+        (RENT_BODY, {"availability_date": "2027-02-30"}, "invalid"),
+        (RENT_BODY, {"availability_date": "2027-3-1"}, "invalid"),
+        (RENT_BODY, {"availability_date": "2027-03-01T00:00:00"}, "invalid"),
+        (RENT_BODY, {"availability_date": "2027-03-01T00:00:00+05:00"}, "invalid"),
+        (RENT_BODY, {"availability_date": 20270301}, "invalid"),
+        (RENT_BODY, {"availability_date": 1.5}, "invalid"),
+        (RENT_BODY, {"availability_date": "٢٠٢٧-٠٣-٠١"}, "invalid"),
+        (RENT_BODY, {"availability_date": ["2027-03-01"]}, "invalid"),
+        (RENT_BODY, {"availability_date": "1999-12-31"}, "invalid_date"),
+        (RENT_BODY, {"availability_date": "2101-01-01"}, "invalid_date"),
+        (RENT_BODY, {"minimum_lease_months": 0}, "invalid_range"),
+        (RENT_BODY, {"minimum_lease_months": 121}, "invalid_range"),
+        (RENT_BODY, {"notice_period_days": -1}, "invalid_range"),
+        (RENT_BODY, {"notice_period_days": 366}, "invalid_range"),
+        (RENT_BODY, {"minimum_lease_months": "12"}, "invalid"),
+        (RENT_BODY, {"notice_period_days": 12.0}, "invalid"),
+        (RENT_BODY, {"pets_allowed": "yes"}, "invalid"),
+        (RENT_BODY, {"utility_water_included": 1}, "invalid"),
+        (RENT_BODY, {"occupant_restrictions": "any"}, "invalid_choice"),
+        (SALE_BODY, {"possession_availability": "tomorrow"}, "invalid_choice"),
+        (SALE_BODY, {"price_negotiable": "yes"}, "invalid"),
+        (SALE_BODY, {"security_deposit": "10"}, "not_applicable"),
+        (SALE_BODY, {"availability_date": "2027-03-01"}, "not_applicable"),
+        (SALE_BODY, {"pets_allowed": True}, "not_applicable"),
+        (SALE_BODY, {"minimum_lease_months": 6}, "not_applicable"),
+        (RENT_BODY, {"possession_availability": "available_now"}, "not_applicable"),
+    ],
+)
+def test_terms_error_codes_over_http(body, fields, expected):
+    client = signed_in()
+    created = draft(client, body)
+    response = edit(client, created, fields)
+    assert (response.status_code, code(response)) == (400, "validation_error")
+    name = next(iter(fields))
+    assert field_codes(response) == {name: [field_message(expected)]}
+    sent = fields[name]
+    if isinstance(sent, str) and len(sent) >= 3:
+        assert sent not in body_text(response)  # the value is never echoed, anywhere in the body
+    stored = ListingTerms.objects.get()
+    assert getattr(stored, name) is None and client.get(detail(created["id"])).json() == created
+
+
+def test_the_terms_messages_are_catalogue_texts_without_the_value():
+    client = signed_in()
+    created = draft(client, RENT_BODY)
+    response = edit(
+        client, created, {"availability_date": "2101-01-01", "security_deposit": "-7.5"}
+    )
+    assert field_codes(response) == {
+        "availability_date": ["Enter a date within the allowed range."],
+        "security_deposit": ["Enter an amount within the allowed range with at most two decimals."],
+    }
+    assert "2101" not in body_text(response) and "7.5" not in body_text(response)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "payment_type",
+        "down_payment",
+        "total_installment_price",
+        "monthly_installment",
+        "remaining_installments",
+        "ownership_document_type",
+        "title_document_type",
+        "approval_information",
+        "installment_available",
+    ],
+)
+@pytest.mark.parametrize("body", [SALE_BODY, RENT_BODY])
+def test_deferred_terms_are_unknown_fields_over_http(name, body):
+    client = signed_in()
+    created = draft(client, body)
+    response = edit(client, created, {name: "secretword", "price_negotiable": True})
+    assert (response.status_code, code(response)) == (400, "validation_error")
+    assert field_codes(response) == {"non_field_errors": [field_message("unknown_field")]}
+    assert "secretword" not in body_text(response) and name not in body_text(response)
+    assert ListingTerms.objects.get().price_negotiable is None
+    assert client.get(detail(created["id"])).json()["revision"] == 1
+
+
+def test_a_null_on_a_not_applicable_term_is_a_no_op_and_a_clear_removes_provenance():
+    client = signed_in()
+    sale = draft(client, SALE_BODY)
+    response = edit(client, sale, {"security_deposit": None, "availability_date": None})
+    assert response.status_code == 200 and response.json() == sale
+    assert ListingRevision.objects.count() == 1
+    rent = draft(client, RENT_BODY)
+    saved = edit(client, rent, {"security_deposit": "5", "availability_date": "2027-03-01"}).json()
+    cleared = edit(client, saved, {"availability_date": None}).json()
+    assert cleared["revision"] == 3 and cleared["fields"]["availability_date"] is None
+    assert "availability_date" not in cleared["provenance"]
+    assert cleared["fields"]["security_deposit"] == "5.00"
+    assert ListingTerms.objects.get(listing_id=rent["id"]).availability_date is None
+
+
+def test_a_rent_draft_without_a_period_saves_and_serves_a_null_period():
+    client = signed_in()
+    created = draft(client, RENT_BODY)
+    saved = edit(client, created, {"price_basis": "rental_period"}).json()
+    assert saved["fields"]["price_basis"] == "rental_period"
+    assert saved["fields"]["rental_period"] is None
+    assert client.get(detail(created["id"])).json()["fields"]["rental_period"] is None
+    served = {f["id"]: f for f in Client().get("/api/v1/registry").json()["fields"]}
+    assert served["rental_period"]["requirement"] == "required_for_publication"
+    assert served["rental_period"]["applicability"]["purposes"] == ["rent"]
+
+
+def test_a_stale_terms_edit_is_409_with_the_current_terms_and_a_replay_is_too():
+    client = signed_in()
+    created = draft(client, RENT_BODY)
+    saved = edit(client, created, {"availability_date": "2027-03-01", "pets_allowed": True}).json()
+    for _ in range(2):
+        stale = edit(client, created, {"availability_date": "2027-04-01"})
+        assert (stale.status_code, code(stale)) == (409, "stale_revision")
+        assert stale.json()["current"] == saved
+    assert stale.json()["current"]["fields"]["availability_date"] == "2027-03-01"
+    assert ListingTerms.objects.get().availability_date.isoformat() == "2027-03-01"
+
+
+def test_another_owner_cannot_edit_terms():
+    owner = signed_in()
+    created = draft(owner, RENT_BODY)
+    other = signed_in("john.roe@example.com")
+    response = edit(other, created, {"security_deposit": "5"})
+    assert (response.status_code, code(response)) == (404, "not_found")
+    assert ListingTerms.objects.get().security_deposit is None
+
+
+def test_openapi_describes_the_date_and_the_terms(tmp_path):
+    target = tmp_path / "openapi.yaml"
+    call_command("spectacular", "--validate", "--file", str(target))
+    document = yaml.safe_load(target.read_text())
+    schemas = document["components"]["schemas"]
+    for schema in ("ListingFields", "ListingFieldsUpdateRequest"):
+        props = schemas[schema]["properties"]
+        for name in TERMS_IDS:
+            assert name in props, (schema, name)
+        date = props["availability_date"]
+        assert date["type"] == "string" and date["format"] == "date" and date["nullable"] is True
+        assert "YYYY-MM-DD" in date["description"] and "never a timestamp" in date["description"]
+        assert props["security_deposit"]["type"] == "string"
+        assert (
+            props["minimum_lease_months"]["minimum"],
+            props["minimum_lease_months"]["maximum"],
+        ) == (1, 120)
+        assert props["pets_allowed"]["type"] == "boolean"
+        assert "Seller-declared" in props["possession_availability"]["description"]
+        assert "Seller-declared" not in props["occupant_restrictions"].get("description", "")
+    update = document["paths"]["/api/v1/listings/{listing_id}"]["patch"]["description"]
+    assert "invalid_date" in update and "availability_date" in update
+    assert "installment" in update and "unknown_field" in update
+    assert schemas["TypeEnum"]["enum"] == list(registry.FIELD_TYPES)
+    assert "date" in schemas["TypeEnum"]["enum"]

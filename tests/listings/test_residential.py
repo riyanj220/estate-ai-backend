@@ -774,14 +774,14 @@ def test_another_owner_gets_not_found_and_no_row():
     assert caught.value.code == "not_found" and ListingResidential.objects.count() == 0
 
 
-def test_a_draft_from_an_older_registry_is_revalidated_under_version_5():
+def test_a_draft_from_an_older_registry_is_revalidated_under_version_6():
     account, view = draft()
     PropertyListing.objects.update(registry_version=3)
     assert codes(account, view, {"bedrooms": 51}) == {"bedrooms": "invalid_range"}
     assert PropertyListing.objects.get().registry_version == 3
     saved = update(account, view, {"bedrooms": 4})
-    assert saved.registry_version == registry.registry_version() == 5
-    assert PropertyListing.objects.get().registry_version == 5
+    assert saved.registry_version == registry.registry_version() == 6
+    assert PropertyListing.objects.get().registry_version == 6
 
 
 def test_a_changed_registry_bound_is_judged_on_the_next_save(monkeypatch):

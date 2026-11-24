@@ -517,8 +517,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_and_advanced():
     assert codes(account, view, {"title": "short"}) == {"title": "too_short"}
     assert PropertyListing.objects.get().registry_version == 1  # a failed edit changes nothing
     saved = update(account, view, {"title": TITLE})
-    assert saved.registry_version == registry.registry_version() == 5
-    assert PropertyListing.objects.get().registry_version == 5
+    assert saved.registry_version == registry.registry_version() == 6
+    assert PropertyListing.objects.get().registry_version == 6
 
 
 def test_a_registry_change_does_not_alter_a_listing_nobody_edits():

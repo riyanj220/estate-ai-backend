@@ -123,3 +123,27 @@ COMMERCIAL_PLOT = ("sale", "plot", "commercial_plot")
 PLOT_FILE = ("sale", "plot", "plot_file")
 SHOP = ("rent", "commercial", "shop")
 OFFICE = ("rent", "commercial", "office")
+
+# Story 2.6: the sale and rent terms, in registry order, written out independently of the registry.
+BOTH_TERMS = ("price_negotiable",)
+SALE_TERMS = ("possession_availability",)
+RENT_TERMS = (
+    "security_deposit",
+    "availability_date",
+    "advance_rent",
+    "minimum_lease_months",
+    "notice_period_days",
+    "utility_electricity_included",
+    "utility_gas_included",
+    "utility_water_included",
+    "utility_internet_included",
+    "pets_allowed",
+    "occupant_restrictions",
+)
+TERMS_IDS = (*BOTH_TERMS, *SALE_TERMS, *RENT_TERMS)  # the new terms columns, registry order
+# Story 2.6 appends the terms after every details field, so the registry, the storage map and the
+# wire all end with this run (the derived `area_sqft` stays last on the wire).
+TAIL_IDS = (*DETAIL_IDS, *TERMS_IDS)
+
+SALE_HOUSE = HOUSE  # a sale Draft
+RENT_HOUSE = ("rent", "house", "house")

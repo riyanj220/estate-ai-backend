@@ -1,8 +1,9 @@
 """The single map of editable fields (`listings.fields`) against the registry and storage."""
 
+import datetime
 from decimal import Decimal
 
-from django.db import models
+from django.db import connection, models
 
 from apps.catalog import registry
 from apps.listings import fields, selectors
@@ -17,9 +18,9 @@ from apps.listings.models import (
 from apps.listings.validation import EDITABLE_FIELDS as VALIDATED
 from tests.listings.support import (
     COMMERCIAL_FIELDS,
-    DETAIL_IDS,
     PLOT_FIELDS,
     RESIDENTIAL_IDS,
+    TAIL_IDS,
     UNIT_IDS,
 )
 
@@ -91,7 +92,7 @@ def test_derived_fields_are_the_registrys_derived_fields_and_never_editable():
         assert definition.requirement == "optional"
     assert fields.WIRE_FIELDS[-1] == "area_sqft"
     assert fields.WIRE_FIELDS.index("rental_period") + 1 == fields.WIRE_FIELDS.index("area_value")
-    assert fields.WIRE_FIELDS[-1 - len(DETAIL_IDS) : -1] == DETAIL_IDS
+    assert fields.WIRE_FIELDS[-1 - len(TAIL_IDS) : -1] == TAIL_IDS
 
 
 def test_the_unit_plot_and_commercial_fields_are_the_registrys_details_in_registry_order():
@@ -99,8 +100,8 @@ def test_the_unit_plot_and_commercial_fields_are_the_registrys_details_in_regist
     assert fields.PLOT_FIELDS == PLOT_FIELDS
     assert fields.COMMERCIAL_FIELDS == COMMERCIAL_FIELDS
     registry_ids = [f.id for f in registry.fields()]
-    assert registry_ids[-len(DETAIL_IDS) :] == list(DETAIL_IDS)
-    assert tuple(fields.STORAGE)[-len(DETAIL_IDS) :] == DETAIL_IDS
+    assert registry_ids[-len(TAIL_IDS) :] == list(TAIL_IDS)
+    assert tuple(fields.STORAGE)[-len(TAIL_IDS) :] == TAIL_IDS
     assert UNIT_IDS[: len(RESIDENTIAL_IDS)] == RESIDENTIAL_IDS
     tables = {
         fields.RESIDENTIAL: (ListingResidential, UNIT_IDS),
@@ -118,7 +119,7 @@ def test_the_unit_plot_and_commercial_fields_are_the_registrys_details_in_regist
             assert registry.field(name).ai_extractable is not claim, name
 
 
-def test_every_decimal_and_money_field_fits_its_column():
+def test_every_decimal_money_integer_and_date_field_fits_its_column():
     tables = {
         fields.LISTING: PropertyListing,
         fields.TERMS: ListingTerms,
@@ -127,15 +128,33 @@ def test_every_decimal_and_money_field_fits_its_column():
         fields.PLOT: ListingPlot,
         fields.COMMERCIAL: ListingCommercial,
     }
-    checked = 0
+    checked = dict.fromkeys(("decimal", "money", "integer", "date"), 0)
     for definition in registry.fields():
-        if definition.type not in ("decimal", "money") or definition.id in fields.IDENTITY_FIELDS:
+        if definition.type not in checked or definition.id in fields.IDENTITY_FIELDS:
             continue
         table = {**fields.STORAGE, **fields.DERIVED}[definition.id]
         column = tables[table]._meta.get_field(definition.id)
-        scale = definition.scale if definition.type == "decimal" else registry.MONEY_DECIMALS
-        assert scale <= column.decimal_places, f"{definition.id}: scale {scale} exceeds its column"
-        ceiling = Decimal(10) ** (column.max_digits - column.decimal_places)
-        assert definition.maximum < ceiling, f"{definition.id}: max does not fit its column"
-        checked += 1
-    assert checked >= 11
+        name = definition.id
+        if definition.type in ("decimal", "money"):
+            assert isinstance(column, models.DecimalField), name
+            scale = definition.scale if definition.type == "decimal" else registry.MONEY_DECIMALS
+            assert scale <= column.decimal_places, f"{name}: scale {scale} exceeds its column"
+            ceiling = Decimal(10) ** (column.max_digits - column.decimal_places)
+            assert definition.maximum < ceiling, f"{name}: max does not fit its column"
+            assert definition.minimum > -ceiling, f"{name}: min does not fit its column"
+        elif definition.type == "integer":
+            assert isinstance(column, models.IntegerField | models.SmallIntegerField), name
+            low, high = connection.ops.integer_field_range(column.get_internal_type())
+            assert low <= definition.minimum <= definition.maximum <= high, (
+                f"{name}: its bounds do not fit the {column.get_internal_type()} column"
+            )
+        else:
+            assert type(column) is models.DateField, (
+                f"{name}: a date is a SQL DATE, never a datetime"
+            )
+            for bound in (definition.minimum, definition.maximum):
+                assert type(bound) is datetime.date, name  # not a datetime, not a Decimal
+                assert datetime.date.min <= bound <= datetime.date.max
+        checked[definition.type] += 1
+    assert checked["decimal"] + checked["money"] >= 11
+    assert checked["integer"] >= 20 and checked["date"] == 1
