@@ -40,7 +40,16 @@ _MONEY_KEYS = {"min", "max", "currency"}
 _DECIMAL_KEYS = {"min", "max", "scale"}
 _FIELD_KEYS = (
     _REQUIRED_FIELD_KEYS
-    | {"allowed_values", "allowed_values_by_purpose", "derived", "description", *FLAGS}
+    | {
+        "allowed_values",
+        "allowed_values_by_purpose",
+        "allowed_values_by_subtype",
+        "derived",
+        "description",
+        "seller_declared",
+        "error_code",
+        *FLAGS,
+    }
     | _TEXT_KEYS
     | _MONEY_KEYS
     | _DECIMAL_KEYS
@@ -94,17 +103,33 @@ class FieldDef:
     currency: str | None = None
     # enum narrowed by Listing purpose: ((purpose, (value, ...)), ...); None means no narrowing
     allowed_values_by_purpose: tuple[tuple[str, tuple[str, ...]], ...] | None = None
+    # enum narrowed by Listing Subtype: ((subtype, (value, ...)), ...), one entry per Subtype the
+    # field applies to; None means no narrowing
+    allowed_values_by_subtype: tuple[tuple[str, tuple[str, ...]], ...] | None = None
+    # a claim the owner makes (legal, approval, possession): shown as "Seller-declared" and never
+    # as a platform-verified fact
+    seller_declared: bool = False
+    # decimal: the code for a well-formed value outside its rules (`invalid_measure` unless the
+    # registry says `invalid_area`)
+    error_code: str = "invalid_measure"
     # decimal: inclusive bounds (`minimum`, `maximum`) and the number of decimals stored
     scale: int | None = None
     # derived: computed by the service from other fields; never accepted as input
     derived: bool = False
     description: str | None = None
 
-    def values_for(self, purpose: str | None) -> tuple[str, ...] | None:
-        """The enum values allowed for a Listing of this purpose (all of them without a map)."""
+    def values_for(self, purpose: str | None, subtype: str | None = None) -> tuple[str, ...] | None:
+        """The enum values allowed for a Listing of this purpose and Subtype (all of them without
+        a map; both maps narrow together; with a Subtype map and no Subtype nothing is allowed)."""
+        values = self.allowed_values
         if self.allowed_values_by_purpose is not None:
-            return dict(self.allowed_values_by_purpose).get(purpose, ())
-        return self.allowed_values
+            values = dict(self.allowed_values_by_purpose).get(purpose, ())
+        if self.allowed_values_by_subtype is not None:
+            if subtype is None:
+                return ()  # a Subtype map needs the Subtype: nothing is allowed without it
+            narrowed = dict(self.allowed_values_by_subtype).get(subtype, ())
+            values = tuple(v for v in narrowed if values is None or v in values)
+        return values
 
     def applies_to(self, purpose: str, category: str, subtype: str) -> bool:
         """Whether the field applies to a Listing with this purpose, Category and Subtype."""
@@ -231,6 +256,30 @@ def _by_purpose(entry: dict, values, purposes) -> tuple | None:
     return tuple(pairs)
 
 
+def _by_subtype(entry: dict, values, applicable: tuple[str, ...], by_purpose) -> tuple | None:
+    if "allowed_values_by_subtype" not in entry:
+        return None
+    if entry["type"] != "enum":
+        _fail("only an enum has allowed_values_by_subtype")
+    raw = entry["allowed_values_by_subtype"]
+    if not isinstance(raw, dict) or set(raw) != set(applicable):
+        _fail(
+            "allowed_values_by_subtype must list every subtype the field applies to, and only those"
+        )
+    pairs = []
+    for subtype in applicable:
+        subset = _id_list(raw[subtype], "allowed_values_by_subtype", _VALUE_OR_NUMBER)
+        if not subset or set(subset) - set(values):
+            _fail("allowed_values_by_subtype must be a non-empty subset of allowed_values")
+        for _, by_purpose_subset in by_purpose or ():
+            if not set(subset) & set(by_purpose_subset):
+                _fail("allowed_values_by_subtype shares no value with allowed_values_by_purpose")
+        pairs.append((subtype, subset))
+    if set(values) - {v for _, subset in pairs for v in subset}:
+        _fail("allowed_values_by_subtype leaves an allowed value that no subtype offers")
+    return tuple(pairs)
+
+
 def _int_bound(entry: dict, key: str, low: int, high: int) -> int | None:
     if key not in entry:
         return None
@@ -298,11 +347,18 @@ def _decimal_amount(entry: dict, key: str, scale: int) -> Decimal:
     return Decimal(value)
 
 
+ERROR_CODES = ("invalid_measure", "invalid_area")
+
+
 def _decimal_rules(entry: dict) -> dict:
     if entry["type"] != "decimal":
         if "scale" in entry:
             _fail("only a decimal field has scale")
+        if "error_code" in entry:
+            _fail("only a decimal field has error_code")
         return {}
+    if entry.get("error_code", "invalid_measure") not in ERROR_CODES:
+        _fail(f"error_code must be one of {', '.join(ERROR_CODES)}")
     if "currency" in entry:
         _fail("a decimal field has no currency")
     if _DECIMAL_KEYS - set(entry):
@@ -313,7 +369,8 @@ def _decimal_rules(entry: dict) -> dict:
     minimum, maximum = _decimal_amount(entry, "min", scale), _decimal_amount(entry, "max", scale)
     if minimum > maximum:
         _fail("min is above max")
-    return {"minimum": minimum, "maximum": maximum, "scale": scale}
+    code = entry.get("error_code", "invalid_measure")
+    return {"minimum": minimum, "maximum": maximum, "scale": scale, "error_code": code}
 
 
 def _check_numeric_enum(values: tuple[str, ...]) -> None:
@@ -349,9 +406,9 @@ def _field(entry, purposes, categories) -> FieldDef:
         if set(values) - allowed[key]:
             _fail(f"applicability {key} names a value outside the taxonomy")
         applicability[key] = values
-    by_subtype = {s: c.id for c in categories for s in c.subtypes}
+    category_of = {s: c.id for c in categories for s in c.subtypes}
     if applicability["categories"] and any(
-        by_subtype[s] not in applicability["categories"] for s in applicability["subtypes"]
+        category_of[s] not in applicability["categories"] for s in applicability["subtypes"]
     ):
         _fail("applicability lists a subtype outside its listed categories")
     flags = {name: _flag(entry, name) for name in FLAGS}
@@ -373,6 +430,15 @@ def _field(entry, purposes, categories) -> FieldDef:
     elif "allowed_values" in entry:
         _fail("only an enum has allowed values")
     by_purpose = _by_purpose(entry, values, purposes)
+    if applicability["subtypes"]:
+        applicable = applicability["subtypes"]
+    else:  # the subtypes of the listed categories, or every subtype when none are listed
+        listed = applicability["categories"] or [c.id for c in categories]
+        applicable = tuple(s for c in categories if c.id in listed for s in c.subtypes)
+    by_subtype = _by_subtype(entry, values, applicable, by_purpose)
+    seller_declared = entry.get("seller_declared", False)
+    if not isinstance(seller_declared, bool):
+        _fail("seller_declared must be true or false")
     text_rules = _text_rules(entry)
     money_rules = _money_rules(entry)
     decimal_rules = _decimal_rules(entry)
@@ -405,6 +471,8 @@ def _field(entry, purposes, categories) -> FieldDef:
         **decimal_rules,
         **integer_rules,
         allowed_values_by_purpose=by_purpose,
+        allowed_values_by_subtype=by_subtype,
+        seller_declared=seller_declared,
         derived=derived,
         description=description,
     )
