@@ -73,7 +73,7 @@ development_status:
   2-8-amenities-and-seller-declared-nearby-facilities: backlog
   2-9-image-upload-pipeline-and-storage: review
   2-10-media-endpoint-cover-image-and-ordering: review
-  2-11-profile-pictures-and-agency-logos: in-progress  # backend merged, frontend in progress
+  2-11-profile-pictures-and-agency-logos: review
   2-12-visibility-policy-and-public-projections: backlog
   2-13-draft-preview-and-management: backlog
   2-14-publication-quota-policy-and-allowance-view: backlog
