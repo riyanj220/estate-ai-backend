@@ -74,3 +74,60 @@ def test_image_routes_declare_409_and_503_with_the_envelope_and_retry_after(tmp_
     request = schema["paths"]["/api/v1/listings/{listing_id}/images"]["post"]["requestBody"]
     assert "multipart/form-data" in request["content"]
     assert "delete" in schema["paths"]["/api/v1/listings/{listing_id}/images/{image_id}"]
+
+
+ENVELOPE = {"$ref": "#/components/schemas/ErrorEnvelope"}
+
+
+def test_the_reorder_route_declares_200_409_403_404_and_a_strict_body(tmp_path):
+    schema = yaml.safe_load(generate(tmp_path))
+    patch = schema["paths"]["/api/v1/listings/{listing_id}/images"]["patch"]
+    responses = patch["responses"]
+    assert responses["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/Listing"
+    }
+    assert responses["409"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ListingConflict"
+    }
+    for status in ("400", "401", "403", "404"):
+        assert responses[status]["content"]["application/json"]["schema"] == ENVELOPE
+    body = schema["components"]["schemas"]["ImageOrderRequest"]
+    assert set(body["properties"]) == {"base_revision", "order", "cover_id"}
+    assert set(body["required"]) == {"base_revision", "order"}
+    assert body["properties"]["order"]["items"]["format"] == "uuid"
+    assert patch["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ImageOrderRequest"
+    }
+
+
+def test_the_media_route_documents_the_binary_responses_and_the_404(tmp_path):
+    schema = yaml.safe_load(generate(tmp_path))
+    operation = schema["paths"]["/api/v1/listings/{listing_id}/images/{image_id}/file"]["get"]
+    ok = operation["responses"]["200"]["content"]
+    assert set(ok) == {"image/jpeg", "image/png", "image/webp"}
+    for content in ok.values():
+        assert content["schema"] == {"type": "string", "format": "binary"}
+    assert operation["responses"]["404"]["content"]["application/json"]["schema"] == ENVELOPE
+    assert "Cache-Control: private, no-store" in operation["description"]
+
+
+def test_the_listing_media_items_have_the_documented_shape(tmp_path):
+    schema = yaml.safe_load(generate(tmp_path))["components"]["schemas"]
+    image = schema["Image"]
+    assert set(image["properties"]) == {
+        "id",
+        "position",
+        "is_cover",
+        "content_type",
+        "width",
+        "height",
+        "bytes",
+        "url",
+    }
+    assert schema["Listing"]["properties"]["media"] == {
+        "type": "array",
+        "items": {"$ref": "#/components/schemas/Image"},
+        "description": "The images in `position` order; empty when there are none.",
+    }
+    flat = " ".join(image["properties"])
+    assert "asset" not in flat and "storage" not in flat and "owner" not in flat

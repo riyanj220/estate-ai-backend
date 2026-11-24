@@ -209,3 +209,29 @@ def test_media_root_must_be_an_absolute_path(monkeypatch):
     monkeypatch.delenv("MEDIA_ROOT")
     importlib.reload(base)
     assert base.MEDIA_ROOT.endswith("/media")
+
+
+def test_a_reorder_body_has_a_64_kib_cap_and_other_methods_keep_theirs(settings):
+    small = settings.MAX_IMAGE_ORDER_BODY_BYTES
+    assert small == 64 * 1024
+    assert run(str(small), method="PATCH") == {"flag": False, "length": str(small)}
+    assert run(str(small + 1), method="PATCH") == {"flag": True, "length": "0"}
+    assert run(None, method="PATCH")["flag"] is True
+    assert run(str(small + 1), method="POST")["flag"] is False  # the upload cap is the larger one
+
+
+def test_the_asgi_wrapper_cuts_a_big_reorder_body_with_the_order_refusal():
+    recorder, reads = Recorder(), []
+
+    def reject_order():
+        return 400, [], b"order"
+
+    app = BodyLimitASGI(recorder.app, reject, reject_order)
+    sent = async_to_sync(drive)(
+        app, scope(method="PATCH", length=64 * 1024 + 1), body_chunks([10]), reads
+    )
+    assert sent[0]["status"] == 400 and sent[1]["body"] == b"order" and not recorder.called
+    recorder2 = Recorder()
+    app = BodyLimitASGI(recorder2.app, reject, reject_order)
+    sent = async_to_sync(drive)(app, scope(method="PATCH", length=100), body_chunks([100]), [])
+    assert recorder2.called and sent[0]["status"] == 204

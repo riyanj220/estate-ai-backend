@@ -32,6 +32,7 @@ EXPECTED = {
     "storage_cap_bytes_individual": (209_715_200, None, "account"),
     "storage_cap_bytes_agency": (1_073_741_824, None, "account"),
     "image_upload": (30, H, "account"),
+    "image_order": (120, H, "account"),
 }
 
 

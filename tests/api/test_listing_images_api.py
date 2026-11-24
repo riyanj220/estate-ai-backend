@@ -92,7 +92,7 @@ def stored_files(media_root):
 
 
 JPEG = make_image("JPEG", (1200, 800))
-WIRE = {"id", "position", "content_type", "width", "height", "bytes"}
+WIRE = {"id", "position", "is_cover", "content_type", "width", "height", "bytes", "url"}
 
 
 # --- upload ------------------------------------------------------------------------------------
@@ -107,12 +107,9 @@ def test_the_owner_uploads_and_gets_the_wire_shape(kind, media_root):
     assert response["Cache-Control"] == "no-store"
     body = response.json()
     assert set(body) == WIRE
-    assert (body["position"], body["content_type"], body["width"], body["height"]) == (
-        1,
-        "image/jpeg",
-        1200,
-        800,
-    )
+    assert (body["position"], body["is_cover"], body["content_type"]) == (0, True, "image/jpeg")
+    assert (body["width"], body["height"]) == (1200, 800)
+    assert body["url"] == f"/api/v1/listings/{listing['id']}/images/{body['id']}/file"
     uuid.UUID(body["id"])
     asset = MediaAsset.objects.get()
     assert body["bytes"] == asset.bytes
@@ -325,7 +322,7 @@ def test_an_account_that_may_not_edit_is_403(change, media_root):
 def test_other_methods_are_405():
     client = signed_in()
     listing = new_draft(client)
-    for method in ("get", "patch", "put"):
+    for method in ("get", "put"):
         response = getattr(client, method)(images_url(listing["id"]), **csrf(client))
         assert response.status_code == 405 and response.json()["error"]["code"] == (
             "method_not_allowed"
@@ -445,20 +442,6 @@ def test_delete_is_forbidden_for_a_suspended_owner():
 
 
 # --- the contract ------------------------------------------------------------------------------
-
-
-def test_no_route_serves_a_file():
-    client = signed_in()
-    listing = new_draft(client)
-    image = upload(client, listing["id"], JPEG).json()
-    for url in (
-        image_url(listing["id"], image["id"]),
-        images_url(listing["id"]) + "/" + image["id"] + "/file",
-    ):
-        response = client.get(url)
-        assert response.status_code in (404, 405)
-        assert b"image" not in response["Content-Type"].encode()
-    assert client.get(detail(listing["id"])).json()["media"] == []
 
 
 # --- ownership before the body ------------------------------------------------------------------

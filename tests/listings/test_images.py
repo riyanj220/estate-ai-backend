@@ -14,7 +14,7 @@ from apps.kernel import images, media, runtime, storage
 from apps.kernel.actor import Actor
 from apps.kernel.errors import DomainError
 from apps.kernel.models import MediaAsset, RateLimitPolicy, StorageUsage
-from apps.listings import lifecycle, selectors, services
+from apps.listings import lifecycle, services
 from apps.listings.models import MAX_IMAGES, ListingImage, ListingRevision, PropertyListing
 from tests.imaging import make_image
 from tests.listings.support import (
@@ -70,7 +70,7 @@ def test_the_owner_uploads_an_image(media_root, kind):
     account, view = draft(kind=kind)
     image = upload(account, view)
     assert (image.position, image.content_type, image.width, image.height) == (
-        1,
+        0,
         "image/jpeg",
         1200,
         800,
@@ -83,12 +83,14 @@ def test_the_owner_uploads_an_image(media_root, kind):
         image.id,
         asset.id,
         view.id,
-        1,
+        0,
     )
     assert stored_files(media_root) == [asset.storage_key]
     stored = storage.get_storage().get(asset.storage_key)
     assert stored != JPEG and Image.open(io.BytesIO(stored)).size == (1200, 800)
-    assert {"storage_key", "url", "path"}.isdisjoint(vars(image))
+    assert image.is_cover is True
+    assert image.url == f"/api/v1/listings/{view.id}/images/{image.id}/file"
+    assert {"storage_key", "path", "asset_id", "owner_account_id"}.isdisjoint(vars(image))
 
 
 def test_the_listing_revision_rises_by_one_and_records_only_the_count():
@@ -105,23 +107,22 @@ def test_the_listing_revision_rises_by_one_and_records_only_the_count():
     assert [r.changes for r in rows[1:]] == [{"images": 1}, {"images": 2}]
 
 
-def test_positions_follow_the_last_one_and_survive_removals():
+def test_positions_stay_contiguous_after_a_removal():
     account, view = draft()
     first, second, third = (upload(account, view) for _ in range(3))
-    assert [first.position, second.position, third.position] == [1, 2, 3]
+    assert [first.position, second.position, third.position] == [0, 1, 2]
     services.remove_image(user(account), view.id, second.id)
-    assert upload(account, view).position == 4
-    assert list(ListingImage.objects.order_by("position").values_list("position", flat=True)) == [
-        1,
-        3,
-        4,
+    assert list(ListingImage.objects.order_by("position").values_list("id", "position")) == [
+        (first.id, 0),
+        (third.id, 1),
     ]
+    assert upload(account, view).position == 2
 
 
 def test_an_unverified_owner_may_upload():
     account = make_account(random_email(), state="unverified")
     view = services.create_draft(user(account), *HOUSE)
-    assert upload(account, view).position == 1
+    assert upload(account, view).position == 0
 
 
 def test_an_edit_after_an_upload_needs_the_new_revision():
@@ -201,7 +202,7 @@ def test_removing_one_makes_room_again():
     account, view = draft()
     made = [upload(account, view) for _ in range(MAX_IMAGES)]
     services.remove_image(user(account), view.id, made[0].id)
-    assert upload(account, view).position == MAX_IMAGES + 1
+    assert upload(account, view).position == MAX_IMAGES - 1
 
 
 def test_the_storage_cap_is_enforced_per_account_and_refuses_with_nothing_stored(media_root):
@@ -427,9 +428,3 @@ def test_an_upload_racing_an_edit_makes_the_editor_reload():
     assert outcomes.count("ok") >= 1
     assert revision(view) == 1 + outcomes.count("ok")
     assert set(outcomes) <= {"ok", "StaleRevision"}
-
-
-def test_the_listing_view_still_has_no_media_yet():
-    account, view = draft()
-    upload(account, view)
-    assert selectors.get_owned_listing(user(account), view.id).media == ()

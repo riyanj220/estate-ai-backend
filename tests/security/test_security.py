@@ -408,3 +408,22 @@ def test_local_and_test_settings_derive_trusted_origins(monkeypatch, module):
         sys.modules.pop(module, None)
         if saved is not None:
             sys.modules[module] = saved
+
+
+def test_only_the_media_csp_survives_a_preset_policy():
+    from apps.kernel.security_headers import CSP, MEDIA_CSP
+
+    def through(policy):
+        def respond(request):
+            response = HttpResponse("x")
+            if policy is not None:
+                response["Content-Security-Policy"] = policy
+            return response
+
+        return SecurityHeadersMiddleware(respond)(RequestFactory().get("/"))
+
+    assert MEDIA_CSP == "default-src 'none'; sandbox"
+    assert through(MEDIA_CSP)["Content-Security-Policy"] == MEDIA_CSP
+    assert through(None)["Content-Security-Policy"] == CSP
+    for loose in ("default-src *", "default-src 'none'; sandbox allow-scripts", ""):
+        assert through(loose)["Content-Security-Policy"] == CSP

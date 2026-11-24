@@ -473,3 +473,31 @@ def test_run_retention_reports_the_media_job(media_root, purge):
     out = io.StringIO()
     call_command("run_retention", "--dry-run", stdout=out)
     assert "kernel.media_orphans: would delete 1" in out.getvalue().splitlines()
+
+
+# --- reading (Story 2.10) ----------------------------------------------------------------------
+
+
+def test_read_asset_returns_the_stored_bytes_and_the_row(media_root):
+    account = owner()
+    asset = store(account)
+    found, data = media.read_asset(asset.id)
+    assert found == asset and data == storage.get_storage().get(asset.storage_key)
+    assert data[:2] == b"\xff\xd8"  # the re-encoded JPEG
+
+
+def test_read_asset_is_none_for_an_unknown_row_or_a_lost_file(media_root, caplog):
+    account = owner()
+    asset = store(account)
+    assert media.read_asset(uuid.uuid4()) is None
+    storage.get_storage().delete(asset.storage_key)
+    assert media.read_asset(asset.id) is None
+    assert asset.storage_key not in caplog.text  # the key is never logged
+
+
+def test_assets_by_id_returns_only_the_ones_that_exist():
+    account = owner()
+    one, two = store(account), store(account)
+    found = media.assets_by_id([one.id, two.id, uuid.uuid4()])
+    assert found == {one.id: one, two.id: two}
+    assert media.assets_by_id([]) == {}
