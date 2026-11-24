@@ -1,6 +1,8 @@
 """Security headers on every response, including errors.
 
-The CSP is API-only: the API serves JSON, so nothing may load or frame.
+The CSP is API-only: the API serves JSON, so nothing may load or frame. A response that already
+carries exactly `MEDIA_CSP` (the media endpoint's `default-src 'none'; sandbox`) keeps it; any other
+CSP is overwritten.
 HSTS is emitted here, not by Django's SecurityMiddleware, because TLS ends at the
 proxy and the app must not trust X-Forwarded-Proto to learn the request was secure.
 """
@@ -9,6 +11,10 @@ from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.conf import settings
 
 CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+
+# The one CSP a response may bring itself (the media endpoint's image policy); any other policy a
+# response sets is replaced by the API-wide one below.
+MEDIA_CSP = "default-src 'none'; sandbox"
 
 STATIC_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -40,6 +46,8 @@ class SecurityHeadersMiddleware:
 
     def _apply(self, response):
         for name, value in STATIC_HEADERS.items():
+            if name == "Content-Security-Policy" and response.get(name) == MEDIA_CSP:
+                continue  # only the media endpoint's image policy is kept, never a looser one
             response[name] = value
         seconds = getattr(settings, "SECURE_HSTS_SECONDS", 0)
         if seconds:

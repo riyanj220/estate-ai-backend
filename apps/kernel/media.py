@@ -71,6 +71,29 @@ def _view(row: MediaAsset) -> StoredAsset:
     )
 
 
+def assets_by_id(asset_ids) -> dict[uuid.UUID, StoredAsset]:
+    """The assets that exist among `asset_ids`, by id. Reads only; the caller has already decided
+    who may see them (the kernel knows nothing of Listings), and `storage_key` stays internal."""
+    ids = list(asset_ids)
+    if not ids:
+        return {}
+    return {row.id: _view(row) for row in MediaAsset.objects.filter(id__in=ids)}
+
+
+def read_asset(asset_id: uuid.UUID) -> tuple[StoredAsset, bytes] | None:
+    """An asset and its stored bytes, or None when the row or the file is gone (a lost file is
+    logged by class only, never with its key). No access check: the caller authorises first."""
+    row = MediaAsset.objects.filter(id=asset_id).first()
+    if row is None:
+        return None
+    try:
+        data = storage.get_storage().get(row.storage_key)
+    except (OSError, ValueError, KeyError) as exc:  # a lost file, a bad key: not servable
+        logger.warning("media file unreadable (%s)", type(exc).__name__)
+        return None
+    return _view(row), data
+
+
 def _require_account_actor(actor: Actor) -> None:
     require_signed_in(actor)
     if actor.kind is not ActorKind.USER:

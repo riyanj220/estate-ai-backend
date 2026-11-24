@@ -12,7 +12,7 @@ django_application = get_asgi_application()
 from apps.kernel.upload_limit import BodyLimitASGI  # noqa: E402
 
 
-def _too_large():
+def _refusal(field: str, code: str):
     import json
 
     from apps.kernel.errors import field_message
@@ -21,7 +21,7 @@ def _too_large():
 
     request_id = new_request_id()
     body = json.dumps(
-        build_envelope("validation_error", request_id, {"file": [field_message("too_large")]})
+        build_envelope("validation_error", request_id, {field: [field_message(code)]})
     ).encode()
     headers = [
         (b"content-type", b"application/json"),
@@ -32,5 +32,13 @@ def _too_large():
     return 400, headers, body
 
 
-# Bounds the buffering of an image upload before Django reads the body (Story 2.9).
-application = BodyLimitASGI(django_application, _too_large)
+def _too_large():
+    return _refusal("file", "too_large")
+
+
+def _order_too_large():
+    return _refusal("order", "invalid")
+
+
+# Bounds the buffering of an image upload (and of the small reorder body) before Django reads it.
+application = BodyLimitASGI(django_application, _too_large, _order_too_large)

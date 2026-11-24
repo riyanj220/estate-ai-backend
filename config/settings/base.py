@@ -81,6 +81,7 @@ if not os.path.isabs(MEDIA_ROOT):
 # `kernel.upload_limit`, image routes only). DATA_UPLOAD_MAX_MEMORY_SIZE stays at Django's default;
 # the file limit is aligned so an upload is held in memory and never spills to a temp file.
 MAX_REQUEST_BODY_BYTES = 6 * 1024 * 1024
+MAX_IMAGE_ORDER_BODY_BYTES = 64 * 1024  # the JSON body of `PATCH .../images`
 FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_REQUEST_BODY_BYTES
 FILE_UPLOAD_HANDLERS = ["django.core.files.uploadhandler.MemoryFileUploadHandler"]
 

@@ -2,10 +2,10 @@
 
 The port is four small operations on opaque random keys: `put`, `get`, `delete`, `exists`. A key is
 never derived from a name, an owner or a Listing, and the port never produces a URL: serving a file
-is the media endpoint's job (Story 2.10), through `get`. The filesystem adapter shards keys into two
-directory levels under `MEDIA_ROOT`, refuses any key that is not the exact random format (so a key
-can never traverse out of the root) and writes atomically (temp file in the same directory, fsync,
-rename).
+is the media endpoint's job (`ListingImageFileView`, after an access check), through `get`. The
+filesystem adapter shards keys into two directory levels under `MEDIA_ROOT`, refuses any key that
+is not the exact random format (so a key can never traverse out of the root) and writes atomically
+(temp file in the same directory, fsync, rename).
 
 The adapter also lists old files so retention can find files that have no row (`iter_old_keys`,
 `remove_old_temp_files`); that is a maintenance operation, not part of serving.
