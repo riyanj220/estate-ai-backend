@@ -1,7 +1,7 @@
 # The Field registry (AD-4). Every change needs a version bump and a new lock:
 #   uv run python scripts/registry_lock.py
 # Format and rules: docs/registry.md
-version: 7
+version: 8
 
 taxonomy:
   purposes: [sale, rent]
@@ -776,3 +776,12 @@ fields:
     scale: 6
     error_code: out_of_range
     class: private
+  - id: amenities
+    type: amenities
+    section: amenities
+    requirement: optional
+    description: Amenity code to present or none. A code left out is unanswered, never none.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    class: public
+    searchable: true
+    valuation_input: true

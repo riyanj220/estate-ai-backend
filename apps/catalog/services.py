@@ -1,12 +1,13 @@
 """Write path for catalog data. Only this module (and data migrations) writes catalog tables."""
 
+import re
 import unicodedata
 
 from django.db import IntegrityError, transaction
 from django.db.models.functions import Lower
 
-from apps.catalog.models import LOCALITY_KINDS, City, Locality
-from apps.catalog.selectors import CityRef, LocalityRef, get_city
+from apps.catalog.models import AMENITY_KINDS, LOCALITY_KINDS, Amenity, City, Locality
+from apps.catalog.selectors import AmenityRef, CityRef, LocalityRef, get_city
 from apps.kernel import audit
 from apps.kernel.actor import Actor, require_admin
 from apps.kernel.errors import DomainError
@@ -88,3 +89,49 @@ def create_locality(actor: Actor, city_id, name: str, kind: str) -> LocalityRef:
             raise DomainError("validation_error") from None
         audit.record(actor, "locality.created", "locality", row.id)
     return LocalityRef(id=row.id, name=row.name, kind=row.kind, city_id=row.city_id)
+
+
+_CODE = re.compile(r"^[a-z][a-z0-9_]{1,47}$")
+LABEL_MIN, LABEL_MAX = (
+    2,
+    80,
+)  # the database CHECK only enforces the length; control characters are the service rule
+
+
+def create_amenity(
+    actor: Actor, code: str, label: str, kind: str, group: str, sort_order: int = 0
+) -> AmenityRef:
+    """Administrators add an amenity to the catalogue; audited as `amenity.created` in the same
+    transaction. A code or group that is not snake_case, a label outside 2 to 80 characters or with
+    control characters, an unknown kind and a code already taken are `validation_error`."""
+    require_admin(actor)
+    if (
+        not isinstance(code, str)
+        or not isinstance(group, str)
+        or not _CODE.fullmatch(code)
+        or not _CODE.fullmatch(group)
+        or not isinstance(kind, str)
+        or kind not in AMENITY_KINDS
+        or not isinstance(sort_order, int)
+        or isinstance(sort_order, bool)
+        or not -(2**31) <= sort_order < 2**31  # the column is a 32-bit integer
+        or not isinstance(label, str)
+    ):
+        raise DomainError("validation_error")
+    label = " ".join(unicodedata.normalize("NFC", label).split())
+    if not LABEL_MIN <= len(label) <= LABEL_MAX or any(
+        unicodedata.category(ch)[0] == "C" for ch in label
+    ):
+        raise DomainError("validation_error")
+    with transaction.atomic():
+        if Amenity.objects.filter(code=code).exists():
+            raise DomainError("validation_error")
+        try:
+            with transaction.atomic():
+                row = Amenity.objects.create(
+                    code=code, label=label, kind=kind, group=group, sort_order=sort_order
+                )
+        except IntegrityError:  # lost a race to the unique constraint
+            raise DomainError("validation_error") from None
+        audit.record(actor, "amenity.created", "amenity", row.id)
+    return AmenityRef(code=row.code, label=row.label, kind=row.kind, group=row.group)

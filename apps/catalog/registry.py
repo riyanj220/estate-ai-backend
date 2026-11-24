@@ -21,10 +21,25 @@ DIRECTORY = Path(__file__).resolve().parent / "registry"
 FIELDS_PATH = DIRECTORY / "fields.yaml"
 LOCK_PATH = DIRECTORY / "fields.lock"
 
-FIELD_TYPES = ("enum", "text", "money", "integer", "decimal", "boolean", "date", "reference")
+FIELD_TYPES = (
+    "enum",
+    "text",
+    "money",
+    "integer",
+    "decimal",
+    "boolean",
+    "date",
+    "reference",
+    "amenities",
+)
 REQUIREMENTS = ("required_for_publication", "recommended", "optional")
 CLASSES = ("public", "private")
-SECTIONS = ("details", "terms", "location")  # where a form groups a field; `details` by default
+SECTIONS = (
+    "details",
+    "terms",
+    "location",
+    "amenities",
+)  # where a form groups a field; `details` by default
 REFERENCES = ("city", "locality")  # what a `reference` field points at (catalog reference data)
 FLAGS = ("searchable", "sortable", "ai_extractable", "valuation_input", "quota_identity")
 PRIVATE_FORBIDDEN_FLAGS = ("searchable", "sortable", "valuation_input", "ai_extractable")
@@ -456,6 +471,23 @@ def _reference_rules(entry: dict) -> dict:
     return {"reference": entry["reference"]}
 
 
+def _amenities_rules(entry: dict) -> None:
+    """The `amenities` type is the map of catalogue codes to a state, stored by the one field with
+    the id `amenities`. The file carries no value rules for it (the catalogue is database data).
+    It is public (buyers see what the building offers), never sortable or derived, and has no
+    allowed values; the id `amenities` is reserved for this type."""
+    if (entry["type"] == "amenities") != (entry["id"] == "amenities"):
+        _fail("the amenities type is used by the field `amenities` only, and that field uses it")
+    if entry["type"] != "amenities":
+        return
+    if entry["class"] != "public":
+        _fail("an amenities field must be public")
+    if entry.get("sortable") or entry.get("derived"):
+        _fail("an amenities field is neither sortable nor derived")
+    if "allowed_values" in entry:
+        _fail("an amenities field has no allowed values")
+
+
 def _check_numeric_enum(values: tuple[str, ...]) -> None:
     """A value with a decimal point needs every value to be a NUMERIC(6,2) number, all different
     as numbers (`225` and `225.00` would be the same stored value)."""
@@ -531,6 +563,7 @@ def _field(entry, purposes, categories) -> FieldDef:
     integer_rules = _integer_rules(entry)
     date_rules = _date_rules(entry)
     reference_rules = _reference_rules(entry)
+    _amenities_rules(entry)
     derived = entry.get("derived", False)
     if not isinstance(derived, bool):
         _fail("derived must be true or false")

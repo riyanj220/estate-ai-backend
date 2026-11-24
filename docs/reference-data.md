@@ -46,6 +46,30 @@ city needs no deploy and no regenerated client; the frontend reads the list at r
 - Listings store the city and locality as plain UUID columns and validate them through these selectors (a locality
   must belong to the Listing's city; see `docs/listings.md`).
 
+## Amenities (Story 2.8)
+
+- Table `catalog_amenity`: UUID `id`, `code` (stable snake_case, unique, the identifier listings store), `label`,
+  `kind` (`on_property`, `community` or `nearby`, a CHECK), `group` (snake_case, the sub-heading inside a kind),
+  `sort_order`, `is_active`, `created_at`. A `nearby` entry is always the seller's own claim; there is no distance and no
+  verification concept in the catalogue.
+- Seeded by data migration `0006_seed_amenities` (the schema is `0005_amenity`) with exactly this vocabulary:
+  on_property / utilities `electricity_backup`, `broadband_internet`, `waste_disposal`; on_property / building
+  `double_glazed_windows`, `central_air_conditioning`, `central_heating`, `elevator`, `lobby`, `intercom`;
+  community / residential_community `community_lawn`, `swimming_pool`, `community_gym`, `daycare`, `childrens_play_area`,
+  `bbq_area`; community / community_services `community_mosque`, `medical_facility`, `community_centre`;
+  on_property / business `conference_room`, `business_centre`, `atm_in_building`; nearby / nearby `nearby_mosque`,
+  `nearby_park`, `nearby_gym`, `nearby_school`, `nearby_hospital` (the five nearby types are the owner's decision OQ-1).
+  The seed is idempotent: a row with a known code, edited or deactivated, is left exactly as it is.
+- Writes go only through `catalog.services.create_amenity(actor, code, label, kind, group, sort_order)` (administrators
+  only, audited as `amenity.created`) and the data migration.
+- Reads: `catalog.selectors.list_amenities()` returns frozen `AmenityRef(code, label, kind, group)` values for the
+  active entries ordered by kind (`on_property`, `community`, `nearby`), then `sort_order`; `amenity_codes()` returns the
+  active codes for validation.
+- Public endpoint: `GET /api/v1/reference/amenities` returns
+  `{"items":[{"code":"elevator","label":"Elevator","kind":"on_property","group":"building"}]}`. Unpaginated; no `Cache-Control` header is set (like the other reference lists).
+  In `openapi.yaml`, `code`, `label` and `group` are plain strings (never enums); `kind` is the closed vocabulary.
+- Listings store the code as plain text and validate new entries through `amenity_codes()` (see `docs/listings.md`).
+
 ## What comes later
 
 - Managing cities and localities (add, deactivate, rename) from the admin area arrives with platform administration.

@@ -3,9 +3,10 @@
 import uuid
 from dataclasses import dataclass
 
+from django.db.models import Case, IntegerField, Value, When
 from django.db.models.functions import Lower
 
-from apps.catalog.models import City, Locality
+from apps.catalog.models import AMENITY_KINDS, Amenity, City, Locality
 
 
 @dataclass(frozen=True)
@@ -87,3 +88,32 @@ def get_locality(locality_id) -> LocalityRef | None:
     if row is None:
         return None
     return LocalityRef(id=row.id, name=row.name, kind=row.kind, city_id=row.city_id)
+
+
+@dataclass(frozen=True)
+class AmenityRef:
+    code: str
+    label: str
+    kind: str
+    group: str
+
+
+def list_amenities() -> tuple[AmenityRef, ...]:
+    """Active amenities: kind in the order on_property, community, nearby, then `sort_order`
+    (then code, so the order is total). Small and bounded: unpaginated."""
+    kind_order = Case(
+        *(When(kind=kind, then=Value(i)) for i, kind in enumerate(AMENITY_KINDS)),
+        output_field=IntegerField(),
+    )
+    rows = (
+        Amenity.objects.filter(is_active=True)
+        .annotate(kind_order=kind_order)
+        .order_by("kind_order", "sort_order", "code")
+        .only("code", "label", "kind", "group")
+    )
+    return tuple(AmenityRef(code=r.code, label=r.label, kind=r.kind, group=r.group) for r in rows)
+
+
+def amenity_codes() -> frozenset[str]:
+    """The codes of the active amenities: what a listing may newly declare."""
+    return frozenset(Amenity.objects.filter(is_active=True).values_list("code", flat=True))

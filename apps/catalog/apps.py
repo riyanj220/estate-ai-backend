@@ -13,3 +13,4 @@ class CatalogConfig(AppConfig):
         registry.load()  # refuse to start on an invalid Field registry
         audit.register_action("city.created", {})
         audit.register_action("locality.created", {})
+        audit.register_action("amenity.created", {})
