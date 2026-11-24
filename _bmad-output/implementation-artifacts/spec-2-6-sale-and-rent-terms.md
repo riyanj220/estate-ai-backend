@@ -94,6 +94,8 @@ Decisions beyond the story text: utilities are four independent tri-state boolea
 
 ## Review Triage Log
 
+Backend half (three reviewers). Patched: an explicit registry marker `section` (`terms`/`details`) now groups the terms fields (the spec's "purposes without subtypes" rule excluded `price_negotiable`); registry shape version 5; the after-commit rollback test now really fails without a rollback; ETag/date-bound tests do what their names say; unquoted YAML dates get a clear loader error; docs corrected (no purpose CHECK, zero deposit allowed, neutral invalid_price text, date bounds are ISO text, past availability dates allowed). The frontend grouping rule in this spec is superseded by the `section` marker. Deviations accepted: no purpose CHECK (the column lives on another table), `invalid_price` text made neutral. Verification: lint-imports 13 kept, ruff, pytest 3746 passed, no migration drift, openapi regenerated.
+
 ## Design Notes
 
 Terms stay on one row (`ListingTerms`) so later search and the valuation model read price and terms from one place. The frontend gets a "Terms" fieldset only by reading registry applicability (purposes without subtypes), keeping everything data-driven.

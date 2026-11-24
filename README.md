@@ -77,11 +77,11 @@ New apps are added to `INSTALLED_APPS` only when they own models.
 
 `apps/listings` owns the canonical `PropertyListing` (Story 2.1: start a Draft; Story 2.2: `PATCH /api/v1/listings/{id}`
 with `{base_revision, fields}` saves title, description, Asking price, price basis, rental period, (Story 2.3) the area, its unit and the marla
-basis (the derived square feet are computed server-side), (Story 2.4) the House and Apartment details, in a lazily created `ListingResidential` row, and (Story 2.5) the Plot, Plot File, Shop and Office details, in lazily created `ListingPlot` and `ListingCommercial` rows (the unit-details table also holds the fields Shops and Offices share with homes), through
+basis (the derived square feet are computed server-side), (Story 2.4) the House and Apartment details, in a lazily created `ListingResidential` row, (Story 2.5) the Plot, Plot File, Shop and Office details, in lazily created `ListingPlot` and `ListingCommercial` rows (the unit-details table also holds the fields Shops and Offices share with homes), and (Story 2.6) the sale and rent terms (negotiable price, possession availability, deposit, availability date, lease, utilities, pets, occupants) as typed nullable columns on `ListingTerms`, through
 `listings.services.apply_updates`, the only write path for Listing fields: a stale `base_revision` is `409 stale_revision`
 with the current Listing under `current`, every field carries `provenance` set by the service, every change writes a
 `ListingRevision`, and contact details in text are refused) and `apps/catalog` owns the Field registry,
-`apps/catalog/registry/fields.yaml` (version 5, field types `enum`, `text`, `money`, `decimal`, `integer`, `boolean`; the flag `seller_declared` and the map `allowed_values_by_subtype`), validated at start-up and served at
+`apps/catalog/registry/fields.yaml` (version 6, field types `enum`, `text`, `money`, `decimal`, `integer`, `boolean`, `date`; the flag `seller_declared` and the map `allowed_values_by_subtype`), validated at start-up and served at
 `GET /api/v1/registry`. Editing the registry needs a version bump and `uv run python scripts/registry_lock.py`. See
 `docs/listings.md`, `docs/registry.md` and `docs/privacy-patterns.md`.
 

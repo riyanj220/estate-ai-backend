@@ -11,14 +11,14 @@ The Field registry (AD-4) is the one definition of which Listing fields exist. I
 ## File format
 
 ```yaml
-version: 5                     # positive integer
+version: 6                     # positive integer
 taxonomy:
   purposes: [sale, rent]       # code-defined, snake_case ids
   categories:
     - {id: plot, subtypes: [residential_plot, commercial_plot, plot_file]}
 fields:
   - id: purpose                # stable snake_case id
-    type: enum                 # enum | text | money | decimal | integer | boolean
+    type: enum                 # enum | text | money | decimal | integer | boolean | date
     requirement: required_for_publication   # | recommended | optional
     applicability: {purposes: [], categories: [], subtypes: []}   # empty = all
     allowed_values: [sale, rent]   # enums only; purpose, category and subtype must equal the taxonomy
@@ -49,6 +49,11 @@ fields:
     ...
   - id: lift
     type: boolean              # boolean: no extra keys; the answer is true, false or unknown (null)
+    ...
+  - id: availability_date
+    type: date                 # date: min, max (calendar dates written YYYY-MM-DD, real dates, min <= max)
+    min: "2000-01-01"
+    max: "2100-12-31"
     ...
   - id: area_sqft
     type: decimal
@@ -127,7 +132,7 @@ Version 5 (Story 2.5) adds two registry features and the Plot and Commercial cat
   and with `allowed_values_by_purpose` every Subtype subset must share a value with every purpose subset.
   `values_for(purpose)` without a Subtype on such a field returns `()` (nothing is allowed without the Subtype). It may be combined with `allowed_values_by_purpose`: a value must pass
   both. Validation takes the Subtype from the Draft's identity; a value outside it is `invalid_choice`. The payload
-  serves the map (`allowed_values_by_subtype`, null when absent) and `RESPONSE_SHAPE_VERSION` is 4 because the two
+  serves the map (`allowed_values_by_subtype`, null when absent) and `RESPONSE_SHAPE_VERSION` became 4 because the two
   keys were added.
 
 `error_code` (decimals only, `invalid_measure` default, `invalid_area` for `area_value` and `covered_area_sqft`) names the
@@ -142,6 +147,36 @@ Version 5 also widens `applicability.subtypes` of ten shared unit fields to Shop
 adds the utilities `electricity`, `water`, `gas`, 14 plot fields (five `seller_declared`) and 8 commercial fields. The
 registry lets a field have one requirement level only. New field ids are always added at the END of the file, because
 the wire order of a Listing's `fields` follows the registry file order (see `docs/listings.md`).
+
+Version 6 (Story 2.6) adds the `date` type and the sale and rent terms (see `docs/listings.md`):
+
+- `type: date` is a plain calendar date, never a timestamp. It needs `min` and `max`, each a string `YYYY-MM-DD` in
+  ASCII digits naming a real date (not `2027-02-30`), with `min` not above `max`; it takes no `currency`, `scale`,
+  `allowed_values`, lengths or `error_code`. The loader refuses anything else with a one-line reason. The loaded
+  `FieldDef.minimum` and `maximum` are `datetime.date` values. The payload serves them in the **existing** `min` and
+  `max` keys as `"2000-01-01"` text. The generated OpenAPI documents the field as
+  `type: string, format: date`. A date column is a SQL `DATE` (a `DateField`); no time zone is ever applied.
+- New fields, all class public, appended at the end of the file: `price_negotiable` (boolean, both purposes), sale only
+  `possession_availability` (enum, `seller_declared`, not `ai_extractable`), rent only `security_deposit`
+  (money, `0` to `999999999999.99`, recommended), `availability_date` (date `2000-01-01` to `2100-12-31`, recommended),
+  `advance_rent` (money), `minimum_lease_months` (integer 1 to 120), `notice_period_days` (integer 0 to 365), the four
+  utility booleans `utility_electricity_included`, `utility_gas_included`, `utility_water_included`,
+  `utility_internet_included`, `pets_allowed` and `occupant_restrictions` (`no_restriction`, `families_only`,
+  `bachelors_only`). Applicability is by `purposes` only. A client groups the "terms" fields by the new
+  `section` key, never by guessing from applicability. None is a `valuation_input`, `searchable` or `sortable`.
+- Installment, payment type, down payment and title or approval document terms are deliberately not defined
+  (`unknown_field`, Epic 11).
+
+- `section: terms|details` (optional, default `details`, validated by the loader) says where a form groups a field. It is
+  `terms` on every field above and on `rental_period`. It is served in every registry field, so
+  `RESPONSE_SHAPE_VERSION` is 5, and it does not change validation.
+- A date bound is ISO text (`"2000-01-01"`), so a client must not assume `min` and `max` are numeric strings for
+  every typed field. In YAML the date must be quoted: an unquoted date is refused with "quote the date".
+- `availability_date` accepts past dates back to 2000-01-01 on purpose (there is no check against today).
+- `rental_period` keeps its meaning; only its `section` is new.
+
+A registry-wide guard, `test_every_decimal_money_integer_and_date_field_fits_its_column`, fails when a bound does not
+fit the model column that stores the field.
 
 Only these keys are allowed. A Subtype belongs to exactly one Category; Plot File is a Subtype of Plot, distinct from
 Residential Plot.
@@ -169,8 +204,8 @@ tells the developer to bump the version and run the script.
 
 `GET /api/v1/registry` is public: `{version, taxonomy: {categories: [{id, subtypes}], purposes}, fields: [...]}`, each
 field with `id, type, requirement, applicability, allowed_values (null unless an enum), allowed_values_by_purpose (null
-unless narrowed), allowed_values_by_subtype (null unless narrowed), seller_declared, min_length and max_length (text only), min and max (money, decimal and integer, plain decimal notation, never an exponent), currency (money only), scale (decimal only),
-derived, description (null unless documented), class` and the five flags (`RESPONSE_SHAPE_VERSION` is 4: `allowed_values_by_subtype` and `seller_declared` were added in version 5; earlier it
+unless narrowed), allowed_values_by_subtype (null unless narrowed), seller_declared, section (`details` or `terms`), min_length and max_length (text only), min and max (money, decimal and integer as plain decimal notation, never an exponent; a date as `YYYY-MM-DD` text), currency (money only), scale (decimal only),
+derived, description (null unless documented), class` and the five flags (`RESPONSE_SHAPE_VERSION` is 5: `section` was added in version 6 and a date serves its bounds in `min` and `max`; `allowed_values_by_subtype` and `seller_declared` were added in version 5; earlier it
 rose for `scale`, `derived` and `description`).
 `Cache-Control: public, max-age=300` and a strong `ETag` (`"<version>-<content hash>-<RESPONSE_SHAPE_VERSION>"`); `If-None-Match` gets `304`.
 OpenAPI enums for purpose, category and subtype are generated from the registry (`PurposeEnum`, `CategoryEnum`,
@@ -191,7 +226,7 @@ OpenAPI enums for purpose, category and subtype are generated from the registry 
   (`tests/listings/test_constraints.py` fails when the migration and the registry disagree). The same holds for the
   generated CHECKs on `title`, `description`, `ListingTerms` (price range, basis and period values) and `ListingArea`
   (value and square-foot bounds, unit and basis values, the marla and kanal units a basis applies to) and
-  `ListingResidential`, `ListingPlot` and `ListingCommercial` (integer, decimal and money bounds, enum sets, the floor rule): changing those
+  `ListingResidential`, `ListingPlot` and `ListingCommercial` and the terms columns of `ListingTerms` (integer, date window, decimal and money bounds, enum sets, the floor rule): changing those
   registry bounds or values needs a migration.
 - **Private fields are listed.** Private-class fields appear in the public registry response by design: it is field
   metadata for owner forms, never values. `ai_extractable` and `quota_identity` are allowed on private fields; only

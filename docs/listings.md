@@ -14,6 +14,13 @@ description and price, Story 2.3 the area and its unit, Story 2.4 the House and 
 - `ListingTerms`: one row per Listing (`listing` one-to-one), created with the Draft and lazily by `apply_updates` for
   older Drafts: `asking_price` NUMERIC(14,2) nullable (CHECK between the registry bounds), `price_basis` and
   `rental_period` nullable (CHECKs generated from the registry values), `updated_at`. Money is NUMERIC, never a float.
+  **Story 2.6 (migration `0006_terms`)** adds the sale and rent terms as typed nullable columns on this same row (no new
+  table, no row created by a clear or a read): `price_negotiable` and the rent booleans (`pets_allowed`,
+  `utility_*_included`) nullable booleans; `security_deposit`, `advance_rent` NUMERIC(14,2); `availability_date` a SQL
+  `DATE` (a calendar date, never a timestamp); `minimum_lease_months`, `notice_period_days` SMALLINT;
+  `possession_availability`, `occupant_restrictions` text enums. CHECKs are generated from the registry
+  (`models.terms_constraints`, `listings_terms_<field>_range|_valid`; the date window is a CHECK too), and the earlier
+  three keep their names. Unanswered is `NULL`, never 0, false or empty.
 - `ListingArea` (Story 2.3, migration `0003_area`): one row per Listing, created lazily by `apply_updates` the first
   time an area field changes (never by `create_draft`): `area_value` NUMERIC(14,4), `area_unit`, `marla_basis`
   NUMERIC(6,2) (square feet per marla), `area_sqft` NUMERIC(20,4) (derived), `updated_at`, all nullable. CHECKs generated
@@ -108,7 +115,7 @@ Blank or whitespace-only text clears a field (the same as `null`).
 
 ### Where fields are stored: `listings/fields.py`
 
-`STORAGE` is the single map from editable registry field id to its table (`listing`, `terms`, `area` or `residential`).
+`STORAGE` is the single map from editable registry field id to its table (`listing`, `terms`, `area`, `residential`, `plot` or `commercial`).
 Validation, the edit service, the read views and the API serializers all derive their field sets from it, so adding an
 editable field is one entry, its registry definition and a migration; `tests/listings/test_fields.py` fails, naming the
 field, when the registry and the map disagree.
@@ -248,6 +255,42 @@ when the request touches the floor fields is the floor rule judged).
 Valuation inputs: `plot_width`, `plot_depth`, `road_width_ft`, `corner_plot`, `development_status`, `frontage_ft`
 (and `condition`, already). A change to one emits one `listing.model_inputs_changed` after commit; the other new fields
 emit nothing.
+
+### Sale and rent terms (Story 2.6)
+
+Registry version 6 adds the `date` registry type and these fields, stored on `ListingTerms`. Applicability is by
+**purpose**, judged from the Draft's identity (the purpose is immutable, so a Draft can never hold the terms of the
+other purpose); a wrong-purpose field is `not_applicable` whatever the value, and `null` on a field that does not apply
+is a `200` no-op (nothing is written, the revision does not move; a stored value of the other purpose, which only a direct
+database write could leave (there is no purpose CHECK), can still be cleared by `null`).
+
+- **Both purposes**: `price_negotiable` (yes/no, optional).
+- **Sale only**: `possession_availability` (`available_now`, `within_one_month`, `within_three_months`,
+  `after_three_months`; recommended; **seller-declared**, so never shown as verified and not `ai_extractable`).
+- **Rent only**: `security_deposit` (money, `0` to `999999999999.99`, recommended), `availability_date` (a date,
+  recommended), `advance_rent` (money, optional), `minimum_lease_months` (1 to 120), `notice_period_days` (0 to 365),
+  `utility_electricity_included`, `utility_gas_included`, `utility_water_included`, `utility_internet_included`,
+  `pets_allowed` (yes/no, all optional) and `occupant_restrictions` (`no_restriction`, `families_only`,
+  `bachelors_only`). For rent the `asking_price` is the rental amount and `rental_period` is required for publication
+  and **never assumed**: a rent Draft saves and is served with `rental_period` null until the owner chooses one.
+  `furnishing` and `maintenance_charges` keep their Story 2.4 and 2.5 definitions and Subtype applicability;
+  maintenance charges for rent houses stay a later registry addition. No relation is checked between the deposit, the
+  advance and the rent.
+- **Dates**: `availability_date` accepts past dates back to 2000-01-01 on purpose (no check against today). JSON text `YYYY-MM-DD` only, in ASCII digits, naming a real calendar date (`2027-02-30`, `2027-3-1`,
+  `20270301`, a timestamp, other digits and any non-text value are `invalid`); a real date outside the registry
+  window `2000-01-01` to `2100-12-31` is `invalid_date`. A date is stored as SQL `DATE` and served as the same text
+  (`"2027-03-01"`), in revisions too; no time zone or time of day is ever applied, so the value cannot shift by a day.
+  The message for `invalid_date` is neutral catalogue text that names no value.
+- **Money, integers, booleans, enums**: as `asking_price` (`invalid_price`, now worded without "above zero" because a
+  deposit and the advance rent may be `0`; the text is deliberately neutral, "within the allowed range"), Story 2.4 integers (`invalid`, `invalid_range`), booleans and enums (`invalid_choice`).
+- **Unsupported (deferred)** terms `payment_type`, `down_payment`, `total_installment_price`, `monthly_installment`,
+  `remaining_installments`, `ownership_document_type`, `title_document_type`, `approval_information`,
+  `installment_available` and any other id outside the registry are `unknown_field` under `non_field_errors`; nothing
+  is written (Epic 11).
+- None of the new fields is a `valuation_input`, so a terms edit never emits `listing.model_inputs_changed`; an edit
+  that also changes a model input emits exactly one event after commit, as before.
+- A stored value outside today's rules (an older registry's wider window or range) is never altered by an unrelated
+  edit, and is rejected with the same code if the request sends it again unchanged.
 
 ### Provenance
 
