@@ -52,6 +52,9 @@ def test_each_mapped_field_is_a_column_of_its_table():
         fields.ADDRESS: ListingPrivateAddress,
     }
     for name, table in {**fields.STORAGE, **fields.DERIVED}.items():
+        if table == fields.AMENITIES:  # the map is rows of ListingAmenity, not a column
+            assert name == fields.AMENITIES_FIELD
+            continue
         assert table in tables, name
         assert tables[table]._meta.get_field(name), name
     parts = [
@@ -64,6 +67,7 @@ def test_each_mapped_field_is_a_column_of_its_table():
         fields.LOCATION_FIELDS,
         fields.ADDRESS_FIELDS,
     ]
+    parts.append((fields.AMENITIES_FIELD,))  # the one field stored as rows of ListingAmenity
     assert set().union(*parts) == set(fields.EDITABLE_FIELDS)
     assert sum(len(part) for part in parts) == len(fields.EDITABLE_FIELDS)  # one table each
 

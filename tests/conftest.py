@@ -40,4 +40,11 @@ def _reseed_flushed_policies(request):
                 module = importlib.import_module(f"{package.__name__}.{info.name}")
                 if info.name.split("_")[1:2] == ["seed"] and hasattr(module, "seed"):
                     module.seed(apps, schema)
+        from apps.catalog.models import Amenity
+
+        if not Amenity.objects.exists():  # the amenity catalogue is migration-seeded the same way
+            import importlib
+
+            seed = importlib.import_module("apps.catalog.migrations.0006_seed_amenities")
+            seed.seed_amenities(apps, None)
     yield

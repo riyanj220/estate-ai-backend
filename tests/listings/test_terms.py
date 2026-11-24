@@ -168,8 +168,9 @@ def test_the_wire_order_follows_the_registry_and_the_terms_come_after_the_detail
     assert tuple(n for n in names if n in TERMS_IDS) == TERMS_IDS
     assert names[-1] == "area_sqft"
     ids = [f.id for f in registry.fields()]
-    after = len(TERMS_IDS) + len(LOCATION_IDS)  # the location (Story 2.7) is appended after them
-    assert ids[-after : -len(LOCATION_IDS)] == list(TERMS_IDS)
+    # the location (Story 2.7) and the amenities (Story 2.8) are appended after them
+    after = len(TERMS_IDS) + len(LOCATION_IDS) + 1
+    assert ids[-after : -len(LOCATION_IDS) - 1] == list(TERMS_IDS)
 
 
 def test_a_date_is_the_same_text_whatever_the_server_time_zone():
@@ -767,8 +768,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_under_the_current_version
     }
     assert PropertyListing.objects.get().registry_version == 5
     saved = update(account, view, {"availability_date": "2027-03-01"})
-    assert saved.registry_version == registry.registry_version() == 7
-    assert PropertyListing.objects.get().registry_version == 7
+    assert saved.registry_version == registry.registry_version() == 8
+    assert PropertyListing.objects.get().registry_version == 8
 
 
 # --- stored values outside today's rules --------------------------------------------------------

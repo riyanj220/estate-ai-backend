@@ -41,7 +41,7 @@ def test_served_publicly_with_the_defined_shape():
     assert response.status_code == 200
     body = response.json()
     assert list(body) == ["version", "taxonomy", "fields"]
-    assert body["version"] == 7
+    assert body["version"] == 8
     assert body["taxonomy"] == {
         "categories": [
             {"id": "house", "subtypes": ["house"]},
@@ -119,7 +119,7 @@ def test_cache_headers_and_strong_etag():
     response = Client().get(URL)
     assert response.headers["Cache-Control"] == "public, max-age=300"
     tag = response.headers["ETag"]
-    assert tag == f'"7-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
+    assert tag == f'"8-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
         "W/"
     )
 
@@ -156,7 +156,7 @@ def test_a_shape_change_alone_changes_the_etag(monkeypatch):
 
 
 def test_the_shape_version_is_pinned_and_the_area_fields_are_served_in_full():
-    assert RESPONSE_SHAPE_VERSION == 6
+    assert RESPONSE_SHAPE_VERSION == 7
     served = {f["id"]: f for f in Client().get(URL).json()["fields"]}
     value = served["area_value"]
     assert (value["type"], value["min"], value["max"], value["scale"]) == (
@@ -289,13 +289,13 @@ def test_the_plot_and_commercial_fields_are_served_in_registry_order_with_their_
             assert field[key] is None or "E" not in field[key].upper()
 
 
-def test_the_etag_names_version_seven_and_the_new_shape():
+def test_the_etag_names_version_eight_and_the_new_shape():
     tag = Client().get(URL).headers["ETag"]
-    assert tag == f'"7-{registry.content_hash()}-6"'
+    assert tag == f'"8-{registry.content_hash()}-7"'
 
 
 def test_the_date_type_and_the_terms_are_served_in_the_existing_keys():
-    assert RESPONSE_SHAPE_VERSION == 6  # `reference` was added in 7; a date serves `min` and `max`
+    assert RESPONSE_SHAPE_VERSION == 7  # `amenities` came with 8; a date serves `min` and `max`
     body = Client().get(URL).json()
     served = {f["id"]: f for f in body["fields"]}
     for field in body["fields"]:
@@ -409,7 +409,13 @@ def test_the_section_marker_is_served_for_every_field():
         "rental_period",
     }
     assert {n for n, f in served.items() if f["section"] == "terms"} == terms
-    assert {f["section"] for f in served.values()} == {"details", "terms", "location"}
+    assert {f["section"] for f in served.values()} == {
+        "details",
+        "terms",
+        "location",
+        "amenities",
+    }
     assert {n for n, f in served.items() if f["section"] == "location"} == set(LOCATION_IDS)
+    assert {n for n, f in served.items() if f["section"] == "amenities"} == {"amenities"}
     assert served["asking_price"]["section"] == "details"
     assert served["bedrooms"]["section"] == "details"

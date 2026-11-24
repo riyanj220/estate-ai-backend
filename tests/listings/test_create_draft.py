@@ -46,7 +46,7 @@ def test_active_owner_creates_a_draft(kind):
     account = make_account(account_type=kind)
     view = services.create_draft(user(account), *HOUSE)
     assert view.status == "draft" and view.visibility == "private"
-    assert (view.revision, view.registry_version) == (1, 7)
+    assert (view.revision, view.registry_version) == (1, 8)
     assert dict(view.fields) == {
         "purpose": "sale",
         "category": "house",
@@ -64,7 +64,7 @@ def test_active_owner_creates_a_draft(kind):
     }
     assert dict(view.provenance) == {}
     assert ListingTerms.objects.get(listing_id=view.id).asking_price is None
-    assert view.media == () and view.amenities == ()
+    assert view.media == () and view.fields["amenities"] is None
     row = PropertyListing.objects.get()
     assert row.id == view.id and row.owner_account_id == account.id
     revision = ListingRevision.objects.get()
@@ -384,7 +384,6 @@ def test_view_is_frozen_and_has_no_owner():
         "fields",
         "provenance",
         "media",
-        "amenities",
     }
     with pytest.raises(Exception):  # noqa: B017 (FrozenInstanceError)
         view.status = "published"
