@@ -26,14 +26,23 @@ from apps.kernel.errors import DomainError
 from apps.listings.area import basis_text
 from apps.listings.fields import (
     AREA_FIELDS,
+    COMMERCIAL_FIELDS,
     DERIVED_FIELDS,
     IDENTITY_FIELDS,
     LISTING_FIELDS,
+    PLOT_FIELDS,
     RESIDENTIAL_FIELDS,
     TERMS_FIELDS,
 )
 from apps.listings.lifecycle import ListingStatus, Origin, visibility_of
-from apps.listings.models import ListingArea, ListingResidential, ListingTerms, PropertyListing
+from apps.listings.models import (
+    ListingArea,
+    ListingCommercial,
+    ListingPlot,
+    ListingResidential,
+    ListingTerms,
+    PropertyListing,
+)
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
@@ -95,6 +104,22 @@ def residential_of(row: PropertyListing) -> ListingResidential | None:
         return None
 
 
+def plot_of(row: PropertyListing) -> ListingPlot | None:
+    """The Listing's plot details row, or None until a value is first saved."""
+    try:
+        return row.plot
+    except ObjectDoesNotExist:
+        return None
+
+
+def commercial_of(row: PropertyListing) -> ListingCommercial | None:
+    """The Listing's commercial details row, or None until a value is first saved."""
+    try:
+        return row.commercial
+    except ObjectDoesNotExist:
+        return None
+
+
 def clean_provenance(stored) -> dict[str, dict]:
     """Well-formed entries only: a malformed one is skipped, never an error for a read."""
     if not isinstance(stored, dict):
@@ -135,10 +160,14 @@ def view_of(
     terms: ListingTerms | None = None,
     area: ListingArea | None = None,
     residential: ListingResidential | None = None,
+    plot: ListingPlot | None = None,
+    commercial: ListingCommercial | None = None,
 ) -> ListingView:
     terms = terms if terms is not None else terms_of(row)
     area = area if area is not None else area_of(row)
     residential = residential if residential is not None else residential_of(row)
+    plot = plot if plot is not None else plot_of(row)
+    commercial = commercial if commercial is not None else commercial_of(row)
     fields = {name: getattr(row, name) for name in _COLUMN_FIELDS}
     for name in TERMS_FIELDS:
         fields[name] = field_text(name, getattr(terms, name) if terms else None)
@@ -146,6 +175,10 @@ def view_of(
         fields[name] = field_text(name, getattr(area, name) if area else None)
     for name in RESIDENTIAL_FIELDS:
         fields[name] = field_text(name, getattr(residential, name) if residential else None)
+    for name in PLOT_FIELDS:
+        fields[name] = field_text(name, getattr(plot, name) if plot else None)
+    for name in COMMERCIAL_FIELDS:
+        fields[name] = field_text(name, getattr(commercial, name) if commercial else None)
     provenance = {
         name: MappingProxyType(entry)
         for name, entry in clean_provenance(row.provenance).items()
@@ -185,7 +218,7 @@ def get_owned_listing(actor: Actor, listing_id) -> ListingView:
     if key is None or not _owner_actor(actor):
         raise DomainError("not_found")
     row = (
-        PropertyListing.objects.select_related("terms", "area", "residential")
+        PropertyListing.objects.select_related("terms", "area", "residential", "plot", "commercial")
         .filter(id=key, owner_account_id=actor.account_id)
         .first()
     )
@@ -236,9 +269,9 @@ def list_owned(
     require_signed_in(actor)
     if actor.kind is not ActorKind.USER or not can(actor, Capability.VIEW_DRAFTS):
         raise DomainError("forbidden")
-    rows = PropertyListing.objects.select_related("terms", "area", "residential").filter(
-        owner_account_id=actor.account_id
-    )
+    rows = PropertyListing.objects.select_related(
+        "terms", "area", "residential", "plot", "commercial"
+    ).filter(owner_account_id=actor.account_id)
     if status is not None:
         rows = rows.filter(status=ListingStatus(status).value)
     if cursor is not None:

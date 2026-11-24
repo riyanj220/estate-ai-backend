@@ -21,9 +21,13 @@ from apps.listings.events import ListingModelInputsChanged
 from apps.listings.fields import (
     AREA,
     AREA_FIELDS,
+    COMMERCIAL,
+    COMMERCIAL_FIELDS,
     DERIVED,
     EDITABLE_FIELDS,
     LISTING,
+    PLOT,
+    PLOT_FIELDS,
     RESIDENTIAL,
     RESIDENTIAL_FIELDS,
     STORAGE,
@@ -33,6 +37,8 @@ from apps.listings.fields import (
 from apps.listings.lifecycle import ListingStatus, Origin
 from apps.listings.models import (
     ListingArea,
+    ListingCommercial,
+    ListingPlot,
     ListingResidential,
     ListingRevision,
     ListingTerms,
@@ -43,7 +49,9 @@ from apps.listings.selectors import (
     area_of,
     canonical_uuid,
     clean_provenance,
+    commercial_of,
     field_text,
+    plot_of,
     residential_of,
     terms_of,
     view_of,
@@ -242,7 +250,22 @@ def apply_updates(
         stored_residential = residential is not None
         if residential is None:
             residential = ListingResidential(listing=row)  # saved only on a first non-null value
-        owners = {LISTING: row, TERMS: terms, AREA: area, RESIDENTIAL: residential}
+        plot = plot_of(row)
+        stored_plot = plot is not None
+        if plot is None:
+            plot = ListingPlot(listing=row)  # saved only on a first non-null value
+        commercial = commercial_of(row)
+        stored_commercial = commercial is not None
+        if commercial is None:
+            commercial = ListingCommercial(listing=row)  # saved only on a first non-null value
+        owners = {
+            LISTING: row,
+            TERMS: terms,
+            AREA: area,
+            RESIDENTIAL: residential,
+            PLOT: plot,
+            COMMERCIAL: commercial,
+        }
         current = {name: _stored(name, owners[STORAGE[name]]) for name in EDITABLE_FIELDS}
         current.update({name: getattr(owners[table], name) for name, table in DERIVED.items()})
         values, errors = validation.evaluate(
@@ -277,6 +300,8 @@ def apply_updates(
                 terms if stored_terms else None,
                 area if stored_area else None,
                 residential if stored_residential else None,
+                plot if stored_plot else None,
+                commercial if stored_commercial else None,
             )
         now = timezone.now()
         for name, value in changed.items():
@@ -312,6 +337,12 @@ def apply_updates(
         if any(name in RESIDENTIAL_FIELDS for name in changed):
             residential.updated_at = now
             residential.save()
+        if any(name in PLOT_FIELDS for name in changed):
+            plot.updated_at = now
+            plot.save()
+        if any(name in COMMERCIAL_FIELDS for name in changed):
+            commercial.updated_at = now
+            commercial.save()
         ListingRevision.objects.create(
             listing=row,
             revision=row.revision,
@@ -321,7 +352,12 @@ def apply_updates(
             created_at=now,
         )
         view = view_of(
-            row, terms, area if area.pk else None, residential if residential.pk else None
+            row,
+            terms,
+            area if area.pk else None,
+            residential if residential.pk else None,
+            plot if plot.pk else None,
+            commercial if commercial.pk else None,
         )
         if any(registry.field(n).valuation_input for n in changed if changed[n] != current[n]):
             emit(ListingModelInputsChanged(listing_id=row.id))  # last: after-commit

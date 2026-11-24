@@ -146,13 +146,20 @@ def check_money(definition: registry.FieldDef, value) -> tuple[Decimal | None, s
     return amount.quantize(Decimal("0.01")), None
 
 
+def decimal_code(definition: registry.FieldDef) -> str:
+    """The code for a well-formed decimal outside its rules, declared by the registry field
+    (`error_code`: `invalid_area` for the area fields, otherwise `invalid_measure`)."""
+    return definition.error_code
+
+
 def check_decimal(definition: registry.FieldDef, value) -> tuple[Decimal | None, str | None]:
     """(value at the field's scale, code). Text only: numbers, floats and commas are refused.
 
-    Valid text is ASCII `^\\d{1,10}(\\.\\d{1,4})?$` without leading zeros (`0.5` is fine, `0010` is
-    not) and without surrounding whitespace; anything else that is not a plain decimal number
-    is `invalid`. A well-formed number that is zero, negative, below the minimum, above the
-    maximum or has too many decimals is `invalid_area`.
+    Valid text is ASCII `^\\d{1,10}(\\.\\d{1,scale})?$` (the field's scale) without leading zeros
+    (`0.5` is fine, `0010` is not) and without surrounding whitespace; anything else that is not
+    a plain decimal number is `invalid`. A well-formed number that is zero, negative, below the
+    minimum, above the maximum or has too many decimals is `invalid_area` for an area and
+    `invalid_measure` for any other decimal (feet, kilowatts); the registry's `error_code` decides.
     """
     if not isinstance(value, str) or len(value) > _MONEY_INPUT_MAX:
         return None, "invalid"
@@ -163,10 +170,10 @@ def check_decimal(definition: registry.FieldDef, value) -> tuple[Decimal | None,
     if len(whole) > 1 and whole.startswith("0"):
         return None, "invalid"  # zero-padded
     if negative or len(fraction or "") > definition.scale:
-        return None, "invalid_area"
+        return None, decimal_code(definition)
     amount = Decimal(f"{whole}.{fraction or '0'}")
     if amount < definition.minimum or amount > definition.maximum:
-        return None, "invalid_area"
+        return None, decimal_code(definition)
     return amount.quantize(Decimal(1).scaleb(-definition.scale)), None
 
 
@@ -191,15 +198,19 @@ def check_boolean(value) -> tuple[bool | None, str | None]:
 _NUMERIC_ENUMS = frozenset({"marla_basis"})
 
 
-def check_enum(definition: registry.FieldDef, value, purpose: str) -> tuple[str | None, str | None]:
+def check_enum(
+    definition: registry.FieldDef, value, purpose: str, subtype: str | None = None
+) -> tuple[str | None, str | None]:
+    """The value must be one the registry allows for this purpose and Subtype (a Plot File only
+    allows `file_only`, for instance); anything else is `invalid_choice`."""
     if not isinstance(value, str):
         return None, "invalid_choice" if definition.id in _NUMERIC_ENUMS else "invalid"
-    if value not in (definition.values_for(purpose) or ()):
+    if value not in (definition.values_for(purpose, subtype) or ()):
         return None, "invalid_choice"
     return value, None
 
 
-def _check_one(definition, value, purpose):
+def _check_one(definition, value, purpose, subtype):
     if definition.type == "text":
         return check_text(definition, value, paragraphs=definition.id == "description")
     if definition.type == "money":
@@ -207,7 +218,7 @@ def _check_one(definition, value, purpose):
     if definition.type == "decimal":
         return check_decimal(definition, value)
     if definition.type == "enum":
-        return check_enum(definition, value, purpose)
+        return check_enum(definition, value, purpose, subtype)
     if definition.type == "integer":
         return check_integer(definition, value)
     if definition.type == "boolean":
@@ -224,8 +235,8 @@ def evaluate(
 ) -> tuple[dict[str, object], dict[str, str]]:
     """Normalised values for every update (None clears) and a code per failing field.
 
-    Cross-field: the marla basis against the resulting unit (`_check_marla_basis`) and an
-    apartment's floor against its building (`_check_floor`).
+    Cross-field: the marla basis against the resulting unit (`_check_marla_basis`) and a
+    floor against its building (`_check_floor`).
     Every update is judged against the current registry: the value rules and whether the field
     applies to this Listing. Failing fields are all reported at once. Completeness (a rental
     priced per rental period naming its period, required fields) is a publication rule
@@ -244,7 +255,7 @@ def evaluate(
         elif not definition.applies_to(purpose, category, subtype):
             errors[name] = "not_applicable"
         else:
-            value, code = _check_one(definition, raw, purpose)
+            value, code = _check_one(definition, raw, purpose, subtype)
             if code:
                 errors[name] = code
             else:
@@ -255,7 +266,7 @@ def evaluate(
 
 
 def _check_floor(purpose, category, subtype, current, values, errors) -> None:
-    """An apartment's floor cannot be above its building's floors, judged on the RESULTING state
+    """A floor cannot be above its building's floors, judged on the RESULTING state
     and only when this update touches one of the two (stored data is never re-judged). The code is
     on `floor_number`, and also on `building_floors` when the request sent it."""
     if "floor_number" not in values and "building_floors" not in values:

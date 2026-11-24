@@ -12,7 +12,7 @@ from apps.presentation.api.permissions import AllowPublic
 MAX_AGE = 300
 # Bump when the response shape (serializers) changes without a registry change, so client
 # caches are invalidated.
-RESPONSE_SHAPE_VERSION = 3
+RESPONSE_SHAPE_VERSION = 4
 FIELD_TYPES = registry.FIELD_TYPES
 
 
@@ -34,6 +34,21 @@ class RegistryFieldSerializer(serializers.Serializer):
         child=serializers.ListField(child=serializers.CharField()),
         allow_null=True,
         help_text="Enums narrowed by Listing purpose (purpose -> allowed values); else null.",
+    )
+    allowed_values_by_subtype = serializers.DictField(
+        child=serializers.ListField(child=serializers.CharField()),
+        allow_null=True,
+        help_text=(
+            "Enums narrowed by Listing Subtype (Subtype -> allowed values, one entry per Subtype "
+            "the field applies to); else null. When present it takes precedence over the "
+            "choices in `allowed_values` for that Subtype."
+        ),
+    )
+    seller_declared = serializers.BooleanField(
+        help_text=(
+            "A claim the seller makes (legal, approval, possession): show it as "
+            '"Seller-declared", never as verified by EstateAI.'
+        )
     )
     min_length = serializers.IntegerField(
         allow_null=True, help_text="Text only: minimum characters after normalisation."
@@ -130,6 +145,12 @@ def _body() -> dict:
                         if f.allowed_values_by_purpose is None
                         else {p: list(v) for p, v in f.allowed_values_by_purpose}
                     ),
+                    "allowed_values_by_subtype": (
+                        None
+                        if f.allowed_values_by_subtype is None
+                        else {s: list(v) for s, v in f.allowed_values_by_subtype}
+                    ),
+                    "seller_declared": f.seller_declared,
                     "min_length": f.min_length,
                     "max_length": f.max_length,
                     "minimum": None if f.minimum is None else format(f.minimum, "f"),

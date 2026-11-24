@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from apps.catalog import registry
 from apps.listings import area
-from apps.listings.fields import RESIDENTIAL_FIELDS
+from apps.listings.fields import COMMERCIAL_FIELDS, PLOT_FIELDS, RESIDENTIAL_FIELDS
 from apps.listings.lifecycle import ListingStatus, Origin
 
 
@@ -117,15 +117,15 @@ def area_constraints() -> list[models.CheckConstraint]:
     ]
 
 
-def residential_constraints() -> list[models.CheckConstraint]:
-    """Bound and enum CHECKs of the residential details, generated from the current registry.
+def _detail_constraints(prefix: str, names) -> list[models.CheckConstraint]:
+    """Bound and enum CHECKs of a details table, generated from the current registry.
 
-    Integers and decimals within their bounds, enums within their values; booleans need none.
-    A NULL always passes: unknown is allowed. Plus the one cross-field rule, an apartment's floor
-    within its building.
+    Integers and decimals within their bounds, enums within their values (a by-Subtype map is
+    narrower than the column can know, so the column allows the union); booleans need none.
+    A NULL always passes: unknown is allowed.
     """
     constraints = []
-    for name in RESIDENTIAL_FIELDS:
+    for name in names:
         definition = _def(name)
         if definition.type == "enum":
             inside = models.Q(**{f"{name}__in": list(definition.allowed_values)})
@@ -141,9 +141,16 @@ def residential_constraints() -> list[models.CheckConstraint]:
         constraints.append(
             models.CheckConstraint(
                 condition=models.Q(**{f"{name}__isnull": True}) | inside,
-                name=f"listings_res_{name}_{suffix}",
+                name=f"{prefix}_{name}_{suffix}",
             )
         )
+    return constraints
+
+
+def residential_constraints() -> list[models.CheckConstraint]:
+    """Bound and enum CHECKs of the unit details, generated from the current registry, plus the
+    one cross-field rule: a floor within its building (any Subtype where both apply)."""
+    constraints = _detail_constraints("listings_res", RESIDENTIAL_FIELDS)
     constraints.append(
         models.CheckConstraint(
             condition=models.Q(floor_number__isnull=True)
@@ -153,6 +160,16 @@ def residential_constraints() -> list[models.CheckConstraint]:
         )
     )
     return constraints
+
+
+def plot_constraints() -> list[models.CheckConstraint]:
+    """Bound and enum CHECKs of the plot details, generated from the current registry."""
+    return _detail_constraints("listings_plot", PLOT_FIELDS)
+
+
+def commercial_constraints() -> list[models.CheckConstraint]:
+    """Bound and enum CHECKs of the commercial details, generated from the current registry."""
+    return _detail_constraints("listings_com", COMMERCIAL_FIELDS)
 
 
 class PropertyListing(models.Model):
@@ -261,8 +278,10 @@ class ListingArea(models.Model):
 
 
 class ListingResidential(models.Model):
-    """House and Apartment details of a Listing (one row, created lazily on the first non-null
-    value). Every column is nullable: unanswered is NULL, never 0 or false."""
+    """The unit details of a Listing (one row, created lazily on the first non-null value): the
+    House and Apartment set, the details Shops and Offices share with them (condition, floors,
+    parking, ...) and the utilities shared with plots. The model keeps its name. Every column is
+    nullable: unanswered is NULL, never 0 or false."""
 
     listing = models.OneToOneField(
         PropertyListing, on_delete=models.CASCADE, related_name="residential"
@@ -297,7 +316,58 @@ class ListingResidential(models.Model):
     building_lobby = models.BooleanField(null=True)
     intercom = models.BooleanField(null=True)
     maintenance_charges = models.DecimalField(max_digits=14, decimal_places=2, null=True)
+    electricity = models.BooleanField(null=True)
+    water = models.BooleanField(null=True)
+    gas = models.BooleanField(null=True)
     updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         constraints = residential_constraints()
+
+
+class ListingPlot(models.Model):
+    """Plot and Plot File details of a Listing (one row, created lazily on the first non-null
+    value). Every column is nullable: unanswered is NULL, never 0 or false. Possession, balloting,
+    development, approval and plot file status are the seller's own claims (registry flag
+    `seller_declared`)."""
+
+    listing = models.OneToOneField(PropertyListing, on_delete=models.CASCADE, related_name="plot")
+    plot_width = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    plot_depth = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    possession_status = models.CharField(max_length=32, null=True)
+    corner_plot = models.BooleanField(null=True)
+    road_width_ft = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    balloting_status = models.CharField(max_length=32, null=True)
+    sewerage = models.BooleanField(null=True)
+    development_status = models.CharField(max_length=32, null=True)
+    approval_authority = models.CharField(max_length=32, null=True)
+    park_facing = models.BooleanField(null=True)
+    main_boulevard = models.BooleanField(null=True)
+    boundary_wall = models.BooleanField(null=True)
+    orientation = models.CharField(max_length=32, null=True)
+    plot_file_status = models.CharField(max_length=32, null=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = plot_constraints()
+
+
+class ListingCommercial(models.Model):
+    """Shop and Office details of a Listing (one row, created lazily on the first non-null
+    value). Every column is nullable: unanswered is NULL, never 0 or false."""
+
+    listing = models.OneToOneField(
+        PropertyListing, on_delete=models.CASCADE, related_name="commercial"
+    )
+    business_use = models.CharField(max_length=32, null=True)
+    frontage_ft = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    road_access = models.CharField(max_length=32, null=True)
+    ceiling_height_ft = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    power_load_kw = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    three_phase_electricity = models.BooleanField(null=True)
+    conference_rooms = models.IntegerField(null=True)
+    business_centre_facilities = models.BooleanField(null=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = commercial_constraints()

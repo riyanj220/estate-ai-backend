@@ -11,7 +11,11 @@ from types import MappingProxyType
 LISTING = "listing"  # a column of PropertyListing
 TERMS = "terms"  # a column of ListingTerms
 AREA = "area"  # a column of ListingArea
-RESIDENTIAL = "residential"  # a column of ListingResidential (House and Apartment details)
+# a column of ListingResidential, the unit details shared by residential and commercial units
+# (and the utilities shared with plots); the table keeps its name
+RESIDENTIAL = "residential"
+PLOT = "plot"  # a column of ListingPlot (Plot and Plot File details)
+COMMERCIAL = "commercial"  # a column of ListingCommercial (Shop and Office details)
 
 # Chosen when the Draft starts and never edited (Story 2.1); stored on PropertyListing.
 IDENTITY_FIELDS = ("purpose", "category", "subtype")
@@ -57,6 +61,31 @@ STORAGE = MappingProxyType(
         "building_lobby": RESIDENTIAL,
         "intercom": RESIDENTIAL,
         "maintenance_charges": RESIDENTIAL,
+        "electricity": RESIDENTIAL,
+        "water": RESIDENTIAL,
+        "gas": RESIDENTIAL,
+        "plot_width": PLOT,
+        "plot_depth": PLOT,
+        "possession_status": PLOT,
+        "corner_plot": PLOT,
+        "road_width_ft": PLOT,
+        "balloting_status": PLOT,
+        "sewerage": PLOT,
+        "development_status": PLOT,
+        "approval_authority": PLOT,
+        "park_facing": PLOT,
+        "main_boulevard": PLOT,
+        "boundary_wall": PLOT,
+        "orientation": PLOT,
+        "plot_file_status": PLOT,
+        "business_use": COMMERCIAL,
+        "frontage_ft": COMMERCIAL,
+        "road_access": COMMERCIAL,
+        "ceiling_height_ft": COMMERCIAL,
+        "power_load_kw": COMMERCIAL,
+        "three_phase_electricity": COMMERCIAL,
+        "conference_rooms": COMMERCIAL,
+        "business_centre_facilities": COMMERCIAL,
     }
 )
 
@@ -69,6 +98,8 @@ LISTING_FIELDS = tuple(name for name, table in STORAGE.items() if table == LISTI
 TERMS_FIELDS = tuple(name for name, table in STORAGE.items() if table == TERMS)
 AREA_FIELDS = tuple(name for name, table in STORAGE.items() if table == AREA)
 RESIDENTIAL_FIELDS = tuple(name for name, table in STORAGE.items() if table == RESIDENTIAL)
+PLOT_FIELDS = tuple(name for name, table in STORAGE.items() if table == PLOT)
+COMMERCIAL_FIELDS = tuple(name for name, table in STORAGE.items() if table == COMMERCIAL)
 DERIVED_FIELDS = tuple(DERIVED)
 WIRE_FIELDS = (
     *IDENTITY_FIELDS,

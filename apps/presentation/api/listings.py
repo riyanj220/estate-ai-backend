@@ -44,6 +44,15 @@ ORIGINS = _choices(o.value for o in Origin)
 
 
 def _help(definition) -> str:
+    text = _type_help(definition)
+    if definition.seller_declared:
+        text += " Seller-declared: the owner's own claim, never verified by EstateAI."
+    if definition.allowed_values_by_subtype is not None:
+        text += " The choices depend on the Subtype (see the registry)."
+    return text.strip()
+
+
+def _type_help(definition) -> str:
     if definition.type == "money":
         return f"Decimal string in {definition.currency} with two decimals, e.g. `1500000.00`."
     if definition.type == "text":
@@ -53,8 +62,9 @@ def _help(definition) -> str:
         note = " Computed by the server; read-only." if definition.derived else ""
         low, high = format(definition.minimum, "f"), format(definition.maximum, "f")
         return (
-            f"Decimal string with {definition.scale} decimals (`{low}` to `{high}`), "
-            f"digits and a point only.{note}"
+            f"Decimal string with up to {definition.scale} decimals (`{low}` to `{high}`), "
+            f"digits and a point only, never a JSON number. Returned with {definition.scale} "
+            f"decimals.{note}"
         )
     if definition.type == "integer":
         low, high = int(definition.minimum), int(definition.maximum)
@@ -258,7 +268,23 @@ class ListingDetailView(NoStoreMixin, APIView):
             "`construction_status`, room counts and `basement`, and the Apartment set "
             "`floor_number`, `building_floors`, `lift`, `backup_electricity`, "
             "`building_security`, `balcony_or_terrace`, `building_lobby`, `intercom` and "
-            "`maintenance_charges` (PKR per month)). Counts are JSON integers and yes/no "
+            "`maintenance_charges` (PKR per month)), the details Shops and Offices share with them "
+            "(`condition`, `furnishing`, `parking_spaces`, `occupancy_status`, floors, "
+            "`lift`, `building_security`, `building_lobby`, `maintenance_charges`), the "
+            "utilities `electricity`, `water` and `gas`, the Plot and Plot File details "
+            "(`plot_width`, `plot_depth` and `road_width_ft` as decimal strings in feet with "
+            "at most two decimals, `possession_status`, `corner_plot`, `balloting_status`, "
+            "`sewerage`, `development_status`, `approval_authority`, `park_facing`, "
+            "`main_boulevard`, `boundary_wall`, `orientation`, `plot_file_status`) and the "
+            "Shop and Office details (`business_use`, `frontage_ft`, `road_access`, "
+            "`ceiling_height_ft`, `power_load_kw`, `three_phase_electricity`, "
+            "`conference_rooms`, `business_centre_facilities`). Possession, balloting, "
+            "development, approval and plot file status are seller-declared (registry flag "
+            "`seller_declared`): the owner's claim, never verified by EstateAI. A Plot File "
+            "allows only `file_only` for `possession_status` and the other Subtypes refuse it "
+            "(`invalid_choice`). Ids the registry does not define (for example installment, "
+            "down payment, title document or mortgage attributes) are `unknown_field`. "
+            "Counts are JSON integers and yes/no "
             "answers are JSON `true`/`false`, never text; unanswered is `null`, never 0 or "
             "false. The registry says which apply to which Subtype (`not_applicable` "
             "otherwise); `null` clears a field. `area_sqft` is computed by the server and is "
@@ -269,7 +295,7 @@ class ListingDetailView(NoStoreMixin, APIView):
             "succeeded is also a 409: reload). An edit that changes nothing is `200` and keeps the "
             "revision. `400` carries codes keyed by registry field id (`invalid`, `too_short`, "
             "`too_long`, `invalid_price`, `invalid_area`, `invalid_range`, `invalid_floor`, "
-            "`invalid_choice`, `not_applicable`, "
+            "`invalid_choice`, `not_applicable`, `invalid_measure`, "
             "`contains_contact_details`, `not_editable`; unknown ids are "
             "`unknown_field` under `non_field_errors`) and never echoes a value. Another "
             "account's, an unknown or a malformed id is `404 not_found`; an account that may "
