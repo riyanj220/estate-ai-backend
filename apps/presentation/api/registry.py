@@ -1,5 +1,7 @@
 """The public Field registry (Story 2.1): taxonomy and field definitions from `catalog`."""
 
+from datetime import date
+
 from django.http import HttpResponseNotModified
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers
@@ -12,7 +14,7 @@ from apps.presentation.api.permissions import AllowPublic
 MAX_AGE = 300
 # Bump when the response shape (serializers) changes without a registry change, so client
 # caches are invalidated.
-RESPONSE_SHAPE_VERSION = 4
+RESPONSE_SHAPE_VERSION = 5
 FIELD_TYPES = registry.FIELD_TYPES
 
 
@@ -50,6 +52,13 @@ class RegistryFieldSerializer(serializers.Serializer):
             '"Seller-declared", never as verified by EstateAI.'
         )
     )
+    section = serializers.ChoiceField(
+        choices=registry.SECTIONS,
+        help_text=(
+            "Where a form groups the field: `terms` (price, sale and rent terms) or `details`. "
+            "Read this, never guess from applicability."
+        ),
+    )
     min_length = serializers.IntegerField(
         allow_null=True, help_text="Text only: minimum characters after normalisation."
     )
@@ -59,12 +68,18 @@ class RegistryFieldSerializer(serializers.Serializer):
     min = serializers.CharField(
         source="minimum",
         allow_null=True,
-        help_text="Money, decimal and integer: smallest value, a decimal string.",
+        help_text=(
+            "Money, decimal and integer: smallest value, a decimal string. Date: the earliest "
+            "date, `YYYY-MM-DD`."
+        ),
     )
     max = serializers.CharField(
         source="maximum",
         allow_null=True,
-        help_text="Money, decimal and integer: largest value, a decimal string.",
+        help_text=(
+            "Money, decimal and integer: largest value, a decimal string. Date: the latest "
+            "date, `YYYY-MM-DD`."
+        ),
     )
     currency = serializers.CharField(allow_null=True, help_text="Money only: `PKR`.")
     scale = serializers.IntegerField(
@@ -119,6 +134,13 @@ def _matches(header: str | None, tag: str) -> bool:
     return tag in candidates
 
 
+def _bound(value) -> str | None:
+    """A numeric bound as a decimal string, a date bound as `YYYY-MM-DD`."""
+    if value is None:
+        return None
+    return value.isoformat() if isinstance(value, date) else format(value, "f")
+
+
 def _body() -> dict:
     return RegistrySerializer(
         {
@@ -151,10 +173,11 @@ def _body() -> dict:
                         else {s: list(v) for s, v in f.allowed_values_by_subtype}
                     ),
                     "seller_declared": f.seller_declared,
+                    "section": f.section,
                     "min_length": f.min_length,
                     "max_length": f.max_length,
-                    "minimum": None if f.minimum is None else format(f.minimum, "f"),
-                    "maximum": None if f.maximum is None else format(f.maximum, "f"),
+                    "minimum": _bound(f.minimum),
+                    "maximum": _bound(f.maximum),
                     "currency": f.currency,
                     "scale": f.scale,
                     "derived": f.derived,

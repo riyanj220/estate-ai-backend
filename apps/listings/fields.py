@@ -9,7 +9,7 @@ the registry and this map disagree.
 from types import MappingProxyType
 
 LISTING = "listing"  # a column of PropertyListing
-TERMS = "terms"  # a column of ListingTerms
+TERMS = "terms"  # a column of ListingTerms (price, sale terms and rent terms)
 AREA = "area"  # a column of ListingArea
 # a column of ListingResidential, the unit details shared by residential and commercial units
 # (and the utilities shared with plots); the table keeps its name
@@ -86,6 +86,19 @@ STORAGE = MappingProxyType(
         "three_phase_electricity": COMMERCIAL,
         "conference_rooms": COMMERCIAL,
         "business_centre_facilities": COMMERCIAL,
+        "price_negotiable": TERMS,
+        "possession_availability": TERMS,
+        "security_deposit": TERMS,
+        "availability_date": TERMS,
+        "advance_rent": TERMS,
+        "minimum_lease_months": TERMS,
+        "notice_period_days": TERMS,
+        "utility_electricity_included": TERMS,
+        "utility_gas_included": TERMS,
+        "utility_water_included": TERMS,
+        "utility_internet_included": TERMS,
+        "pets_allowed": TERMS,
+        "occupant_restrictions": TERMS,
     }
 )
 

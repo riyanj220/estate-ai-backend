@@ -8,6 +8,7 @@ Codes only; a submitted value is never copied into a result or an error.
 import re
 import unicodedata
 from collections.abc import Mapping
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from apps.catalog import registry
@@ -194,6 +195,21 @@ def check_boolean(value) -> tuple[bool | None, str | None]:
     return value, None
 
 
+def check_date(definition: registry.FieldDef, value) -> tuple[date | None, str | None]:
+    """(calendar date, code). Only JSON text `YYYY-MM-DD` in ASCII digits naming a real date:
+    numbers, timestamps, other layouts (`2027-3-1`, `20270301`), other digits and a date that does
+    not exist (`2027-02-30`) are `invalid`. A real date outside the registry window is
+    `invalid_date`. No time zone or time of day is ever involved."""
+    if not registry.iso_date_shape(value):
+        return None, "invalid"
+    parsed = registry.calendar_date(value)
+    if parsed is None:
+        return None, "invalid"
+    if parsed < definition.minimum or parsed > definition.maximum:
+        return None, "invalid_date"
+    return parsed, None
+
+
 # Enums whose values are numbers written as text: a JSON number is a wrong choice, not a wrong type.
 _NUMERIC_ENUMS = frozenset({"marla_basis"})
 
@@ -223,6 +239,8 @@ def _check_one(definition, value, purpose, subtype):
         return check_integer(definition, value)
     if definition.type == "boolean":
         return check_boolean(value)
+    if definition.type == "date":
+        return check_date(definition, value)
     return None, "invalid"  # a type that has no editor yet
 
 

@@ -10,7 +10,12 @@ from django.utils import timezone
 
 from apps.catalog import registry
 from apps.listings import area
-from apps.listings.fields import COMMERCIAL_FIELDS, PLOT_FIELDS, RESIDENTIAL_FIELDS
+from apps.listings.fields import (
+    COMMERCIAL_FIELDS,
+    PLOT_FIELDS,
+    RESIDENTIAL_FIELDS,
+    TERMS_FIELDS,
+)
 from apps.listings.lifecycle import ListingStatus, Origin
 
 
@@ -56,9 +61,24 @@ def text_constraints() -> list[models.CheckConstraint]:
     ]
 
 
+# The sale and rent terms added in Story 2.6; their CHECKs are generated like the details tables'.
+# (The price, basis and period constraints keep their original names.)
+NEW_TERMS_FIELDS = tuple(
+    name for name in TERMS_FIELDS if name not in ("asking_price", "price_basis", "rental_period")
+)
+
+
 def terms_constraints() -> list[models.CheckConstraint]:
-    """Price range and enum CHECKs of the terms, generated from the current registry."""
+    """Price, enum, range and date-window CHECKs of the terms, generated from the current
+    registry. A NULL always passes: unanswered is allowed."""
     price, basis, period = _def("asking_price"), _def("price_basis"), _def("rental_period")
+    return [
+        *_terms_price_constraints(price, basis, period),
+        *_detail_constraints("listings_terms", NEW_TERMS_FIELDS),
+    ]
+
+
+def _terms_price_constraints(price, basis, period) -> list[models.CheckConstraint]:
     return [
         models.CheckConstraint(
             condition=models.Q(asking_price__isnull=True)
@@ -130,7 +150,7 @@ def _detail_constraints(prefix: str, names) -> list[models.CheckConstraint]:
         if definition.type == "enum":
             inside = models.Q(**{f"{name}__in": list(definition.allowed_values)})
             suffix = "valid"
-        elif definition.type in ("integer", "decimal", "money"):
+        elif definition.type in ("integer", "decimal", "money", "date"):
             low, high = definition.minimum, definition.maximum
             if definition.type == "integer":
                 low, high = int(low), int(high)
@@ -250,12 +270,27 @@ class ListingRevision(models.Model):
 
 
 class ListingTerms(models.Model):
-    """Price data of a Listing (one row, created lazily). Money is NUMERIC, never a float."""
+    """Price and the sale and rent terms of a Listing (one row, created with the Draft). Money is
+    NUMERIC, never a float. Every column is nullable: unanswered is NULL, never 0 or false, and a
+    date is a plain calendar date (SQL DATE), never a timestamp."""
 
     listing = models.OneToOneField(PropertyListing, on_delete=models.CASCADE, related_name="terms")
     asking_price = models.DecimalField(max_digits=14, decimal_places=2, null=True)
     price_basis = models.CharField(max_length=32, null=True)
     rental_period = models.CharField(max_length=32, null=True)
+    price_negotiable = models.BooleanField(null=True)
+    possession_availability = models.CharField(max_length=32, null=True)  # sale only
+    security_deposit = models.DecimalField(max_digits=14, decimal_places=2, null=True)  # rent
+    availability_date = models.DateField(null=True)  # rent only
+    advance_rent = models.DecimalField(max_digits=14, decimal_places=2, null=True)  # rent only
+    minimum_lease_months = models.SmallIntegerField(null=True)  # rent only
+    notice_period_days = models.SmallIntegerField(null=True)  # rent only
+    utility_electricity_included = models.BooleanField(null=True)  # rent only
+    utility_gas_included = models.BooleanField(null=True)  # rent only
+    utility_water_included = models.BooleanField(null=True)  # rent only
+    utility_internet_included = models.BooleanField(null=True)  # rent only
+    pets_allowed = models.BooleanField(null=True)  # rent only
+    occupant_restrictions = models.CharField(max_length=32, null=True)  # rent only
     updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

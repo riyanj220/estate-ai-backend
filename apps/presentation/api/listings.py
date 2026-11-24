@@ -71,6 +71,12 @@ def _type_help(definition) -> str:
         return f"Whole number from {low} to {high}, a JSON integer (never text). Null clears it."
     if definition.type == "boolean":
         return "`true` or `false`; null when not answered (never defaulted to either)."
+    if definition.type == "date":
+        low, high = definition.minimum.isoformat(), definition.maximum.isoformat()
+        return (
+            f"A calendar date as text `YYYY-MM-DD` (`{low}` to `{high}`), never a timestamp or "
+            "a JSON number. Returned the same way."
+        )
     return ""
 
 
@@ -87,6 +93,8 @@ def _serializer_field(definition, update: bool):
         )
     if definition.type == "boolean":
         return serializers.BooleanField(**options)
+    if definition.type == "date":
+        return serializers.DateField(**options)  # documented as `format: date`; the service judges
     return serializers.CharField(**options)  # text, and money as a decimal string
 
 
@@ -278,7 +286,15 @@ class ListingDetailView(NoStoreMixin, APIView):
             "`main_boulevard`, `boundary_wall`, `orientation`, `plot_file_status`) and the "
             "Shop and Office details (`business_use`, `frontage_ft`, `road_access`, "
             "`ceiling_height_ft`, `power_load_kw`, `three_phase_electricity`, "
-            "`conference_rooms`, `business_centre_facilities`). Possession, balloting, "
+            "`conference_rooms`, `business_centre_facilities`) and the sale and rent terms "
+            "(`price_negotiable` for both; sale only `possession_availability`; rent only "
+            "`security_deposit` and `advance_rent` as decimal strings in PKR with at most two "
+            "decimals, `availability_date` as text `YYYY-MM-DD` between 2000-01-01 and "
+            "2100-12-31, `minimum_lease_months`, `notice_period_days`, the four "
+            "`utility_*_included` answers, `pets_allowed` and `occupant_restrictions`; the rent "
+            "terms are `not_applicable` on a sale Draft and the other way round; a rental period "
+            "is never assumed). Installment, payment type, down payment and title or approval "
+            "document terms are not supported yet (`unknown_field`). Possession, balloting, "
             "development, approval and plot file status are seller-declared (registry flag "
             "`seller_declared`): the owner's claim, never verified by EstateAI. A Plot File "
             "allows only `file_only` for `possession_status` and the other Subtypes refuse it "
@@ -295,6 +311,7 @@ class ListingDetailView(NoStoreMixin, APIView):
             "succeeded is also a 409: reload). An edit that changes nothing is `200` and keeps the "
             "revision. `400` carries codes keyed by registry field id (`invalid`, `too_short`, "
             "`too_long`, `invalid_price`, `invalid_area`, `invalid_range`, `invalid_floor`, "
+            "`invalid_date`, "
             "`invalid_choice`, `not_applicable`, `invalid_measure`, "
             "`contains_contact_details`, `not_editable`; unknown ids are "
             "`unknown_field` under `non_field_errors`) and never echoes a value. Another "

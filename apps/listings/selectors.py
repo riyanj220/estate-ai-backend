@@ -11,7 +11,7 @@ import re
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import MappingProxyType
 
@@ -138,12 +138,14 @@ def clean_provenance(stored) -> dict[str, dict]:
 
 def field_text(name: str, value) -> str | int | bool | None:
     """A stored value as it goes on the wire and into revisions: money with two decimals, a
-    decimal at its registry scale (`"10.0000"`), the marla basis as its enum string, integers
-    and booleans as themselves, else text."""
+    decimal at its registry scale (`"10.0000"`), a date as `YYYY-MM-DD`, the marla basis as its
+    enum string, integers and booleans as themselves, else text."""
     if value is None:
         return None
     if isinstance(value, bool | int):
         return value
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value.isoformat()  # a calendar date `YYYY-MM-DD`, never a timestamp
     if name == "marla_basis" and isinstance(value, Decimal):
         return basis_text(value)
     definition = registry.field(name)
