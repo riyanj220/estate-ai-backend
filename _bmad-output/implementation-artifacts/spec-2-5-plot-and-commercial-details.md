@@ -2,7 +2,7 @@
 title: 'Story 2.5: Plot and Commercial details (backend half, then frontend half)'
 type: 'feature'
 created: '2026-11-21'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -97,6 +97,8 @@ Decisions beyond the story text: the enum value lists for possession, balloting,
 ## Review Triage Log
 
 Backend half (three reviewers). Patched: unit-neutral `invalid_measure` text, and the error code now comes from the registry (`error_code`) instead of a hard-coded id list; `values_for` returns nothing when a by-subtype map exists and no Subtype is given; stricter loader rules for `allowed_values_by_subtype` (category-scoped fields, overlap with the purpose map, dead values) with message-checked loader tests; a test that every registry decimal fits its model column; the five seller-declared claim fields are not `ai_extractable`; a tautological test fixed. Known limitation recorded in the docs: one requirement level per field, so `water` and `building_floors` are `recommended` for commercial too (the spec's "optional for commercial" cannot be expressed yet). Deferred: re-saving an unchanged floor on an already-invalid stored pair. Verification: lint-imports 13 kept, ruff, pytest 3432 passed, no migration drift, openapi regenerated.
+
+Frontend half (three reviewers). Patched: option resolution fails closed like the backend when a by-subtype map exists; a stored value that is no longer offered is flagged in the hint and summary; decimal display and comparison no longer infer from scale (documented area exceptions, padded to registry scale, compared at the larger stored precision); seller-declared tag kept in conflict rows and summary with a screen-reader separator, hand-built fields flagged by a registry get it too, description order matches visual order; "Furnishing or fit-out" keyed by Category; stub copies the real descriptions, serves nulls and an ETag with version and shape; the "no platform badge" check scans the whole page, attributes and pseudo-content in more states. Deferred: spurious conflict when comparing two saved texts of different precision. Verification: lint, typecheck, build, api:check, full Playwright 955 passed.
 
 ## Design Notes
 
