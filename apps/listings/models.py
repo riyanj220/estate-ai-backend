@@ -406,3 +406,29 @@ class ListingCommercial(models.Model):
 
     class Meta:
         constraints = commercial_constraints()
+
+
+MAX_IMAGES = 10
+
+
+class ListingImage(models.Model):
+    """An image attached to a Listing (Story 2.9). The file is a `kernel` media asset, referenced
+    by a plain UUID (no foreign key into the kernel); the number of images is limited by the
+    service under the Listing row lock, not by the database. `position` orders the images; the
+    cover is the lowest until Story 2.10 adds reordering."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    listing = models.ForeignKey(PropertyListing, on_delete=models.CASCADE, related_name="images")
+    asset_id = models.UUIDField(unique=True)
+    position = models.PositiveIntegerField()
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["listing", "position"], name="listings_image_position_unique"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(position__gte=1), name="listings_image_position_gte_1"
+            ),
+        ]

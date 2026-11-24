@@ -17,9 +17,14 @@ ERROR_DESCRIPTIONS = {
     401: "Authentication required",
     403: "Forbidden",
     404: "Not found",
+    409: "Conflict",
     429: "Too many requests",
     500: "Server error",
+    503: "Busy: retry shortly",
 }
+# Declared by an operation with `extend_schema(responses={409: OpenApiResponse(description=...)})`;
+# the envelope content (and the `Retry-After` of a 503) is filled in here.
+DECLARED_ERROR_STATUSES = (409, 503)
 
 
 def _error_components() -> dict:
@@ -55,7 +60,7 @@ def _error_response(status: int) -> dict:
         "description": ERROR_DESCRIPTIONS[status],
         "content": {"application/json": {"schema": ENVELOPE_REF}},
     }
-    if status == 429:
+    if status in (429, 503):
         response["headers"] = {
             "Retry-After": {
                 "description": "Seconds to wait before retrying, when known.",
@@ -72,6 +77,12 @@ def add_error_contract(result, generator, request, public):
         for operation in methods.values():
             if not isinstance(operation, dict) or "responses" not in operation:
                 continue
+            for status in DECLARED_ERROR_STATUSES:
+                declared = operation["responses"].get(str(status))
+                if declared is not None and "content" not in declared:
+                    filled = _error_response(status)
+                    filled["description"] = declared.get("description") or filled["description"]
+                    operation["responses"][str(status)] = filled
             for status in DEFAULT_ERROR_STATUSES:
                 operation["responses"].setdefault(str(status), _error_response(status))
     return result

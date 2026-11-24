@@ -71,6 +71,18 @@ class ListingView:
 
 
 @dataclass(frozen=True)
+class ImageView:
+    """An attached image as the wire shows it: never a URL and never the storage key."""
+
+    id: uuid.UUID
+    position: int
+    content_type: str
+    width: int
+    height: int
+    bytes: int
+
+
+@dataclass(frozen=True)
 class ListingPage:
     items: tuple[ListingView, ...]
     next_cursor: str | None

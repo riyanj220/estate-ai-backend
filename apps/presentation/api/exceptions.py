@@ -13,7 +13,6 @@ from rest_framework.response import Response
 from rest_framework.views import set_rollback
 
 from apps.kernel.errors import CATALOGUE, DomainError, field_message, get_error
-from apps.kernel.ratelimit import RateLimited
 from apps.presentation.api.serializers import ErrorEnvelopeSerializer
 
 _BY_TYPE: tuple[tuple[type[Exception], str], ...] = (
@@ -116,8 +115,8 @@ def exception_handler(exc, context):
     headers = {}
     if isinstance(exc, drf.Throttled) and exc.wait is not None:
         headers["Retry-After"] = str(math.ceil(exc.wait))
-    elif isinstance(exc, RateLimited):
-        headers["Retry-After"] = str(exc.retry_after)
+    elif isinstance(exc, DomainError) and isinstance(getattr(exc, "retry_after", None), int):
+        headers["Retry-After"] = str(exc.retry_after)  # RateLimited and Busy
     set_rollback()
     extra = getattr(exc, "extra", None) if isinstance(exc, DomainError) else None
     return error_response(code, request, fields, headers, extra)

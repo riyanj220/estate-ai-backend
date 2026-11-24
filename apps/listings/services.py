@@ -1,5 +1,6 @@
 """Write path for Listings. Only this module creates or changes Listing rows (AD-3)."""
 
+import uuid
 from collections.abc import Mapping
 from decimal import Decimal
 
@@ -11,7 +12,7 @@ from apps.catalog import registry
 from apps.identity.capabilities import Access, Capability, matrix_access
 from apps.identity.policy import can
 from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, lock_account
-from apps.kernel import audit, ratelimit
+from apps.kernel import audit, media, ratelimit
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.kernel.events import emit
@@ -36,8 +37,10 @@ from apps.listings.fields import (
 )
 from apps.listings.lifecycle import ListingStatus, Origin
 from apps.listings.models import (
+    MAX_IMAGES,
     ListingArea,
     ListingCommercial,
+    ListingImage,
     ListingPlot,
     ListingResidential,
     ListingRevision,
@@ -45,6 +48,7 @@ from apps.listings.models import (
     PropertyListing,
 )
 from apps.listings.selectors import (
+    ImageView,
     ListingView,
     area_of,
     canonical_uuid,
@@ -362,3 +366,131 @@ def apply_updates(
         if any(registry.field(n).valuation_input for n in changed if changed[n] != current[n]):
             emit(ListingModelInputsChanged(listing_id=row.id))  # last: after-commit
     return view
+
+
+def _owned_editable(actor: Actor, listing_id) -> uuid.UUID:
+    """The id of a Listing the actor's account owns, after the shared refusals: Visitor
+    `unauthenticated`, not owned (or malformed or unknown) `not_found`, no `edit_drafts`
+    `forbidden`."""
+    require_signed_in(actor)
+    key = canonical_uuid(listing_id)
+    owned = (
+        key is not None
+        and actor.kind is ActorKind.USER
+        and PropertyListing.objects.filter(id=key, owner_account_id=actor.account_id).exists()
+    )
+    if not owned:
+        raise DomainError("not_found")
+    if not can(actor, Capability.EDIT_DRAFTS):
+        raise DomainError("forbidden")
+    return key
+
+
+def require_image_access(actor: Actor, listing_id) -> None:
+    """The refusals of `upload_image` that need no body: Visitor `unauthenticated`, not owned
+    `not_found`, no `edit_drafts` `forbidden`. The API runs it BEFORE it looks at the upload, so
+    a non-owner or a Suspended owner gets 404 or 403 whatever the body is."""
+    _owned_editable(actor, listing_id)
+
+
+def _lock_for_images(actor: Actor, key: uuid.UUID):
+    """Inside a transaction: the account (the state is decided again from the locked snapshot),
+    then the Listing row, which must still be an editable Draft. Returns both."""
+    account = lock_account(actor.account_id)
+    if (
+        account.type == ADMIN_ACCOUNT_TYPE
+        or matrix_access(account.state, Capability.EDIT_DRAFTS) is not Access.ALLOWED
+    ):
+        raise DomainError("forbidden")
+    row = _locked_owned(key, actor)
+    if row.status not in lifecycle.EDITABLE_STATUSES:
+        raise DomainError("forbidden")
+    return account, row
+
+
+def _bump(row: PropertyListing, actor: Actor, count: int) -> None:
+    """One revision for an image change; the revision row records only the image count."""
+    now = timezone.now()
+    row.revision += 1
+    row.updated_at = now
+    row.save(update_fields=["revision", "updated_at"])
+    ListingRevision.objects.create(
+        listing=row,
+        revision=row.revision,
+        origin=Origin.MANUAL.value,
+        actor_account_id=actor.account_id,
+        changes={"images": count},
+        created_at=now,
+    )
+
+
+def upload_image(actor: Actor, listing_id, data: bytes) -> ImageView:
+    """Add an image to one of the owner's Drafts (Story 2.9).
+
+    Refusals, in order: Visitor `unauthenticated`; a Listing the actor's account does not own
+    (another owner, an administrator, an unknown or malformed id) `not_found`; no `edit_drafts`
+    capability `forbidden`; a status that cannot be edited `forbidden`; 10 images already
+    `too_many_images`. Then the upload is validated and re-encoded OUTSIDE any lock
+    (`kernel.images`: `ImageRejected` with a reason code, or `Busy`), and in one transaction that
+    locks the account and the Listing: the account, status and image count are decided again, the
+    storage cap is enforced atomically (`storage_cap_exceeded`), the file and asset row are written,
+    the `ListingImage` is attached, and the Listing `revision` rises by one with a
+    `ListingRevision` whose `changes` is `{"images": count}`. If the transaction fails after the
+    file was written, the file is removed again. No `base_revision` is needed.
+    """
+    key = _owned_editable(actor, listing_id)
+    listing = PropertyListing.objects.filter(id=key).values("status").first()
+    if listing is None or listing["status"] not in lifecycle.EDITABLE_STATUSES:
+        raise DomainError("forbidden")
+    if ListingImage.objects.filter(listing_id=key).count() >= MAX_IMAGES:
+        raise DomainError("too_many_images")
+    processed = media.process_upload(actor, data)
+    asset = None
+    try:
+        with transaction.atomic():
+            account, row = _lock_for_images(actor, key)
+            existing = list(
+                ListingImage.objects.filter(listing=row).values_list("position", flat=True)
+            )
+            if len(existing) >= MAX_IMAGES:
+                raise DomainError("too_many_images")
+            asset = media.store_processed(actor, processed, account_type=account.type, attach=True)
+            image = ListingImage.objects.create(
+                listing=row,
+                asset_id=asset.id,
+                position=max(existing, default=0) + 1,
+                created_at=timezone.now(),
+            )
+            _bump(row, actor, len(existing) + 1)
+    except BaseException:
+        if asset is not None:
+            media.discard_file(asset.storage_key)  # the row rolled back; no file may outlive it
+        raise
+    return ImageView(
+        id=image.id,
+        position=image.position,
+        content_type=asset.content_type,
+        width=asset.width,
+        height=asset.height,
+        bytes=asset.bytes,
+    )
+
+
+def remove_image(actor: Actor, listing_id, image_id) -> None:
+    """Remove an image from one of the owner's Drafts: the `ListingImage` and its asset go in one
+    transaction (the storage usage is given back once), the file after commit, and the Listing
+    `revision` rises by one. Same refusals as `upload_image`; an unknown image, another Listing's
+    image and a repeat are `not_found`."""
+    key = _owned_editable(actor, listing_id)
+    image_key = canonical_uuid(image_id)
+    if image_key is None:
+        raise DomainError("not_found")
+    with transaction.atomic():
+        _, row = _lock_for_images(actor, key)
+        image = ListingImage.objects.select_for_update().filter(id=image_key, listing=row).first()
+        if image is None:
+            raise DomainError("not_found")
+        asset_id = image.asset_id
+        image.delete()
+        media.delete_asset(actor, asset_id, missing_ok=True)  # a lost asset row is no obstacle
+        _bump(row, actor, ListingImage.objects.filter(listing=row).count())
