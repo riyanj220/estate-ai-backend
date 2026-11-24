@@ -118,14 +118,18 @@ account; it counts uploads only).
 `GET /api/v1/listings/{listing_id}/images/{image_id}/file` (also `HEAD`) is THE media endpoint: the only place an image
 is served, so access is decided at request time and never by a URL being secret. The view is a thin shell over the seam
 `listings.selectors.image_for_serving(actor, listing_id, image_id)`, which returns the stored bytes and content type or
-raises `not_found`; Story 2.12 rewires that one function to the single visibility policy (public Published listings)
-and nothing else changes.
+raises `not_found`. Since Story 2.12 that one function asks the single visibility policy (`listings.policy.can_view`,
+see `docs/visibility.md`); the endpoint is unchanged apart from the cache header.
 
-Rules in this story: only a Draft's image, only to its owning, non-administrator account actor holding `view_drafts`
-(Suspended and Email-unverified owners may view their own images; a Deactivated owner cannot). Everyone else gets the
-identical `404 not_found` envelope: another account, an administrator, a Visitor (404, never 401, so existence is never
-confirmed), unknown or malformed ids (only canonical lowercase hyphenated UUIDs), another Listing's image id, a Listing
-that is not a Draft, and a lost row or file. The route needs no CSRF token (read only). It has **no rate limit** and each `GET` reads the whole file (up to 5 MB)
+Rules (Story 2.12): an image of a **public** Listing (Published, not restricted, owner an Active account) goes to anyone,
+a Visitor and an administrator included; an image of any other Listing (a Draft, a restricted one, one whose owner is
+Suspended, Email-unverified or Deactivated) goes only to its owning, non-administrator account actor holding
+`view_drafts` (Suspended and Email-unverified owners may view their own images; a Deactivated owner cannot). Everyone
+else gets the identical `404 not_found` envelope: another account, an administrator (admin reads of non-public data go
+through the audited private-read path, not here), a Visitor (404, never 401, so existence is never confirmed), unknown or
+malformed ids (only canonical lowercase hyphenated UUIDs), another Listing's image id, a non-public Listing, and a lost
+row or file. Access is re-decided on every request: a Listing that stops being public (restricted, owner suspended)
+is 404 for others on the next request and visible again after reactivation. The route needs no CSRF token (read only). It has **no rate limit** and each `GET` reads the whole file (up to 5 MB)
 into memory; a limit or a streaming read can be added behind the same seam. The authorisation matrix lists the route as
 `public` because the owner check is inside `image_for_serving`, not in a route permission class.
 
@@ -135,12 +139,18 @@ The `200` response streams the stored, re-encoded bytes (never the upload) with:
 |---|---|
 | `Content-Type` | the stored `image/jpeg`, `image/png` or `image/webp` (the only use of the stored type) |
 | `Content-Length` | the stored size |
-| `Cache-Control` | `private, no-store` (a shared cache must never keep a Draft image); errors are `no-store` |
+| `Cache-Control` | `public, max-age=60` when the Listing is public at that moment (the answer does not depend on who asks, so a shared cache may keep it for up to a minute after the Listing stops being public); `private, no-store` for an owner-only image (a shared cache must never keep a non-public image); errors are `no-store` |
 | `X-Content-Type-Options` | `nosniff` |
 | `Content-Disposition` | `inline` (no file name) |
 | `Content-Security-Policy` | `default-src 'none'; sandbox` (the security-headers middleware keeps a CSP a response already carries) |
 
-No cookie is set and the request never reveals the storage key or a path. `HEAD` returns the same headers and no body; it decides access identically but reads no file (`Content-Length` is the
+No cookie is set and the request never reveals the storage key or a path. A public image also has no `Vary: Cookie`
+and no `Set-Cookie`, whatever cookies the request carries (a signed-in session, a stale or malformed CSRF cookie): the
+view clears Django's CSRF "reissue the cookie" flag for a public answer, as the public logo does. `ServedImage.public`
+tells the view which header to send. For a public answer the view also clears any response cookie and strips `Cookie`
+from `Vary`. **Takedown delay:** because a public image may be cached for 60 seconds, a restricted Listing's or a
+suspended owner's images can still be served from a browser or shared cache for up to 60 seconds after the server
+starts refusing them (no code change; see `docs/visibility.md`). `HEAD` returns the same headers and no body; it decides access identically but reads no file (`Content-Length` is the
 asset row's stored size, so a lost file shows only on `GET`).
 `Range` is ignored (always `200` with the whole file, no `Accept-Ranges`), conditional headers are ignored and there is
 no `ETag`; `Accept` is ignored for the image (errors are JSON). Images are at most about 2,048 px and 5 MB, so the body

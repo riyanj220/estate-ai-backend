@@ -1042,19 +1042,24 @@ paths:
   /api/v1/listings/{listing_id}/images/{image_id}/file:
     get:
       operationId: get_listing_image_file
-      description: 'The media endpoint: the only place an image is served. Applied
-        at request time: a Draft''s image goes only to the owning account (Suspended
-        and Email-unverified owners included, a Deactivated one not). Anyone else
-        (another account, an administrator, a Visitor), an unknown or malformed id,
-        another Listing''s image and a Listing that is not a Draft get the same `404
+      description: 'The media endpoint: the only place an image is served, decided
+        at request time by the single visibility policy. An image of a public Listing
+        (Published, not restricted, owner Active) goes to anyone, a Visitor and an
+        administrator included, with `Cache-Control: public, max-age=60` (so it may
+        stay in a cache for up to a minute after the Listing stops being public),
+        no cookie and nothing varying by cookie, whatever cookies the request carries.
+        An image of any other Listing (a Draft, a restricted one, one whose owner
+        is Suspended or Deactivated) goes only to the owning account (Suspended and
+        Email-unverified owners included, a Deactivated one not) with `Cache-Control:
+        private, no-store`. Anyone else (another account, an administrator, a Visitor),
+        an unknown or malformed id and another Listing''s image get the same `404
         not_found` (a Visitor gets 404, never 401). The body is the stored, re-encoded
         image with its stored `Content-Type` (`image/jpeg`, `image/png` or `image/webp`),
-        `Content-Length`, `Cache-Control: private, no-store`, `X-Content-Type-Options:
-        nosniff`, `Content-Disposition: inline` (no file name) and `Content-Security-Policy:
-        default-src ''none''; sandbox`; no cookie is set. `HEAD` answers the same
-        headers without a body. `Range` is ignored (always `200`, the whole file)
-        and there is no `ETag`. `Accept` is ignored.'
-      summary: The bytes of one image of one of the signed-in account's own Drafts
+        `Content-Length`, `X-Content-Type-Options: nosniff`, `Content-Disposition:
+        inline` (no file name) and `Content-Security-Policy: default-src ''none'';
+        sandbox`. `HEAD` answers the same headers without a body. `Range` is ignored
+        (always `200`, the whole file) and there is no `ETag`. `Accept` is ignored.'
+      summary: The bytes of one image of a Listing the caller may see
       parameters:
       - in: path
         name: image_id
@@ -1632,6 +1637,7 @@ paths:
           type: string
           enum:
           - draft
+          - published
       tags:
       - me
       security:
@@ -4643,8 +4649,11 @@ components:
     ListingStatusEnum:
       enum:
       - draft
+      - published
       type: string
-      description: '* `draft` - draft'
+      description: |-
+        * `draft` - draft
+        * `published` - published
     ListingUpdateRequest:
       type: object
       properties:
@@ -5261,8 +5270,11 @@ components:
     VisibilityEnum:
       enum:
       - private
+      - public
       type: string
-      description: '* `private` - private'
+      description: |-
+        * `private` - PRIVATE
+        * `public` - PUBLIC
     ErrorCode:
       type: string
       enum:

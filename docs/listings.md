@@ -1,12 +1,12 @@
 # Listings
 
 `apps/listings` owns the canonical Listing. Story 2.1 adds starting a Draft, Story 2.2 conflict-safe editing of title,
-description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details, Story 2.5 the Plot and Commercial details, Story 2.9 the image upload, Story 2.10 the cover, order and media endpoint; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
+description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details, Story 2.5 the Plot and Commercial details, Story 2.9 the image upload, Story 2.10 the cover, order and media endpoint; Story 2.12 the visibility policy and the public projection (`docs/visibility.md`); later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
 
 ## Model (`listings.models`, written only by `listings.services`)
 
 - `PropertyListing`: `id` (UUID), `owner_account_id` (a plain indexed UUID column, no foreign key into `identity`),
-  `status` (`draft` now; the code-defined enum `listings.lifecycle.ListingStatus` grows later), `revision` (starts at 1),
+  `status` (`draft` or `published`; the code-defined enum `listings.lifecycle.ListingStatus` grows later; nothing sets `published` yet, Story 2.15 will, so fixtures write it through the model), `restricted` (boolean, default false; set by moderation in a later epic, fixtures only until then), `revision` (starts at 1),
   `registry_version`, the registry fields `purpose`, `category`, `subtype` as columns with CHECK constraints generated
   from the taxonomy (including that the Subtype belongs to the Category), `title` and `description` (nullable, empty is
   `null`, length CHECKs from the registry), `provenance` (JSON, registry field id to `{"origin", "confirmed"}`, set
@@ -351,7 +351,7 @@ edits of Published Listings.
 Wire order of `fields`: identity, the editable fields in `STORAGE` order, `area_sqft` last.
 `{id, status, visibility, revision, registry_version, fields: {purpose, category, subtype, title, description,
 asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, <the 30 residential details, electricity, water, gas, the 14 plot details, the 8 commercial details>, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [<ImageView, see "Images" below>], amenities: []}`.
-`visibility` is `private` for Drafts (`listings.lifecycle.Visibility`, extended by Story 2.12). `fields` is keyed by flat
+`visibility` is `public` only while the Listing really is public (published, not restricted, owner Active, derived from `listings.policy`), else `private` (`listings.lifecycle.Visibility`); who may see a Listing is `listings.policy.can_view`, see `docs/visibility.md`. `fields` is keyed by flat
 registry ids and returns `null` for unknown; `asking_price`, `area_value` (four decimals), `marla_basis` (`"225"`,
 `"250"`, `"272.25"`) and `area_sqft` (four decimals, `null` when not computable) are strings, never numbers; the residential integers and yes/no answers are JSON integers and booleans, and the feet and kilowatt fields are strings with two decimals. Provenance covers
 the editable fields, not `area_sqft`. No owner or other internal column is returned. `tests/api/test_listings_api.py`

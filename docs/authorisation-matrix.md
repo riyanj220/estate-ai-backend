@@ -63,7 +63,7 @@ whose permission is not explicit.
 | `/api/v1/session` | DELETE, POST | public | `apps.presentation.api.sessions.SessionView` |
 <!-- END GENERATED ROUTES -->
 
-Routes shown as `public` whose owner check lives in a selector: the Listing media endpoint (`image_for_serving`), the owner
+Routes shown as `public` whose owner check lives in a selector: the Listing media endpoint (`image_for_serving`, which asks `listings.policy.can_view`: an image of a public Listing goes to anyone, any other only to its owner, see `docs/visibility.md`), the owner
 file routes of Story 2.11 (`own_image_for_serving`: a Visitor, another account, the other type and an administrator get 404)
 and the public Agency logo (`logo_for_serving`: served only while the Agency account is Active, otherwise 404).
 
