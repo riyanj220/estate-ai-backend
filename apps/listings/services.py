@@ -23,6 +23,8 @@ from apps.listings.events import ListingModelInputsChanged
 from apps.listings.fields import (
     ADDRESS,
     ADDRESS_FIELDS,
+    AMENITIES,
+    AMENITIES_FIELD,
     AREA,
     AREA_FIELDS,
     COMMERCIAL,
@@ -43,6 +45,7 @@ from apps.listings.fields import (
 from apps.listings.lifecycle import ListingStatus, Origin
 from apps.listings.models import (
     MAX_IMAGES,
+    ListingAmenity,
     ListingArea,
     ListingCommercial,
     ListingImage,
@@ -58,6 +61,7 @@ from apps.listings.selectors import (
     ImageView,
     ListingView,
     address_of,
+    amenities_of,
     area_of,
     canonical_uuid,
     clean_provenance,
@@ -304,6 +308,7 @@ def apply_updates(
         stored_address = address is not None
         if address is None:
             address = ListingPrivateAddress(listing=row)  # saved only on a first non-null value
+        stored_amenities = amenities_of(row)
         owners = {
             LISTING: row,
             TERMS: terms,
@@ -314,10 +319,21 @@ def apply_updates(
             LOCATION: location,
             ADDRESS: address,
         }
-        current = {name: _stored(name, owners[STORAGE[name]]) for name in EDITABLE_FIELDS}
+        current = {
+            name: (stored_amenities or None)
+            if STORAGE[name] == AMENITIES
+            else _stored(name, owners[STORAGE[name]])
+            for name in EDITABLE_FIELDS
+        }
         current.update({name: getattr(owners[table], name) for name, table in DERIVED.items()})
         values, errors = validation.evaluate(
-            row.purpose, row.category, row.subtype, current, updates, _resolve_reference
+            row.purpose,
+            row.category,
+            row.subtype,
+            current,
+            updates,
+            _resolve_reference,
+            catalog.amenity_codes() if AMENITIES_FIELD in updates else None,
         )
         if errors:
             raise FieldsInvalid(errors)
@@ -352,12 +368,14 @@ def apply_updates(
                 commercial if stored_commercial else None,
                 location if stored_location else None,
                 address if stored_address else None,
+                amenities=stored_amenities,
                 with_private=True,
             )
         now = timezone.now()
         for name, value in changed.items():
             table = DERIVED[name] if name in DERIVED else STORAGE[name]
-            setattr(owners[table], name, _column(name, value))
+            if table != AMENITIES:  # the map is written as rows below
+                setattr(owners[table], name, _column(name, value))
             if name in DERIVED:
                 continue
             if value is None:
@@ -400,6 +418,14 @@ def apply_updates(
         if any(name in ADDRESS_FIELDS for name in changed):
             address.updated_at = now
             address.save()
+        if "amenities" in changed:  # the map replaces the stored rows, under the listing lock
+            new_map = changed["amenities"] or {}
+            ListingAmenity.objects.filter(listing=row).delete()
+            ListingAmenity.objects.bulk_create(
+                ListingAmenity(listing=row, amenity_code=code, state=state)
+                for code, state in new_map.items()
+            )
+            stored_amenities = dict(new_map)
         ListingRevision.objects.create(
             listing=row,
             revision=row.revision,
@@ -417,6 +443,7 @@ def apply_updates(
             commercial if commercial.pk else None,
             location if location.pk else None,
             address if address.pk else None,
+            amenities=stored_amenities,
             with_private=True,
         )
         if any(registry.field(n).valuation_input for n in changed if changed[n] != current[n]):

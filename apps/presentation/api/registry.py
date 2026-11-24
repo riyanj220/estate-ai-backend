@@ -14,7 +14,7 @@ from apps.presentation.api.permissions import AllowPublic
 MAX_AGE = 300
 # Bump when the response shape (serializers) changes without a registry change, so client
 # caches are invalidated.
-RESPONSE_SHAPE_VERSION = 6
+RESPONSE_SHAPE_VERSION = 7
 FIELD_TYPES = registry.FIELD_TYPES
 
 
@@ -56,7 +56,8 @@ class RegistryFieldSerializer(serializers.Serializer):
         choices=registry.SECTIONS,
         help_text=(
             "Where a form groups the field: `terms` (price, sale and rent terms), `location` "
-            "(city, locality, the public location text and the private address; group by `class`) "
+            "(city, locality, the public location text and the private address; group by `class`), "
+            "`amenities` (the amenity map, from the catalogue at `/api/v1/reference/amenities`) "
             "or `details`. "
             "Read this, never guess from applicability."
         ),

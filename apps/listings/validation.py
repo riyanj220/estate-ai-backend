@@ -240,6 +240,39 @@ def check_reference(
     return key, None, parent
 
 
+AMENITY_STATES = ("present", "none")
+AMENITIES_MAX = 40  # entries in one map; the whole catalogue is smaller
+
+
+def check_amenities(
+    value, current, codes: frozenset[str] | None
+) -> tuple[dict[str, str] | None, str | None]:
+    """(the map of catalogue code to `present` or `none`, code). The map REPLACES the stored one.
+    `null` and `{}` clear it (None: nothing is answered). Anything but a JSON object, more than 40
+    entries, a key that is not an active catalogue code (`codes`, the catalogue's active codes), or
+    a state that is not exactly the text `present` or `none` is `invalid`. An entry the Listing
+    already stores with the same state is kept even if the catalogue dropped the code since (the
+    client re-sends what it read). A code left out is unanswered: it is never turned into `none`.
+    Without `codes` the catalogue is treated as EMPTY (fail safe: nothing new is accepted, only an
+    unchanged stored entry), never as "anything goes"."""
+    codes = codes if codes is not None else frozenset()
+    if not isinstance(value, dict):
+        return None, "invalid"
+    if len(value) > AMENITIES_MAX:
+        return None, "invalid"
+    stored = current if isinstance(current, dict) else {}
+    result: dict[str, str] = {}
+    for code, state in value.items():
+        if not isinstance(code, str) or not isinstance(state, str):
+            return None, "invalid"
+        if state not in AMENITY_STATES:
+            return None, "invalid"
+        if code not in codes and stored.get(code) != state:
+            return None, "invalid"
+        result[code] = state
+    return (result or None), None
+
+
 # Enums whose values are numbers written as text: a JSON number is a wrong choice, not a wrong type.
 _NUMERIC_ENUMS = frozenset({"marla_basis"})
 
@@ -281,6 +314,7 @@ def evaluate(
     current: Mapping[str, object],
     updates: Mapping[str, object],
     resolve: Resolver | None = None,
+    amenity_codes: frozenset[str] | None = None,
 ) -> tuple[dict[str, object], dict[str, str]]:
     """Normalised values for every update (None clears) and a code per failing field.
 
@@ -314,6 +348,12 @@ def evaluate(
             # again; only a new value must be active.
             values[name] = current[name]
             unchanged.add(name)
+        elif definition.type == "amenities":
+            value, code = check_amenities(raw, current.get(name), amenity_codes)
+            if code:
+                errors[name] = code
+            else:
+                values[name] = value
         elif definition.type == "reference":
             value, code, parent = check_reference(definition, raw, resolve)
             if code:

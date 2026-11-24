@@ -19,6 +19,8 @@ COMMERCIAL = "commercial"  # a column of ListingCommercial (Shop and Office deta
 LOCATION = "location"  # a column of ListingLocation (city, locality and the public location text)
 # a column of ListingPrivateAddress: the owner's exact address, class `private` (never public)
 ADDRESS = "address"
+# the `amenities` map: rows of ListingAmenity (one per answered catalogue code), not a column
+AMENITIES = "amenities"
 
 # Chosen when the Draft starts and never edited (Story 2.1); stored on PropertyListing.
 IDENTITY_FIELDS = ("purpose", "category", "subtype")
@@ -112,6 +114,7 @@ STORAGE = MappingProxyType(
         "house_number": ADDRESS,
         "latitude": ADDRESS,
         "longitude": ADDRESS,
+        "amenities": AMENITIES,
     }
 )
 
@@ -128,6 +131,7 @@ PLOT_FIELDS = tuple(name for name, table in STORAGE.items() if table == PLOT)
 COMMERCIAL_FIELDS = tuple(name for name, table in STORAGE.items() if table == COMMERCIAL)
 LOCATION_FIELDS = tuple(name for name, table in STORAGE.items() if table == LOCATION)
 ADDRESS_FIELDS = tuple(name for name, table in STORAGE.items() if table == ADDRESS)
+AMENITIES_FIELD = "amenities"  # the one field stored as rows of ListingAmenity
 DERIVED_FIELDS = tuple(DERIVED)
 WIRE_FIELDS = (
     *IDENTITY_FIELDS,

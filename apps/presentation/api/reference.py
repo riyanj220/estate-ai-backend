@@ -68,3 +68,38 @@ class LocalityView(APIView):
         if localities is None:
             raise DomainError("not_found")
         return Response({"items": LocalitySerializer(localities, many=True).data})
+
+
+class AmenitySerializer(serializers.Serializer):
+    """Allowlist. Codes, labels and groups are plain strings (managed in the database, never
+    OpenAPI enums). `kind` is the closed vocabulary the form groups by; `nearby` entries are
+    declared by the seller and are never verified."""
+
+    code = serializers.CharField()
+    label = serializers.CharField()
+    kind = serializers.ChoiceField(choices=[(k, k) for k in selectors.AMENITY_KINDS])
+    group = serializers.CharField()
+
+
+class AmenityListSerializer(serializers.Serializer):
+    items = AmenitySerializer(many=True)
+
+
+class AmenityView(APIView):
+    permission_classes = [AllowPublic]
+    authentication_classes: list = []
+
+    @extend_schema(
+        operation_id="list_amenities",
+        summary="The amenity and nearby facility catalogue",
+        description=(
+            "Public. The active catalogue ordered by `kind` (`on_property`, `community`, `nearby`) "
+            "and then by display order. `code` is the stable identifier a listing stores; `label` "
+            "and `group` are for display. A `nearby` entry is the seller's own declaration: "
+            'clients must label it "Seller-declared"; there is no distance and no verification. '
+            "Unpaginated: the list is small and bounded."
+        ),
+        responses={200: OpenApiResponse(AmenityListSerializer, description="Active amenities")},
+    )
+    def get(self, request):
+        return Response({"items": AmenitySerializer(selectors.list_amenities(), many=True).data})

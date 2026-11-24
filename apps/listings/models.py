@@ -475,6 +475,34 @@ class ListingPrivateAddress(models.Model):
         constraints = address_constraints()
 
 
+AMENITY_STATES = ("present", "none")
+
+
+class ListingAmenity(models.Model):
+    """One answered amenity or nearby facility of a Listing (Story 2.8): the catalogue code as plain
+    text (no key into `catalog`) and its state, `present` or `none`. A code with no row is
+    UNANSWERED, never `none`. Rows are replaced as a set by `apply_updates` only. No distance, no
+    verification and no score exist for any entry."""
+
+    listing = models.ForeignKey(
+        PropertyListing, on_delete=models.CASCADE, related_name="amenity_rows"
+    )
+    amenity_code = models.CharField(max_length=48)
+    state = models.CharField(max_length=8)
+
+    class Meta:
+        indexes = [models.Index(fields=["amenity_code", "state"], name="listings_amenity_code_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["listing", "amenity_code"], name="listings_amenity_listing_code_uniq"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(state__in=list(AMENITY_STATES)),
+                name="listings_amenity_state_valid",
+            ),
+        ]
+
+
 MAX_IMAGES = 10
 
 

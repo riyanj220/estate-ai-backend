@@ -30,6 +30,7 @@ from apps.listings import policy
 from apps.listings.area import basis_text
 from apps.listings.fields import (
     ADDRESS_FIELDS,
+    AMENITIES_FIELD,
     AREA_FIELDS,
     COMMERCIAL_FIELDS,
     DERIVED_FIELDS,
@@ -42,6 +43,7 @@ from apps.listings.fields import (
 )
 from apps.listings.lifecycle import ListingStatus, Origin, visibility_of
 from apps.listings.models import (
+    ListingAmenity,
     ListingArea,
     ListingCommercial,
     ListingImage,
@@ -82,7 +84,6 @@ class ListingView:
         default_factory=lambda: MappingProxyType({})
     )
     media: tuple = ()
-    amenities: tuple = ()
 
     def __repr__(self) -> str:
         shown = {
@@ -196,6 +197,26 @@ def address_of(row: PropertyListing) -> ListingPrivateAddress | None:
         return None
 
 
+def amenities_of(row: PropertyListing) -> dict[str, str]:
+    """The Listing's answered amenities as {code: state}; a code with no row is unanswered and is
+    not in the map. Public: the map carries nothing but codes and states."""
+    return amenities_by_listing([row.id])[row.id]
+
+
+def amenities_by_listing(listing_ids) -> dict[uuid.UUID, dict[str, str]]:
+    """The answered amenities of each Listing as {code: state} in code order, in one query."""
+    ids = list(listing_ids)
+    grouped: dict[uuid.UUID, dict[str, str]] = {key: {} for key in ids}
+    rows = (
+        ListingAmenity.objects.filter(listing_id__in=ids)
+        .order_by("listing_id", "amenity_code")
+        .values_list("listing_id", "amenity_code", "state")
+    )
+    for listing_id, code, state in rows:
+        grouped[listing_id][code] = state
+    return grouped
+
+
 def clean_provenance(stored) -> dict[str, dict]:
     """Well-formed entries only: a malformed one is skipped, never an error for a read."""
     if not isinstance(stored, dict):
@@ -220,6 +241,8 @@ def field_text(name: str, value) -> str | int | bool | None:
         return None
     if isinstance(value, bool | int):
         return value
+    if isinstance(value, Mapping):  # the amenities map: codes and states only
+        return dict(value)
     if isinstance(value, date) and not isinstance(value, datetime):
         return value.isoformat()  # a calendar date `YYYY-MM-DD`, never a timestamp
     if name == "marla_basis" and isinstance(value, Decimal):
@@ -246,6 +269,7 @@ def view_of(
     images: tuple[ImageView, ...] | None = None,
     public: bool | None = None,
     with_private: bool = False,
+    amenities: Mapping[str, str] | None = None,
 ) -> ListingView:
     terms = terms if terms is not None else terms_of(row)
     area = area if area is not None else area_of(row)
@@ -266,6 +290,8 @@ def view_of(
         fields[name] = field_text(name, getattr(commercial, name) if commercial else None)
     for name in LOCATION_FIELDS:
         fields[name] = field_text(name, getattr(location, name) if location else None)
+    answered = dict(amenities) if amenities is not None else amenities_of(row)
+    fields[AMENITIES_FIELD] = MappingProxyType(answered) if answered else None  # null: unanswered
     if with_private:  # the owner's resource only: the table is not even read otherwise
         address = address if address is not None else address_of(row)
         for name in ADDRESS_FIELDS:
@@ -404,9 +430,17 @@ def list_owned(
     next_cursor = encode_cursor(page[-1].created_at, page[-1].id, status) if more else None
     images = media_by_listing(r.id for r in page)
     public = policy.public_ids(r.id for r in page)
+    answered = amenities_by_listing(r.id for r in page)
     return ListingPage(
         tuple(
-            view_of(r, images=images[r.id], public=r.id in public, with_private=True) for r in page
+            view_of(
+                r,
+                images=images[r.id],
+                public=r.id in public,
+                with_private=True,
+                amenities=answered[r.id],
+            )
+            for r in page
         ),
         next_cursor,
     )

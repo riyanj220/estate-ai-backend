@@ -77,6 +77,15 @@ def _type_help(definition) -> str:
             f"The uuid of an active {definition.reference} from the reference lists "
             "(`/api/v1/reference/cities`), as text; never a name. Null clears it."
         )
+    if definition.type == "amenities":
+        return (
+            "An object `{code: state}` with catalogue codes (`/api/v1/reference/amenities`) and "
+            'the state `"present"` or `"none"`, at most 40 entries. It REPLACES the whole map; '
+            "`null` or `{}` clears it. A code left out is unanswered, never `none`. `nearby` "
+            "entries are the seller's own declaration: show them as seller-declared; there is no "
+            "distance and no verification. Returned as the answered codes only, or `null` when "
+            "none is answered."
+        )
     if definition.type == "date":
         low, high = definition.minimum.isoformat(), definition.maximum.isoformat()
         return (
@@ -99,6 +108,8 @@ def _serializer_field(definition, update: bool):
         )
     if definition.type == "boolean":
         return serializers.BooleanField(**options)
+    if definition.type == "amenities":  # codes and states are plain strings, never enums
+        return serializers.DictField(child=serializers.CharField(), **options)
     if definition.type == "reference":
         return serializers.UUIDField(**options)  # documented as `format: uuid`; the service judges
     if definition.type == "date":
@@ -172,9 +183,6 @@ class ListingSerializer(serializers.Serializer):
     )
     media = ImageSerializer(
         many=True, help_text="The images in `position` order; empty when there are none."
-    )
-    amenities = serializers.ListField(
-        child=serializers.CharField(), help_text="Empty until Story 2.8."
     )
 
 
@@ -252,7 +260,6 @@ def listing_data(view: selectors.ListingView) -> dict:
             "fields": dict(view.fields),
             "provenance": {name: dict(entry) for name, entry in view.provenance.items()},
             "media": [image_data(item) for item in view.media],
-            "amenities": list(view.amenities),
         }
     ).data
 
@@ -352,7 +359,12 @@ class ListingDetailView(NoStoreMixin, APIView):
             "`house_number` (up to 30) and `latitude` and `longitude` (decimal strings with at "
             "most six decimals, -90 to 90 and -180 to 180, both or neither; `out_of_range` "
             "otherwise): the private fields are returned only to the owner and never appear in "
-            "any public response. Installment, payment type, down payment and title or approval "
+            'any public response. `amenities` is the map `{code: "present" | "none"}` of '
+            "catalogue codes (`/api/v1/reference/amenities`): the sent map replaces the whole "
+            "stored one, `null` or `{}` clears it, a code that is left out is unanswered (never "
+            "`none`), an unknown or inactive code, another state, a non-object or more than 40 "
+            "entries is `invalid`; nearby facilities are seller-declared (no distance, no "
+            "verification). Installment, payment type, down payment and title or approval "
             "document terms are not supported yet (`unknown_field`). Possession, balloting, "
             "development, approval and plot file status are seller-declared (registry flag "
             "`seller_declared`): the owner's claim, never verified by EstateAI. A Plot File "
