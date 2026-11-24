@@ -189,16 +189,11 @@ def _delete_after_commit(keys: list[str]) -> None:
         transaction.on_commit(lambda key=key: storage.get_storage().delete(key), robust=True)
 
 
-def delete_asset(actor: Actor, asset_id: uuid.UUID, *, missing_ok: bool = False) -> None:
-    """Remove an asset the actor's account owns: the row and the usage in one transaction, the
-    file after commit. An unknown or foreign asset is `not_found`, or a no-op with `missing_ok`
-    (the caller's own record is going away anyway; with no row the bytes are unknown, so usage
-    is left as it is and a leftover file is found by retention)."""
-    _require_account_actor(actor)
+def _remove_asset(owner_account_id: uuid.UUID, asset_id: uuid.UUID, missing_ok: bool) -> None:
     with transaction.atomic():
         row = (
             MediaAsset.objects.select_for_update()
-            .filter(pk=asset_id, owner_account_id=actor.account_id)
+            .filter(pk=asset_id, owner_account_id=owner_account_id)
             .first()
         )
         if row is None:
@@ -209,6 +204,25 @@ def delete_asset(actor: Actor, asset_id: uuid.UUID, *, missing_ok: bool = False)
         key = row.storage_key
         row.delete()
         _delete_after_commit([key])
+
+
+def delete_asset(actor: Actor, asset_id: uuid.UUID, *, missing_ok: bool = False) -> None:
+    """Remove an asset the actor's account owns: the row and the usage in one transaction, the
+    file after commit. An unknown or foreign asset is `not_found`, or a no-op with `missing_ok`
+    (the caller's own record is going away anyway; with no row the bytes are unknown, so usage
+    is left as it is and a leftover file is found by retention)."""
+    _require_account_actor(actor)
+    _remove_asset(actor.account_id, asset_id, missing_ok)
+
+
+def purge_owned_asset(actor: Actor, owner_account_id: uuid.UUID, asset_id: uuid.UUID) -> None:
+    """Erasure: remove an asset on behalf of its owner's account, by an administrator or the
+    system (an account being deactivated). Same effect as `delete_asset`, and an unknown asset is
+    a no-op. A user actor is `forbidden`: owners use `delete_asset`."""
+    require_signed_in(actor)
+    if actor.kind not in (ActorKind.ADMIN, ActorKind.SYSTEM):
+        raise DomainError("forbidden")
+    _remove_asset(owner_account_id, asset_id, True)
 
 
 def purge_orphans(now: datetime, dry_run: bool = False) -> int:

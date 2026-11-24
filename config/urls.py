@@ -26,6 +26,13 @@ from apps.presentation.api.profile import (
     EmailChangeRequestView,
     ProfileDetailView,
 )
+from apps.presentation.api.profile_images import (
+    AgencyLogoView,
+    AgencyProfileImageFileView,
+    AgencyProfileImageView,
+    ProfileImageFileView,
+    ProfileImageView,
+)
 from apps.presentation.api.reference import CityView
 from apps.presentation.api.registrations import AgencyRegistrationView, IndividualRegistrationView
 from apps.presentation.api.registry import RegistryView
@@ -73,6 +80,23 @@ urlpatterns = [
         AgencyProfileDetailView.as_view(),
         name="me-agency-profile",
     ),
+    path("api/v1/me/profile/image", ProfileImageView.as_view(), name="me-profile-image"),
+    path(
+        "api/v1/me/profile/image/file",
+        ProfileImageFileView.as_view(),
+        name="me-profile-image-file",
+    ),
+    path(
+        "api/v1/me/agency-profile/image",
+        AgencyProfileImageView.as_view(),
+        name="me-agency-profile-image",
+    ),
+    path(
+        "api/v1/me/agency-profile/image/file",
+        AgencyProfileImageFileView.as_view(),
+        name="me-agency-profile-image-file",
+    ),
+    path("api/v1/agencies/<str:agency_id>/logo", AgencyLogoView.as_view(), name="agency-logo"),
     path("api/v1/me/email-change", EmailChangeRequestView.as_view(), name="me-email-change"),
     path(
         "api/v1/email-changes/confirm",

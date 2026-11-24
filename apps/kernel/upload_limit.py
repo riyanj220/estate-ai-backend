@@ -1,8 +1,9 @@
 """Cap on the request body of the image upload routes (Story 2.9).
 
-Only `POST /api/v1/listings/<id>/images` is limited here (6 MiB), and `PATCH` on the same route
-(the small JSON reorder body) gets a much smaller cap, `MAX_IMAGE_ORDER_BODY_BYTES` (64 KiB); every
-other route keeps Django's defaults. Two layers:
+`POST /api/v1/listings/<id>/images` is limited here (6 MiB), and so are `PUT` on the two profile
+image routes (`/api/v1/me/profile/image`, `/api/v1/me/agency-profile/image`, Story 2.11); `PATCH` on
+the Listing images route (the small JSON reorder body) gets a much smaller cap,
+`MAX_IMAGE_ORDER_BODY_BYTES` (64 KiB); every other route keeps Django's defaults. Two layers:
 
 * `BodyLimitASGI` wraps the ASGI application and bounds buffering BEFORE Django reads anything:
   a declared `Content-Length` above the cap is refused without reading the body, and a body with no
@@ -23,10 +24,13 @@ from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.conf import settings
 
 ROUTE = re.compile(r"^/api/v1/listings/[^/]+/images/?$")
+PROFILE_ROUTE = re.compile(r"^/api/v1/me/(?:agency-)?profile/image/?$")
 
 
 def is_upload(method: str, path: str) -> bool:
-    return method in ("POST", "PATCH") and ROUTE.match(path) is not None
+    if method in ("POST", "PATCH") and ROUTE.match(path) is not None:
+        return True
+    return method == "PUT" and PROFILE_ROUTE.match(path) is not None
 
 
 def cap_for(method: str) -> int:

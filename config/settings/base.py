@@ -78,8 +78,10 @@ MEDIA_ROOT = env("MEDIA_ROOT", str(BASE_DIR / "media"))
 if not os.path.isabs(MEDIA_ROOT):
     raise ImproperlyConfigured("MEDIA_ROOT must be an absolute path.")
 # One upload is at most 5 MiB of image inside a request of at most 6 MiB (`kernel.images`,
-# `kernel.upload_limit`, image routes only). DATA_UPLOAD_MAX_MEMORY_SIZE stays at Django's default;
-# the file limit is aligned so an upload is held in memory and never spills to a temp file.
+# `kernel.upload_limit`: the Listing image upload and reorder routes and `PUT` on the two profile
+# image routes only; every other route keeps Django's defaults). DATA_UPLOAD_MAX_MEMORY_SIZE
+# stays at Django's default; the file limit is aligned so an upload is held in memory and never
+# spills to a temp file.
 MAX_REQUEST_BODY_BYTES = 6 * 1024 * 1024
 MAX_IMAGE_ORDER_BODY_BYTES = 64 * 1024  # the JSON body of `PATCH .../images`
 FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_REQUEST_BODY_BYTES
