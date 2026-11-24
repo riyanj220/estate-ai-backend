@@ -99,6 +99,8 @@ Decisions beyond the story text: reorder and cover are one revision-checked muta
 
 ## Review Triage Log
 
+Backend half (three reviewers). Patched: images whose asset row is lost ("ghosts") are cleaned up under the lock by every image mutation so the set is always manageable; removing an image repairs a missing cover; uploads use max position + 1; the reorder route got a 64 KiB body cap (middleware and ASGI) and its own rate limit (`image_order`, 120/hour); HEAD answers from the asset row without reading the file; storage errors on read give the uniform 404; a pre-set CSP is kept only when it equals the media CSP; selector-level tests pin the access contract that Story 2.12 inherits; docs corrected. Accepted: positions became 0-based with a data migration (Story 2.9 stored 1-based), no rate limit on the media GET, whole-file response (up to 5 MB), a lost file shows 200 on HEAD but 404 on GET. Verification: lint-imports 14 kept, ruff, pytest 4107 passed, no migration drift, openapi regenerated.
+
 ## Design Notes
 
 One mutation with the full order keeps positions contiguous without per-pair swaps and races. Serving is deliberately the narrowest possible (owner, Draft) behind one seam so the later single visibility policy replaces it in one place.

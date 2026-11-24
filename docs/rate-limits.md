@@ -29,6 +29,7 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | `admin_sign_in` | 5 | 15 minutes | client | `POST /api/v1/admin-session` (Story 1.22); keyed by lowercased email plus client network; failures only; silent generic 401 at the cap, never 429; see `docs/administrators.md` |
 | `admin_sign_in_account` | 20 | 1 hour | account | `POST /api/v1/admin-session` (Story 1.22); per-account ceiling keyed by the lowercased email only (any network); failures only; silent generic 401 |
 | `image_upload` | 30 | 1 hour | account | `POST /api/v1/listings/{id}/images` (Story 2.9); 429 with `Retry-After`; every attempt counts, accepted or not |
+| `image_order` | 120 | 1 hour | account | `PATCH /api/v1/listings/{id}/images` (Story 2.10); 429 with `Retry-After`; every attempt counts, accepted or not (the throttle runs before the ownership check, like `image_upload`) |
 | `storage_cap_bytes_individual` | 209,715,200 | cap | account | `kernel.media.store_image` (Story 2.9): bytes of stored images for an Individual (200 MB); `409 storage_cap_exceeded` |
 | `storage_cap_bytes_agency` | 1,073,741,824 | cap | account | the same for an Agency (1 GB) |
 

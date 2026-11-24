@@ -35,8 +35,9 @@ whose permission is not explicit.
 | `/api/v1/health` | GET, HEAD | public | `apps.presentation.api.health.WrappedAPIView` |
 | `/api/v1/listings` | POST | signed_in | `apps.presentation.api.listings.DraftCreateView` |
 | `/api/v1/listings/<str:listing_id>` | GET, PATCH | signed_in | `apps.presentation.api.listings.ListingDetailView` |
-| `/api/v1/listings/<str:listing_id>/images` | POST | signed_in | `apps.presentation.api.listing_images.ListingImagesView` |
+| `/api/v1/listings/<str:listing_id>/images` | PATCH, POST | signed_in | `apps.presentation.api.listing_images.ListingImagesView` |
 | `/api/v1/listings/<str:listing_id>/images/<str:image_id>` | DELETE | signed_in | `apps.presentation.api.listing_images.ListingImageDetailView` |
+| `/api/v1/listings/<str:listing_id>/images/<str:image_id>/file` | GET, HEAD | public | `apps.presentation.api.listing_images.ListingImageFileView` |
 | `/api/v1/me` | GET | signed_in | `apps.presentation.api.sessions.MeView` |
 | `/api/v1/me/agency-profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.AgencyProfileDetailView` |
 | `/api/v1/me/email-change` | POST | signed_in | `apps.presentation.api.profile.EmailChangeRequestView` |

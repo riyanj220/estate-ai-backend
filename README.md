@@ -131,7 +131,10 @@ an absolute path that defaults to the git-ignored `./media`; tests use a tempora
 (Pillow, imported only in `kernel`; validates, strips all metadata and re-encodes on the runtime executor) and
 `kernel.media` (per-account storage cap, 200 MB Individual and 1 GB Agency, orphan retention). Draft owners upload up to
 10 images per Listing at `POST /api/v1/listings/{id}/images`. Pillow's wheels bundle their image libraries, so no system
-packages are needed. No file is served yet (Story 2.10). See `docs/media.md`.
+packages are needed. Story 2.10 adds the cover flag and a consistent 0-based order to `ListingImage`, the
+revision-checked `PATCH /api/v1/listings/{id}/images` (full order and optional cover), `media` entries on the Listing
+resource, and the single media endpoint `GET /api/v1/listings/{id}/images/{image_id}/file`, which serves a Draft's image
+only to its owner (everyone else gets the same 404; public serving comes with Story 2.12). See `docs/media.md`.
 
 ## Audit trail
 

@@ -1,7 +1,7 @@
 # Listings
 
 `apps/listings` owns the canonical Listing. Story 2.1 adds starting a Draft, Story 2.2 conflict-safe editing of title,
-description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details, Story 2.5 the Plot and Commercial details, Story 2.9 the image upload; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
+description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details, Story 2.5 the Plot and Commercial details, Story 2.9 the image upload, Story 2.10 the cover, order and media endpoint; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
 
 ## Model (`listings.models`, written only by `listings.services`)
 
@@ -55,9 +55,11 @@ description and price, Story 2.3 the area and its unit, Story 2.4 the House and 
   fields set at that revision and their new values: strings, JSON integers and booleans, or null), unique (`listing`, `revision`). Edits are
   recorded by these rows; there is no separate audit action for them.
 
-- `ListingImage` (Story 2.9, migration `0007_images`): `id` (UUID), `listing`, `asset_id` (a plain UUID of the
-  `kernel.MediaAsset`, unique: an asset belongs to at most one image), `position` (1-based, unique per Listing),
-  `created_at`. The file itself is the kernel's; see `docs/media.md`. Written only by `listings.services`.
+- `ListingImage` (Story 2.9, migration `0007_images`; Story 2.10, migration `0008_cover`): `id` (UUID), `listing`,
+  `asset_id` (a plain UUID of the `kernel.MediaAsset`, unique: an asset belongs to at most one image), `position`
+  (0-based and contiguous per Listing, 0..n-1; unique per Listing with the check deferred to commit), `is_cover` (at
+  most one per Listing, a partial unique index), `created_at`. The file itself is the kernel's; see `docs/media.md`.
+  Written only by `listings.services`.
 
 Models never leave the app: callers get frozen `ListingView` values. Other apps import only `listings.services`,
 `listings.selectors` and `listings.lifecycle`.
@@ -348,7 +350,7 @@ edits of Published Listings.
 
 Wire order of `fields`: identity, the editable fields in `STORAGE` order, `area_sqft` last.
 `{id, status, visibility, revision, registry_version, fields: {purpose, category, subtype, title, description,
-asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, <the 30 residential details, electricity, water, gas, the 14 plot details, the 8 commercial details>, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [], amenities: []}`.
+asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, <the 30 residential details, electricity, water, gas, the 14 plot details, the 8 commercial details>, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [<ImageView, see "Images" below>], amenities: []}`.
 `visibility` is `private` for Drafts (`listings.lifecycle.Visibility`, extended by Story 2.12). `fields` is keyed by flat
 registry ids and returns `null` for unknown; `asking_price`, `area_value` (four decimals), `marla_basis` (`"225"`,
 `"250"`, `"272.25"`) and `area_sqft` (four decimals, `null` when not computable) are strings, never numbers; the residential integers and yes/no answers are JSON integers and booleans, and the feet and kilowatt fields are strings with two decimals. Provenance covers
@@ -365,32 +367,75 @@ asserts the shape and the OpenAPI schema.
    `listings.apps` with enumerations only.
 
 
-## Images (Story 2.9)
+## Images (Stories 2.9 and 2.10)
 
-`services.upload_image(actor, listing_id, data) -> ImageView` and `services.remove_image(actor, listing_id, image_id)`.
-`ImageView` is `(id, position, content_type, width, height, bytes)`: never a URL or the storage key. `ListingView.media`
-stays empty until Story 2.10 (serving, reordering and the cover; until then the cover is the lowest `position`).
+`services.upload_image(actor, listing_id, data) -> ImageView`, `services.remove_image(actor, listing_id, image_id)` and
+`services.set_image_order(actor, listing_id, base_revision, order, cover_id=None) -> ListingView`.
 
-Refusals of `upload_image`, in order: Visitor `unauthenticated`; a Listing the actor's account does not own (another
+### Wire (AD-24)
+
+`ListingView.media` (and the Listing resource's `media`) is a list ordered by `position` of `ImageView`:
+`{id, position, is_cover, content_type, width, height, bytes, url}`. `url` is the relative path of the media endpoint,
+`/api/v1/listings/{id}/images/{image_id}/file`. The owner id, the asset id and the storage key never appear. `media` is
+`[]` for a Draft with none, and every Listing response (read, list, edit, 409 `current`, reorder) carries it. The
+`ImageView` returned by an upload has the same shape. Saving other fields never touches images.
+
+### Cover and order rules
+
+Under the Listing row lock: the first image uploaded becomes the cover (position 0); a later upload is appended at
+position `n` and never changes the cover; removing the cover promotes the image with the lowest remaining position (none
+left: no cover); every removal renumbers the rest 0..n-1. A Listing with images always has exactly one cover.
+
+### Refusals of `upload_image` and `remove_image`
+
+In order: Visitor `unauthenticated`; a Listing the actor's account does not own (another
 owner, an administrator, the system, an unknown or malformed id) `not_found`, identical for all of them; no
 `edit_drafts` capability `forbidden` (evaluated after the not-found rule); a status outside
 `lifecycle.EDITABLE_STATUSES` `forbidden`; 10 images already `too_many_images` (409). Then the upload is processed
 OUTSIDE any lock (`kernel.images`: `ImageRejected` with a reason, or `Busy`), and in ONE transaction that locks the
 account (the state is decided again from the locked snapshot), the Listing row and the storage usage row: the image
 count is checked again (`too_many_images`), the cap is enforced (`storage_cap_exceeded`), the file and asset row are
-written (the asset's `attached_at` is set in the same transaction), the `ListingImage` is inserted at the next position
-(highest plus one; removals leave gaps), and the Listing `revision` rises by one with a `ListingRevision` whose
-`changes` is `{"images": <count>}` (no file data). If the transaction fails after the file was written, the file is
-removed. Uploads carry no `base_revision` (no stale detection), but because the revision moves, a concurrent editor
-holding the old revision gets `409 stale_revision` and reloads.
+written (the asset's `attached_at` is set in the same transaction), the `ListingImage` is inserted at the end, and the
+Listing `revision` rises by one with a `ListingRevision` whose `changes` is `{"images": <count>}` (no file data). If the
+transaction fails after the file was written, the file is removed. Uploads carry no `base_revision` (no stale
+detection), but because the revision moves, a concurrent editor holding the old revision gets `409 stale_revision` and
+reloads.
 
 `remove_image` has the same refusals; an unknown image, another Listing's image and a repeat are `not_found`. In one
-transaction the `ListingImage` and its asset are deleted (the storage usage is given back once), the revision rises by
-one and the file is deleted after commit. Removing a Listing's images when the Listing is deleted is Story 2.17.
+transaction the `ListingImage` and its asset are deleted (the storage usage is given back once), the rest is renumbered
+(and the cover promoted if needed), the revision rises by one and the file is deleted after commit. Removing a Listing's
+images when the Listing is deleted is Story 2.17.
 
-Endpoints: `POST /api/v1/listings/{id}/images` (signed in, CSRF, `no-store`, `multipart/form-data` with exactly one
-`file` part, a 6 MB request cap, `201` with the `ImageView`; the `image_upload` rate limit applies) and
-`DELETE /api/v1/listings/{id}/images/{image_id}` (`204`). Errors: `400 validation_error` with `fields.file` one of
+### Reorder and cover: `set_image_order`
+
+`order` is the full list of the Listing's image ids in the wanted order; `cover_id` is optional (`null` or omitted keeps
+the current cover). Refusals, in order: Visitor `unauthenticated`; not owned `not_found`; no `edit_drafts` `forbidden`
+(all before the body is looked at); a bad shape (`base_revision` not a positive integer: `required` or `invalid`;
+`order` not a list of canonical UUIDs: `required` or `invalid`; `cover_id` not a UUID: `invalid`) `validation_error`.
+Then, in one transaction that locks the account and the Listing row and works like `apply_updates`: a
+`base_revision` that is not the stored revision raises `StaleRevision` carrying the current `ListingView` (nothing
+written; checked before the order is judged and before the status); a status outside `EDITABLE_STATUSES` is `forbidden`;
+an `order` that is not exactly the current set (a missing, duplicate, unknown or another Listing's id) is `invalid` on
+`order`, a `cover_id` that is not one of the Listing's images `invalid` on `cover_id` (reported together). A request that
+changes neither the order nor the cover returns the current view with no revision bump and no `ListingRevision` row.
+Otherwise positions become 0..n-1, exactly one image is the cover, `revision` rises by one and one `ListingRevision`
+records `changes = {"images": n, "order": true|false, "cover": true|false}` (counts and flags, never ids). Files, assets
+and the storage usage are untouched. Two reorders with the same base: exactly one wins, the other gets `StaleRevision`.
+
+### Endpoints
+
+- `POST /api/v1/listings/{id}/images` (signed in, CSRF, `no-store`, `multipart/form-data` with exactly one
+  `file` part, a 6 MB request cap, `201` with the `ImageView`; the `image_upload` rate limit applies).
+- `PATCH /api/v1/listings/{id}/images` (signed in, CSRF, `no-store`, JSON `{base_revision, order, cover_id?}`, any other
+  key `unknown_field`; not rate limited as an upload): `200` the Listing resource; `409 stale_revision` with the current
+  Listing under `current` (the `ListingConflict` schema of the field PATCH); `400` `validation_error` with
+  `fields.order`, `fields.cover_id` or `fields.base_revision` (codes only, never the submitted values); `401`; `403`
+  (capability, status or CSRF); `404` (non-owners, administrators, unknown or malformed ids, whatever the body).
+- `DELETE /api/v1/listings/{id}/images/{image_id}` (`204`).
+- `GET|HEAD /api/v1/listings/{id}/images/{image_id}/file`: the media endpoint (see `docs/media.md`): the stored bytes to
+  the Draft's owner, an identical `404` to everyone else. The seam is `selectors.image_for_serving`.
+
+Upload errors: `400 validation_error` with `fields.file` one of
 `too_large`, `unsupported_type`, `too_large_dimensions`, `too_small`, `invalid_image`, `required`, `invalid` (or
 `non_field_errors: unknown_field` for any other part); `401`; `403` (capability or status; CSRF); `404`; `409`
 `too_many_images` or `storage_cap_exceeded`; `415` for a non-multipart body; `429` with `Retry-After`; `503 busy` with
