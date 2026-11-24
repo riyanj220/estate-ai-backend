@@ -21,10 +21,33 @@ city needs no deploy and no regenerated client; the frontend reads the list at r
 - Consumers store the city `id` (a plain UUID reference, never a foreign key across apps) and validate it
   through `catalog.selectors.get_city(city_id)` (None for unknown, inactive or malformed ids).
 
+## Localities
+
+- Table `catalog_locality`: UUID `id`, `city` (a foreign key to `catalog_city` inside the app; other apps hold the
+  locality id as a plain UUID), `name`, `kind` (`area` or `society`, a CHECK), `is_active`, `created_at`. Names are
+  unique per city ignoring case (`(city, Lower("name"))` constraint) and 2 to 80 characters. The service rule is the
+  city rule plus decimal digits (`DHA Phase 6`, `Askari 4`); parentheses are never allowed. An inactive locality
+  still reserves its name.
+- Seeded with the Karachi areas and societies approved by the owner by data migration
+  `0004_seed_karachi_localities` (the schema is `0003_locality`). The seed is idempotent: a locality of any casing that
+  the Karachi city already has is left untouched, so re-running never duplicates or overwrites an edited row. If there
+  is no Karachi city it does nothing. Cities other than Karachi have no localities. The list is editable later by a
+  migration or an admin story.
+- Writes go only through `catalog.services.create_locality(actor, city_id, name, kind)` (administrators only, audited
+  as `locality.created` in the same transaction; an unknown or inactive city, a bad name or kind and a duplicate are
+  `validation_error`) and the data migration.
+- Reads: `catalog.selectors.list_localities(city_id)` returns frozen `LocalityRef(id, name, kind, city_id)` values for
+  the active localities of an active city ordered by name ignoring case (None for an unknown, inactive or malformed
+  city, at most `LOCALITY_LIMIT` = 500 rows; no city has more); `get_locality(locality_id)` returns one active locality of an active city with its city id, or None.
+- Public endpoint: `GET /api/v1/reference/cities/{city_id}/localities` returns
+  `{"items":[{"id":"<uuid>","name":"DHA Phase 6","kind":"society"}]}`. Unpaginated, uncached, `404 not_found` for an
+  unknown, inactive or malformed city. In `openapi.yaml`, `name` is a plain `string` (never an enum); `kind` is the
+  closed vocabulary `area` | `society`.
+- Listings store the city and locality as plain UUID columns and validate them through these selectors (a locality
+  must belong to the Listing's city; see `docs/listings.md`).
+
 ## What comes later
 
-- Localities (areas within a city) are not part of this story; open question OQ-2 (section 9 of the PRD under `_bmad-output/planning-artifacts/prds/`) covers the Karachi list and a
-  later catalog story adds them.
-- Managing cities (add, deactivate, rename) from the admin area arrives with platform administration. It will call
-  `catalog.services`. Until then cities beyond Karachi can only be added by calling `create_city` in code; it has no endpoint. Deactivating a city hides it from the list without
-  deleting rows that reference it.
+- Managing cities and localities (add, deactivate, rename) from the admin area arrives with platform administration.
+  It will call `catalog.services`. Until then cities beyond Karachi can only be added by calling `create_city` in code;
+  it has no endpoint. Deactivating a city hides it from the list without deleting rows that reference it.

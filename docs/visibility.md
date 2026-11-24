@@ -57,7 +57,7 @@ Deactivated, any viewer), so existence is never confirmed. The owner-facing `get
 `id`, `purpose`, `category`, `subtype`, `title`, `description`, `fields` (the other registry fields whose class is
 `public`; a private-class or unknown field is never copied, see `public_fields`), `media` (ordered; `id`, `position`,
 `is_cover`, `content_type`, `width`, `height`, `url`) and `registry_version`. It has no owner id, status, restricted flag,
-provenance, revision or history, asset id, storage key, and no private address or phone. The derived `area_sqft` is
+provenance, revision or history, asset id, storage key, and no private address or phone (Story 2.7: `street`, `house_number`, `latitude` and `longitude` are class `private`, live in their own table and are not even read on the public path; the guard test now bites on those real fields). The derived `area_sqft` is
 class `public` in the registry, so it is projected (a test asserts it, and `asking_price`, `price_basis`, `area_value`,
 `area_unit` by value). A field in the owner view with no registry definition makes `public_fields` raise instead of
 being dropped silently, and a field the registry marks `private` is omitted (end-to-end test with a patched registry). It is a different type from

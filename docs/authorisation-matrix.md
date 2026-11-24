@@ -56,6 +56,7 @@ whose permission is not explicit.
 | `/api/v1/password-reset-requests` | POST | public | `apps.presentation.api.passwords.PasswordResetRequestView` |
 | `/api/v1/password-resets/confirm` | POST | public | `apps.presentation.api.passwords.PasswordResetConfirmView` |
 | `/api/v1/reference/cities` | GET | public | `apps.presentation.api.reference.CityView` |
+| `/api/v1/reference/cities/<str:city_id>/localities` | GET | public | `apps.presentation.api.reference.LocalityView` |
 | `/api/v1/registrations/agencies` | POST | public | `apps.presentation.api.registrations.AgencyRegistrationView` |
 | `/api/v1/registrations/individuals` | POST | public | `apps.presentation.api.registrations.IndividualRegistrationView` |
 | `/api/v1/registry` | GET | public | `apps.presentation.api.registry.RegistryView` |

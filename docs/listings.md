@@ -1,7 +1,7 @@
 # Listings
 
 `apps/listings` owns the canonical Listing. Story 2.1 adds starting a Draft, Story 2.2 conflict-safe editing of title,
-description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details, Story 2.5 the Plot and Commercial details, Story 2.9 the image upload, Story 2.10 the cover, order and media endpoint; Story 2.12 the visibility policy and the public projection (`docs/visibility.md`); later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
+description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details, Story 2.5 the Plot and Commercial details, Story 2.7 the location and the private address, Story 2.9 the image upload, Story 2.10 the cover, order and media endpoint; Story 2.12 the visibility policy and the public projection (`docs/visibility.md`); later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
 
 ## Model (`listings.models`, written only by `listings.services`)
 
@@ -51,8 +51,20 @@ description and price, Story 2.3 the area and its unit, Story 2.4 the House and 
   by-Subtype vocabulary (a Plot File only `file_only`) is enforced by the service.
 - `ListingCommercial` (Story 2.5): the same for Shop and Office details (`related_name="commercial"`;
   `models.commercial_constraints`, `listings_com_<field>_range|_valid`).
+- `ListingLocation` (Story 2.7, migration `0010_location`, `related_name="location"`): one row per Listing, created
+  lazily on the first non-null write (never by `create_draft`, a read, a clear or an unrelated edit): `city` and
+  `locality` (plain UUID columns named `city_id` and `locality_id`, no key into `catalog`), `society`, `phase`,
+  `sector`, `block` (text, 60), `updated_at`, all nullable. Index (`city_id`, `locality_id`) for later search; CHECK
+  that a locality needs a city. That the locality belongs to the city is a catalog fact the service judges.
+- `ListingPrivateAddress` (Story 2.7, `related_name="private_address"`): a SEPARATE table, one row per Listing,
+  created lazily the same way: `street` (120), `house_number` (30), `latitude` and `longitude` NUMERIC(9,6), all
+  nullable. CHECKs: the registry bounds (`listings_addr_<field>_range`) and `listings_addr_coordinates_paired`
+  (both or neither). It is read only for the owner's own resource (`selectors.get_owned_listing`, `list_owned`, the
+  edit service) and never joined into any public selector or projection.
 - `ListingRevision`: `listing`, `revision`, `origin` (`manual` or `ai`), `actor_account_id`, `changes` (the registry
-  fields set at that revision and their new values: strings, JSON integers and booleans, or null), unique (`listing`, `revision`). Edits are
+  fields set at that revision and their new values: strings, JSON integers and booleans, or null for public fields;
+  for a field of class `private`, or one the registry does not define, only `true` (set) or `null` (cleared), never
+  the value), unique (`listing`, `revision`). Edits are
   recorded by these rows; there is no separate audit action for them.
 
 - `ListingImage` (Story 2.9, migration `0007_images`; Story 2.10, migration `0008_cover`): `id` (UUID), `listing`,
@@ -121,7 +133,7 @@ Blank or whitespace-only text clears a field (the same as `null`).
 
 ### Where fields are stored: `listings/fields.py`
 
-`STORAGE` is the single map from editable registry field id to its table (`listing`, `terms`, `area`, `residential`, `plot` or `commercial`).
+`STORAGE` is the single map from editable registry field id to its table (`listing`, `terms`, `area`, `residential`, `plot`, `commercial`, `location` or `address`).
 Validation, the edit service, the read views and the API serializers all derive their field sets from it, so adding an
 editable field is one entry, its registry definition and a migration; `tests/listings/test_fields.py` fails, naming the
 field, when the registry and the map disagree.
@@ -298,6 +310,49 @@ database write could leave (there is no purpose CHECK), can still be cleared by 
 - A stored value outside today's rules (an older registry's wider window or range) is never altered by an unrelated
   edit, and is rejected with the same code if the request sends it again unchanged.
 
+### Location and private address (Story 2.7)
+
+Registry version 7 adds the `reference` type (`reference: city | locality`) and ten fields, all applicable to every
+purpose, category and Subtype, in `section: location`.
+
+- **Public** (class `public`): `city` and `locality` (`required_for_publication`, `searchable`; the uuid of an ACTIVE
+  catalog city or locality; the id is read by the catalog's one `parse_uuid` in any common form (any case, braced,
+  hyphenated or not) and stored and served as canonical lowercase hyphenated text; a name, a number or any other
+  text, an unknown, inactive or malformed id is `invalid`; **a NEW value must be active, but re-sending the STORED id
+  of a city or locality that has since been deactivated is accepted** while only other fields change, and a stored
+  locality that is no longer active cannot follow a change of city) and `society`, `phase`, `sector`, `block` (text, up to 60 characters,
+  optional, `ai_extractable`, trimmed, empty is null). They are part of the public location.
+- **Private** (class `private`; optional; never searchable, sortable, a valuation input or `ai_extractable`): `street`
+  (text, 120), `house_number` (text, 30), `latitude` (decimal, -90 to 90) and `longitude` (decimal, -180 to 180), both
+  with six decimals, sent and served as decimal strings (`"24.860000"`, a leading minus allowed because the registry
+  marks them `signed: true`, never a JSON number). A value outside the range or with more than six decimals is
+  `out_of_range`; anything that is not a plain decimal is `invalid`. `-0` and `-0.000000` are stored and served as
+  `"0.000000"`, never a negative zero. **Both or neither**: judged on the resulting state; the code is `invalid` on
+  the field that ends up empty, which is the field the client SENT as `null` when it is the one being cleared, else the
+  one it left out (`{"latitude": v}` alone is `invalid` on `longitude`; clearing only one of two stored values is
+  `invalid` on the cleared one; clear both together).
+- **The locality rule**: a locality must belong to the Listing's city, judged on the resulting pair. A locality of
+  another city is `invalid` with the message code `locality_not_in_city` on `locality`; a locality while no city is
+  saved is `invalid` on `locality`. **Changing or clearing `city` without sending a `locality` clears the stored
+  locality in the same write** and reports it among the changed fields (and in the revision `changes`), so a stale pair
+  is never stored. Sending a new city with a locality of the new city is fine.
+- Text fields use the existing text rules and the shared contact-detail check (`contains_contact_details`, `too_long`
+  and so on); messages are static and never echo a value.
+- **Accepted window**: the city and locality are resolved against the catalog while the Listing row is locked, but the
+  catalog row itself is not locked. A locality deactivated between that check and the commit is saved (the write is
+  still a valid choice made a moment earlier, and a stored inactive id remains re-saveable, see above).
+- `selectors.view_of` leaves the private fields out unless called with `with_private=True` (keyword-only, default
+  false); only the owner's own reads and the edit service pass it. `ListingView` and the `StaleRevision` it rides in
+  redact private values in `repr` and `str`.
+- Written only by `apply_updates` (same `base_revision`, `409 stale_revision`, provenance, one revision row;
+  `null` on any of them is a harmless no-op while unset; a clear never creates a row).
+- **Privacy (AD-5, AD-26)**: the private fields are in the OWNER's Listing resource only (`private, no-store`, `404`
+  for everyone else, administrators and Visitors included). `PublicListingView.fields` never carries a private-class
+  field, and `selectors.public_view_of` does not even read the private table. Private values never appear in logs, error
+  bodies, validation messages, audit or revision rows (a revision records `true` for set and `null` for cleared),
+  events (`listing.model_inputs_changed` carries only the Listing id; none of these fields is a model input), OpenAPI
+  examples or any URL. `tests/listings/test_location.py` has canary tests for each.
+
 ### Provenance
 
 `origin` is an argument chosen by the calling layer: the owner API passes `manual`, the future Assistant passes `ai`. It
@@ -350,7 +405,7 @@ edits of Published Listings.
 
 Wire order of `fields`: identity, the editable fields in `STORAGE` order, `area_sqft` last.
 `{id, status, visibility, revision, registry_version, fields: {purpose, category, subtype, title, description,
-asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, <the 30 residential details, electricity, water, gas, the 14 plot details, the 8 commercial details>, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [<ImageView, see "Images" below>], amenities: []}`.
+asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, <the 30 residential details, electricity, water, gas, the 14 plot details, the 8 commercial details, the sale and rent terms, city, locality, society, phase, sector, block and the private street, house_number, latitude, longitude>, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [<ImageView, see "Images" below>], amenities: []}`.
 `visibility` is `public` only while the Listing really is public (published, not restricted, owner Active, derived from `listings.policy`), else `private` (`listings.lifecycle.Visibility`); who may see a Listing is `listings.policy.can_view`, see `docs/visibility.md`. `fields` is keyed by flat
 registry ids and returns `null` for unknown; `asking_price`, `area_value` (four decimals), `marla_basis` (`"225"`,
 `"250"`, `"272.25"`) and `area_sqft` (four decimals, `null` when not computable) are strings, never numbers; the residential integers and yes/no answers are JSON integers and booleans, and the feet and kilowatt fields are strings with two decimals. Provenance covers

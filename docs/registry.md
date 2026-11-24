@@ -11,14 +11,14 @@ The Field registry (AD-4) is the one definition of which Listing fields exist. I
 ## File format
 
 ```yaml
-version: 6                     # positive integer
+version: 7                     # positive integer
 taxonomy:
   purposes: [sale, rent]       # code-defined, snake_case ids
   categories:
     - {id: plot, subtypes: [residential_plot, commercial_plot, plot_file]}
 fields:
   - id: purpose                # stable snake_case id
-    type: enum                 # enum | text | money | decimal | integer | boolean | date
+    type: enum                 # enum | text | money | decimal | integer | boolean | date | reference
     requirement: required_for_publication   # | recommended | optional
     applicability: {purposes: [], categories: [], subtypes: []}   # empty = all
     allowed_values: [sale, rent]   # enums only; purpose, category and subtype must equal the taxonomy
@@ -55,6 +55,18 @@ fields:
     min: "2000-01-01"
     max: "2100-12-31"
     ...
+  - id: locality
+    type: reference            # reference: `reference` names what the stored uuid points at (city | locality)
+    reference: locality
+    section: location
+    ...
+  - id: latitude
+    type: decimal
+    min: "-90"                 # a decimal bound may be negative
+    max: "90"
+    scale: 6
+    error_code: out_of_range   # invalid_measure (default) | invalid_area | out_of_range
+    class: private
   - id: area_sqft
     type: decimal
     derived: true              # computed by the service; never input (optional, not ai_extractable or a model input)
@@ -175,6 +187,22 @@ Version 6 (Story 2.6) adds the `date` type and the sale and rent terms (see `doc
 - `availability_date` accepts past dates back to 2000-01-01 on purpose (there is no check against today).
 - `rental_period` keeps its meaning; only its `section` is new.
 
+Version 7 (Story 2.7) adds the location (see `docs/listings.md`):
+
+- `type: reference` with `reference: city | locality`: the value is the uuid of an active row of catalog reference data,
+  validated by the service through `catalog.selectors` (the registry only declares it). It takes no other type key.
+  Served in the new `reference` key of every registry field (null for other types); `RESPONSE_SHAPE_VERSION` is 6.
+  Never an OpenAPI enum: the lists are runtime data (`docs/reference-data.md`).
+- A decimal bound may be negative only when the field says `signed: true` (decimal fields only; `latitude` and
+  `longitude` are the only ones); the loader refuses a negative `min` or `max` otherwise and requires `min <= max`.
+  `error_code` may be `out_of_range` (coordinates).
+- `section` gains `location`: city, locality, the public location text and the private address. A form separates the
+  public and the private part by `class`, never by guessing.
+- New fields, appended at the end: `city`, `locality` (`required_for_publication`, `searchable`), `society`, `phase`,
+  `sector`, `block` (text 60, `ai_extractable`), and the private `street` (120), `house_number` (30), `latitude`,
+  `longitude` (decimal, scale 6). **A private field can no longer be `ai_extractable`** (the loader refuses it, as it
+  does `searchable`, `sortable` and `valuation_input`).
+
 A registry-wide guard, `test_every_decimal_money_integer_and_date_field_fits_its_column`, fails when a bound does not
 fit the model column that stores the field.
 
@@ -205,7 +233,7 @@ tells the developer to bump the version and run the script.
 `GET /api/v1/registry` is public: `{version, taxonomy: {categories: [{id, subtypes}], purposes}, fields: [...]}`, each
 field with `id, type, requirement, applicability, allowed_values (null unless an enum), allowed_values_by_purpose (null
 unless narrowed), allowed_values_by_subtype (null unless narrowed), seller_declared, section (`details` or `terms`), min_length and max_length (text only), min and max (money, decimal and integer as plain decimal notation, never an exponent; a date as `YYYY-MM-DD` text), currency (money only), scale (decimal only),
-derived, description (null unless documented), class` and the five flags (`RESPONSE_SHAPE_VERSION` is 5: `section` was added in version 6 and a date serves its bounds in `min` and `max`; `allowed_values_by_subtype` and `seller_declared` were added in version 5; earlier it
+derived, reference (`city` or `locality` for a reference field, else null), description (null unless documented), class` and the five flags (`RESPONSE_SHAPE_VERSION` is 6: `reference` was added in version 7; `section` was added in version 6 and a date serves its bounds in `min` and `max`; `allowed_values_by_subtype` and `seller_declared` were added in version 5; earlier it
 rose for `scale`, `derived` and `description`).
 `Cache-Control: public, max-age=300` and a strong `ETag` (`"<version>-<content hash>-<RESPONSE_SHAPE_VERSION>"`); `If-None-Match` gets `304`.
 OpenAPI enums for purpose, category and subtype are generated from the registry (`PurposeEnum`, `CategoryEnum`,
@@ -229,8 +257,8 @@ OpenAPI enums for purpose, category and subtype are generated from the registry 
   `ListingResidential`, `ListingPlot` and `ListingCommercial` and the terms columns of `ListingTerms` (integer, date window, decimal and money bounds, enum sets, the floor rule): changing those
   registry bounds or values needs a migration.
 - **Private fields are listed.** Private-class fields appear in the public registry response by design: it is field
-  metadata for owner forms, never values. `ai_extractable` and `quota_identity` are allowed on private fields; only
-  `searchable`, `sortable` and `valuation_input` are refused.
+  metadata for owner forms, never values. `quota_identity` is allowed on private fields; `searchable`, `sortable`, `ai_extractable` and
+  `valuation_input` are refused (since version 7).
 - **ETag.** The tag is `"<version>-<content hash>-<RESPONSE_SHAPE_VERSION>"`; bump `RESPONSE_SHAPE_VERSION` in
   `apps/presentation/api/registry.py` when the serializer changes without a registry change.
 - **Open-Draft cap policy.** A `limit` of 0 would block all Draft creation (the table's check currently requires
