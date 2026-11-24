@@ -9,6 +9,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.catalog import registry
+from apps.catalog import selectors as catalog
 from apps.identity.capabilities import Access, Capability, matrix_access
 from apps.identity.policy import can
 from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, lock_account
@@ -20,6 +21,8 @@ from apps.listings import lifecycle, validation
 from apps.listings.area import normalised_sqft
 from apps.listings.events import ListingModelInputsChanged
 from apps.listings.fields import (
+    ADDRESS,
+    ADDRESS_FIELDS,
     AREA,
     AREA_FIELDS,
     COMMERCIAL,
@@ -27,6 +30,8 @@ from apps.listings.fields import (
     DERIVED,
     EDITABLE_FIELDS,
     LISTING,
+    LOCATION,
+    LOCATION_FIELDS,
     PLOT,
     PLOT_FIELDS,
     RESIDENTIAL,
@@ -41,7 +46,9 @@ from apps.listings.models import (
     ListingArea,
     ListingCommercial,
     ListingImage,
+    ListingLocation,
     ListingPlot,
+    ListingPrivateAddress,
     ListingResidential,
     ListingRevision,
     ListingTerms,
@@ -50,12 +57,14 @@ from apps.listings.models import (
 from apps.listings.selectors import (
     ImageView,
     ListingView,
+    address_of,
     area_of,
     canonical_uuid,
     clean_provenance,
     commercial_of,
     field_text,
     image_url,
+    location_of,
     plot_of,
     residential_of,
     terms_of,
@@ -168,7 +177,7 @@ def create_draft(actor: Actor, purpose, category, subtype) -> ListingView:
             row.id,
             {"purpose": purpose, "category": category, "subtype": subtype},
         )
-    return view_of(row)
+    return view_of(row, with_private=True)
 
 
 def _stored(name: str, owner) -> object:
@@ -179,6 +188,30 @@ def _stored(name: str, owner) -> object:
 def _column(name: str, value) -> object:
     """A validated value as the column type (the marla basis string is NUMERIC(6,2))."""
     return Decimal(value) if name == "marla_basis" and value is not None else value
+
+
+def _resolve_reference(kind: str, key: uuid.UUID) -> uuid.UUID | None:
+    """The catalog's answer for a chosen city or locality: the city's own id, a locality's city id,
+    None when it is unknown or inactive (validation turns that into `invalid`)."""
+    if kind == "city":
+        city = catalog.get_city(key)
+        return city.id if city else None
+    locality = catalog.get_locality(key)
+    return locality.city_id if locality else None
+
+
+def _revision_changes(changed: Mapping[str, object]) -> dict[str, object]:
+    """What a revision row records: public values as the wire shows them, and for a field of class
+    `private` (or one the registry does not define: it is treated as private) only `true` (set) or
+    `null` (cleared), never the value."""
+    recorded: dict[str, object] = {}
+    for name, value in changed.items():
+        definition = registry.field(name)  # looked up once
+        if definition is None or definition.field_class != "public":
+            recorded[name] = None if value is None else True
+        else:
+            recorded[name] = field_text(name, value)
+    return recorded
 
 
 def _locked_owned(key, actor) -> PropertyListing:
@@ -240,7 +273,7 @@ def apply_updates(
     with transaction.atomic():
         row = _locked_owned(key, actor)
         if row.revision != base_revision:
-            raise StaleRevision(view_of(row))
+            raise StaleRevision(view_of(row, with_private=True))
         if row.status not in lifecycle.EDITABLE_STATUSES:
             raise DomainError("forbidden")
         terms = terms_of(row)
@@ -263,6 +296,14 @@ def apply_updates(
         stored_commercial = commercial is not None
         if commercial is None:
             commercial = ListingCommercial(listing=row)  # saved only on a first non-null value
+        location = location_of(row)
+        stored_location = location is not None
+        if location is None:
+            location = ListingLocation(listing=row)  # saved only on a first non-null value
+        address = address_of(row)
+        stored_address = address is not None
+        if address is None:
+            address = ListingPrivateAddress(listing=row)  # saved only on a first non-null value
         owners = {
             LISTING: row,
             TERMS: terms,
@@ -270,11 +311,13 @@ def apply_updates(
             RESIDENTIAL: residential,
             PLOT: plot,
             COMMERCIAL: commercial,
+            LOCATION: location,
+            ADDRESS: address,
         }
         current = {name: _stored(name, owners[STORAGE[name]]) for name in EDITABLE_FIELDS}
         current.update({name: getattr(owners[table], name) for name, table in DERIVED.items()})
         values, errors = validation.evaluate(
-            row.purpose, row.category, row.subtype, current, updates
+            row.purpose, row.category, row.subtype, current, updates, _resolve_reference
         )
         if errors:
             raise FieldsInvalid(errors)
@@ -307,6 +350,9 @@ def apply_updates(
                 residential if stored_residential else None,
                 plot if stored_plot else None,
                 commercial if stored_commercial else None,
+                location if stored_location else None,
+                address if stored_address else None,
+                with_private=True,
             )
         now = timezone.now()
         for name, value in changed.items():
@@ -348,12 +394,18 @@ def apply_updates(
         if any(name in COMMERCIAL_FIELDS for name in changed):
             commercial.updated_at = now
             commercial.save()
+        if any(name in LOCATION_FIELDS for name in changed):
+            location.updated_at = now
+            location.save()
+        if any(name in ADDRESS_FIELDS for name in changed):
+            address.updated_at = now
+            address.save()
         ListingRevision.objects.create(
             listing=row,
             revision=row.revision,
             origin=origin.value,
             actor_account_id=actor.account_id,
-            changes={name: field_text(name, value) for name, value in changed.items()},
+            changes=_revision_changes(changed),
             created_at=now,
         )
         view = view_of(
@@ -363,6 +415,9 @@ def apply_updates(
             residential if residential.pk else None,
             plot if plot.pk else None,
             commercial if commercial.pk else None,
+            location if location.pk else None,
+            address if address.pk else None,
+            with_private=True,
         )
         if any(registry.field(n).valuation_input for n in changed if changed[n] != current[n]):
             emit(ListingModelInputsChanged(listing_id=row.id))  # last: after-commit
@@ -583,7 +638,7 @@ def set_image_order(actor: Actor, listing_id, base_revision, order, cover_id=Non
     with transaction.atomic():
         _, row = _lock_for_images(actor, key, check_status=False)
         if row.revision != base_revision:
-            raise StaleRevision(view_of(row))
+            raise StaleRevision(view_of(row, with_private=True))
         if row.status not in lifecycle.EDITABLE_STATUSES:
             raise DomainError("forbidden")
         repaired = _normalise_images(row)  # ghosts out, contiguous, one cover (counts as a change)
@@ -600,7 +655,7 @@ def set_image_order(actor: Actor, listing_id, base_revision, order, cover_id=Non
         new_cover = cover or old_cover or (wanted[0] if wanted else None)
         reordered, recovered = wanted != current, new_cover != old_cover
         if not reordered and not recovered and not repaired:
-            return view_of(row)
+            return view_of(row, with_private=True)
         by_id = {link.id: link for link in links}
         for index, image_id in enumerate(wanted):
             if by_id[image_id].position != index:  # the unique check waits for the commit
@@ -610,7 +665,7 @@ def set_image_order(actor: Actor, listing_id, base_revision, order, cover_id=Non
             ListingImage.objects.filter(pk=new_cover).update(is_cover=True)
         flags = {"repaired": True} if repaired else {}
         _bump(row, actor, len(current), order=reordered, cover=recovered, **flags)
-        return view_of(row)
+        return view_of(row, with_private=True)
 
 
 def _position(link) -> int:

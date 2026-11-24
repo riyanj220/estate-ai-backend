@@ -7,11 +7,13 @@ Codes only; a submitted value is never copied into a result or an error.
 
 import re
 import unicodedata
-from collections.abc import Mapping
+import uuid
+from collections.abc import Callable, Mapping
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from apps.catalog import registry
+from apps.catalog.selectors import parse_uuid
 from apps.kernel.privacy.patterns import reject_contact_details
 from apps.listings.area import MARLA_UNITS
 from apps.listings.fields import EDITABLE_FIELDS
@@ -156,9 +158,10 @@ def decimal_code(definition: registry.FieldDef) -> str:
 def check_decimal(definition: registry.FieldDef, value) -> tuple[Decimal | None, str | None]:
     """(value at the field's scale, code). Text only: numbers, floats and commas are refused.
 
-    Valid text is ASCII `^\\d{1,10}(\\.\\d{1,scale})?$` (the field's scale) without leading zeros
-    (`0.5` is fine, `0010` is not) and without surrounding whitespace; anything else that is not
-    a plain decimal number is `invalid`. A well-formed number that is zero, negative, below the
+    Valid text is ASCII `^\\d{1,10}(\\.\\d{1,scale})?$` (the field's scale, with a leading minus
+    sign only for a field whose range reaches below zero, such as a coordinate) without leading
+    zeros (`0.5` is fine, `0010` is not) and without surrounding whitespace; anything else that is
+    not a plain decimal number is `invalid`. A well-formed number that is zero, negative, below the
     minimum, above the maximum or has too many decimals is `invalid_area` for an area and
     `invalid_measure` for any other decimal (feet, kilowatts); the registry's `error_code` decides.
     """
@@ -170,9 +173,13 @@ def check_decimal(definition: registry.FieldDef, value) -> tuple[Decimal | None,
     negative, whole, fraction = match.groups()
     if len(whole) > 1 and whole.startswith("0"):
         return None, "invalid"  # zero-padded
-    if negative or len(fraction or "") > definition.scale:
-        return None, decimal_code(definition)
+    if (negative and not definition.signed) or len(fraction or "") > definition.scale:
+        return None, decimal_code(definition)  # only a `signed` field may be negative
     amount = Decimal(f"{whole}.{fraction or '0'}")
+    if negative:
+        amount = -amount
+    if amount == 0:
+        amount = abs(amount)  # `-0` and `-0.000000` are plain zero, never a negative zero
     if amount < definition.minimum or amount > definition.maximum:
         return None, decimal_code(definition)
     return amount.quantize(Decimal(1).scaleb(-definition.scale)), None
@@ -208,6 +215,29 @@ def check_date(definition: registry.FieldDef, value) -> tuple[date | None, str |
     if parsed < definition.minimum or parsed > definition.maximum:
         return None, "invalid_date"
     return parsed, None
+
+
+Resolver = Callable[[str, uuid.UUID], "uuid.UUID | None"]
+
+
+def check_reference(
+    definition: registry.FieldDef, value, resolve: Resolver | None
+) -> tuple[uuid.UUID | None, str | None, uuid.UUID | None]:
+    """(uuid, code, parent). The uuid text of an ACTIVE city or locality in any common form (the
+    catalog's one `parse_uuid`: any case, braced, hyphenated or not; the canonical lowercase
+    hyphenated form is what is stored and served); `resolve(kind, id)` asks the catalog (the
+    city's own id, the locality's city id, None when unknown or inactive). A name, a number or
+    anything else is `invalid`. For a locality the parent is its city id, for the pair check.
+    A reference is never judged without a resolver: that is a programming error."""
+    if resolve is None:
+        raise RuntimeError("a reference field needs a resolver")
+    key = parse_uuid(value)
+    if key is None:
+        return None, "invalid", None
+    parent = resolve(definition.reference, key)
+    if parent is None:
+        return None, "invalid", None
+    return key, None, parent
 
 
 # Enums whose values are numbers written as text: a JSON number is a wrong choice, not a wrong type.
@@ -250,6 +280,7 @@ def evaluate(
     subtype: str,
     current: Mapping[str, object],
     updates: Mapping[str, object],
+    resolve: Resolver | None = None,
 ) -> tuple[dict[str, object], dict[str, str]]:
     """Normalised values for every update (None clears) and a code per failing field.
 
@@ -262,6 +293,8 @@ def evaluate(
     """
     values: dict[str, object] = {}
     errors: dict[str, str] = {}
+    parents: dict[str, uuid.UUID] = {}  # a chosen locality's city
+    unchanged: set[str] = set()  # references re-sent with their stored value
     for name, raw in updates.items():
         definition = registry.field(name)
         if definition is None:  # callers check the shape first; stay safe regardless
@@ -272,6 +305,23 @@ def evaluate(
             values[name] = None
         elif not definition.applies_to(purpose, category, subtype):
             errors[name] = "not_applicable"
+        elif (
+            definition.type == "reference"
+            and current.get(name) is not None
+            and parse_uuid(raw) == current[name]
+        ):
+            # Re-saving the STORED value (it may have been deactivated since) is not judged
+            # again; only a new value must be active.
+            values[name] = current[name]
+            unchanged.add(name)
+        elif definition.type == "reference":
+            value, code, parent = check_reference(definition, raw, resolve)
+            if code:
+                errors[name] = code
+            else:
+                values[name] = value
+                if parent is not None and definition.reference == "locality":
+                    parents[name] = parent
         else:
             value, code = _check_one(definition, raw, purpose, subtype)
             if code:
@@ -280,7 +330,53 @@ def evaluate(
                 values[name] = value
     _check_marla_basis(current, values, errors)
     _check_floor(purpose, category, subtype, current, values, errors)
+    _check_locality(current, values, errors, parents, unchanged, resolve)
+    _check_coordinates(current, values, errors)
     return values, errors
+
+
+def _check_locality(current, values, errors, parents, unchanged, resolve) -> None:
+    """A locality belongs to the Listing's city, judged on the RESULTING pair. Changing the city
+    (or clearing it) without sending a locality clears the stored locality in the same write, so a
+    stale pair is never stored. A locality with no city is `invalid`; one of another city is
+    `locality_not_in_city`. Stored data is only re-judged when this update touches the pair."""
+    if "city" in errors or "locality" in errors:
+        return
+    if "city" in values and "locality" not in values:
+        if values["city"] != current.get("city") and current.get("locality") is not None:
+            values["locality"] = None  # reported as a changed field like any other
+        return
+    if "locality" not in values or values["locality"] is None:
+        return
+    city = values["city"] if "city" in values else current.get("city")
+    if city is None:
+        errors["locality"] = "invalid"
+        return
+    if "locality" in unchanged and city == current.get("city"):
+        return  # the stored pair, re-sent as it is
+    parent = parents.get("locality")
+    if parent is None and "locality" in unchanged:  # the stored locality against a NEW city
+        parent = resolve("locality", values["locality"]) if resolve else None
+        if parent is None:
+            errors["locality"] = "invalid"  # no longer active: it cannot follow a city change
+            return
+    if parent != city:
+        errors["locality"] = "locality_not_in_city"
+
+
+def _check_coordinates(current, values, errors) -> None:
+    """Latitude and longitude are both set or both empty, judged on the RESULTING state; the code
+    is `invalid` on the one that is missing."""
+    if "latitude" not in values and "longitude" not in values:
+        return
+    if "latitude" in errors or "longitude" in errors:
+        return
+    latitude = values["latitude"] if "latitude" in values else current.get("latitude")
+    longitude = values["longitude"] if "longitude" in values else current.get("longitude")
+    if latitude is None and longitude is not None:
+        errors["latitude"] = "invalid"
+    elif longitude is None and latitude is not None:
+        errors["longitude"] = "invalid"
 
 
 def _check_floor(purpose, category, subtype, current, values, errors) -> None:

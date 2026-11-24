@@ -16,6 +16,9 @@ AREA = "area"  # a column of ListingArea
 RESIDENTIAL = "residential"
 PLOT = "plot"  # a column of ListingPlot (Plot and Plot File details)
 COMMERCIAL = "commercial"  # a column of ListingCommercial (Shop and Office details)
+LOCATION = "location"  # a column of ListingLocation (city, locality and the public location text)
+# a column of ListingPrivateAddress: the owner's exact address, class `private` (never public)
+ADDRESS = "address"
 
 # Chosen when the Draft starts and never edited (Story 2.1); stored on PropertyListing.
 IDENTITY_FIELDS = ("purpose", "category", "subtype")
@@ -99,6 +102,16 @@ STORAGE = MappingProxyType(
         "utility_internet_included": TERMS,
         "pets_allowed": TERMS,
         "occupant_restrictions": TERMS,
+        "city": LOCATION,
+        "locality": LOCATION,
+        "society": LOCATION,
+        "phase": LOCATION,
+        "sector": LOCATION,
+        "block": LOCATION,
+        "street": ADDRESS,
+        "house_number": ADDRESS,
+        "latitude": ADDRESS,
+        "longitude": ADDRESS,
     }
 )
 
@@ -113,6 +126,8 @@ AREA_FIELDS = tuple(name for name, table in STORAGE.items() if table == AREA)
 RESIDENTIAL_FIELDS = tuple(name for name, table in STORAGE.items() if table == RESIDENTIAL)
 PLOT_FIELDS = tuple(name for name, table in STORAGE.items() if table == PLOT)
 COMMERCIAL_FIELDS = tuple(name for name, table in STORAGE.items() if table == COMMERCIAL)
+LOCATION_FIELDS = tuple(name for name, table in STORAGE.items() if table == LOCATION)
+ADDRESS_FIELDS = tuple(name for name, table in STORAGE.items() if table == ADDRESS)
 DERIVED_FIELDS = tuple(DERIVED)
 WIRE_FIELDS = (
     *IDENTITY_FIELDS,

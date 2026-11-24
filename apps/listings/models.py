@@ -11,6 +11,7 @@ from django.utils import timezone
 from apps.catalog import registry
 from apps.listings import area
 from apps.listings.fields import (
+    ADDRESS_FIELDS,
     COMMERCIAL_FIELDS,
     PLOT_FIELDS,
     RESIDENTIAL_FIELDS,
@@ -164,6 +165,19 @@ def _detail_constraints(prefix: str, names) -> list[models.CheckConstraint]:
                 name=f"{prefix}_{name}_{suffix}",
             )
         )
+    return constraints
+
+
+def address_constraints() -> list[models.CheckConstraint]:
+    """Coordinate bounds (generated from the registry) and the both-or-neither rule."""
+    constraints = _detail_constraints("listings_addr", ADDRESS_FIELDS)
+    constraints.append(
+        models.CheckConstraint(
+            condition=models.Q(latitude__isnull=True, longitude__isnull=True)
+            | models.Q(latitude__isnull=False, longitude__isnull=False),
+            name="listings_addr_coordinates_paired",
+        )
+    )
     return constraints
 
 
@@ -413,6 +427,52 @@ class ListingCommercial(models.Model):
 
     class Meta:
         constraints = commercial_constraints()
+
+
+class ListingLocation(models.Model):
+    """The public location of a Listing (one row, created lazily on the first non-null value):
+    the city and locality (plain UUIDs of catalog reference data, no key into `catalog`; the
+    columns are `city_id` and `locality_id`) and the public location text. Every column is
+    nullable: unanswered is NULL. A locality needs a city; that it belongs to the city is the
+    service's rule (a catalog fact the database cannot see)."""
+
+    listing = models.OneToOneField(
+        PropertyListing, on_delete=models.CASCADE, related_name="location"
+    )
+    city = models.UUIDField(null=True, db_column="city_id")
+    locality = models.UUIDField(null=True, db_column="locality_id")
+    society = models.CharField(max_length=60, null=True)
+    phase = models.CharField(max_length=60, null=True)
+    sector = models.CharField(max_length=60, null=True)
+    block = models.CharField(max_length=60, null=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        indexes = [models.Index(fields=["city", "locality"], name="listings_location_city_idx")]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(locality__isnull=True) | models.Q(city__isnull=False),
+                name="listings_location_locality_needs_city",
+            )
+        ]
+
+
+class ListingPrivateAddress(models.Model):
+    """The owner's exact address (one row, created lazily on the first non-null value), kept in
+    its own table so a public read can never reach it by accident (AD-5, AD-26). Read only for
+    the owner's own resource; never joined into a public selector or projection."""
+
+    listing = models.OneToOneField(
+        PropertyListing, on_delete=models.CASCADE, related_name="private_address"
+    )
+    street = models.CharField(max_length=120, null=True)
+    house_number = models.CharField(max_length=30, null=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = address_constraints()
 
 
 MAX_IMAGES = 10

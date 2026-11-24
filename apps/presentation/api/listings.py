@@ -61,16 +61,22 @@ def _type_help(definition) -> str:
     if definition.type == "decimal":
         note = " Computed by the server; read-only." if definition.derived else ""
         low, high = format(definition.minimum, "f"), format(definition.maximum, "f")
+        sign = ", a leading minus sign" if definition.minimum < 0 else ""
         return (
             f"Decimal string with up to {definition.scale} decimals (`{low}` to `{high}`), "
-            f"digits and a point only, never a JSON number. Returned with {definition.scale} "
-            f"decimals.{note}"
+            f"digits and a point only{sign}, never a JSON number. Returned with "
+            f"{definition.scale} decimals.{note}"
         )
     if definition.type == "integer":
         low, high = int(definition.minimum), int(definition.maximum)
         return f"Whole number from {low} to {high}, a JSON integer (never text). Null clears it."
     if definition.type == "boolean":
         return "`true` or `false`; null when not answered (never defaulted to either)."
+    if definition.type == "reference":
+        return (
+            f"The uuid of an active {definition.reference} from the reference lists "
+            "(`/api/v1/reference/cities`), as text; never a name. Null clears it."
+        )
     if definition.type == "date":
         low, high = definition.minimum.isoformat(), definition.maximum.isoformat()
         return (
@@ -93,6 +99,8 @@ def _serializer_field(definition, update: bool):
         )
     if definition.type == "boolean":
         return serializers.BooleanField(**options)
+    if definition.type == "reference":
+        return serializers.UUIDField(**options)  # documented as `format: uuid`; the service judges
     if definition.type == "date":
         return serializers.DateField(**options)  # documented as `format: date`; the service judges
     return serializers.CharField(**options)  # text, and money as a decimal string
@@ -334,7 +342,17 @@ class ListingDetailView(NoStoreMixin, APIView):
             "2100-12-31, `minimum_lease_months`, `notice_period_days`, the four "
             "`utility_*_included` answers, `pets_allowed` and `occupant_restrictions`; the rent "
             "terms are `not_applicable` on a sale Draft and the other way round; a rental period "
-            "is never assumed). Installment, payment type, down payment and title or approval "
+            "is never assumed) and the location: `city` and `locality` as uuid text of an active "
+            "city and one of its localities (`/api/v1/reference/cities` and "
+            "`/api/v1/reference/cities/{city_id}/localities`; a locality of another city is "
+            "`locality_not_in_city`, a locality without a city `invalid`; changing or clearing "
+            "`city` clears the stored `locality` in the same write), the public location text "
+            "`society`, `phase`, `sector` and `block` (up to 60 characters, no phone numbers or "
+            "email addresses) and the PRIVATE address `street` (up to 120 characters), "
+            "`house_number` (up to 30) and `latitude` and `longitude` (decimal strings with at "
+            "most six decimals, -90 to 90 and -180 to 180, both or neither; `out_of_range` "
+            "otherwise): the private fields are returned only to the owner and never appear in "
+            "any public response. Installment, payment type, down payment and title or approval "
             "document terms are not supported yet (`unknown_field`). Possession, balloting, "
             "development, approval and plot file status are seller-declared (registry flag "
             "`seller_declared`): the owner's claim, never verified by EstateAI. A Plot File "
@@ -353,7 +371,8 @@ class ListingDetailView(NoStoreMixin, APIView):
             "revision. `400` carries codes keyed by registry field id (`invalid`, `too_short`, "
             "`too_long`, `invalid_price`, `invalid_area`, `invalid_range`, `invalid_floor`, "
             "`invalid_date`, "
-            "`invalid_choice`, `not_applicable`, `invalid_measure`, "
+            "`invalid_choice`, `not_applicable`, `invalid_measure`, `out_of_range`, "
+            "`locality_not_in_city`, "
             "`contains_contact_details`, `not_editable`; unknown ids are "
             "`unknown_field` under `non_field_errors`) and never echoes a value. Another "
             "account's, an unknown or a malformed id is `404 not_found`; an account that may "

@@ -29,11 +29,13 @@ from apps.kernel.errors import DomainError
 from apps.listings import policy
 from apps.listings.area import basis_text
 from apps.listings.fields import (
+    ADDRESS_FIELDS,
     AREA_FIELDS,
     COMMERCIAL_FIELDS,
     DERIVED_FIELDS,
     IDENTITY_FIELDS,
     LISTING_FIELDS,
+    LOCATION_FIELDS,
     PLOT_FIELDS,
     RESIDENTIAL_FIELDS,
     TERMS_FIELDS,
@@ -43,7 +45,9 @@ from apps.listings.models import (
     ListingArea,
     ListingCommercial,
     ListingImage,
+    ListingLocation,
     ListingPlot,
+    ListingPrivateAddress,
     ListingResidential,
     ListingTerms,
     PropertyListing,
@@ -54,12 +58,18 @@ MAX_LIMIT = 50
 _MIN_YEAR, _MAX_YEAR = 2000, 9000
 _CURSOR = re.compile(r"^[A-Za-z0-9_-]{1,200}$")
 _COLUMN_FIELDS = (*IDENTITY_FIELDS, *LISTING_FIELDS)
+# The detail tables joined into a read: the owner's resource also joins the PRIVATE address; the
+# public projection never does.
+PUBLIC_RELATED = ("terms", "area", "residential", "plot", "commercial", "location")
+OWNER_RELATED = (*PUBLIC_RELATED, "private_address")
 MONEY_FORMAT = "{:.2f}"  # money is a decimal string with two decimals on the wire
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class ListingView:
-    """The wire shape (AD-24). No owner or other internal column."""
+    """The wire shape (AD-24). No owner or other internal column. `repr` and `str` redact every
+    field that is not of class `public` (and any the registry does not define), so a private value
+    never reaches a log line, a traceback or an assertion message through this object."""
 
     id: uuid.UUID
     status: str
@@ -73,6 +83,20 @@ class ListingView:
     )
     media: tuple = ()
     amenities: tuple = ()
+
+    def __repr__(self) -> str:
+        shown = {
+            name: value
+            if (found := registry.field(name)) is not None and found.field_class == "public"
+            else ("<private>" if value is not None else None)
+            for name, value in self.fields.items()
+        }
+        return (
+            f"ListingView(id={self.id!r}, status={self.status!r}, revision={self.revision!r}, "
+            f"fields={shown!r})"
+        )
+
+    __str__ = __repr__
 
 
 @dataclass(frozen=True)
@@ -155,6 +179,23 @@ def commercial_of(row: PropertyListing) -> ListingCommercial | None:
         return None
 
 
+def location_of(row: PropertyListing) -> ListingLocation | None:
+    """The Listing's public location row, or None until a value is first saved."""
+    try:
+        return row.location
+    except ObjectDoesNotExist:
+        return None
+
+
+def address_of(row: PropertyListing) -> ListingPrivateAddress | None:
+    """The Listing's PRIVATE address row, or None until a value is first saved. Only the owner's
+    own reads and the edit service call this; no public path does (AD-5, AD-26)."""
+    try:
+        return row.private_address
+    except ObjectDoesNotExist:
+        return None
+
+
 def clean_provenance(stored) -> dict[str, dict]:
     """Well-formed entries only: a malformed one is skipped, never an error for a read."""
     if not isinstance(stored, dict):
@@ -199,15 +240,19 @@ def view_of(
     residential: ListingResidential | None = None,
     plot: ListingPlot | None = None,
     commercial: ListingCommercial | None = None,
+    location: ListingLocation | None = None,
+    address: ListingPrivateAddress | None = None,
     *,
     images: tuple[ImageView, ...] | None = None,
     public: bool | None = None,
+    with_private: bool = False,
 ) -> ListingView:
     terms = terms if terms is not None else terms_of(row)
     area = area if area is not None else area_of(row)
     residential = residential if residential is not None else residential_of(row)
     plot = plot if plot is not None else plot_of(row)
     commercial = commercial if commercial is not None else commercial_of(row)
+    location = location if location is not None else location_of(row)
     fields = {name: getattr(row, name) for name in _COLUMN_FIELDS}
     for name in TERMS_FIELDS:
         fields[name] = field_text(name, getattr(terms, name) if terms else None)
@@ -219,6 +264,12 @@ def view_of(
         fields[name] = field_text(name, getattr(plot, name) if plot else None)
     for name in COMMERCIAL_FIELDS:
         fields[name] = field_text(name, getattr(commercial, name) if commercial else None)
+    for name in LOCATION_FIELDS:
+        fields[name] = field_text(name, getattr(location, name) if location else None)
+    if with_private:  # the owner's resource only: the table is not even read otherwise
+        address = address if address is not None else address_of(row)
+        for name in ADDRESS_FIELDS:
+            fields[name] = field_text(name, getattr(address, name) if address else None)
     provenance = {
         name: MappingProxyType(entry)
         for name, entry in clean_provenance(row.provenance).items()
@@ -287,13 +338,13 @@ def get_owned_listing(actor: Actor, listing_id) -> ListingView:
     if key is None or not _owner_actor(actor):
         raise DomainError("not_found")
     row = (
-        PropertyListing.objects.select_related("terms", "area", "residential", "plot", "commercial")
+        PropertyListing.objects.select_related(*OWNER_RELATED)
         .filter(id=key, owner_account_id=actor.account_id)
         .first()
     )
     if row is None:
         raise DomainError("not_found")
-    return view_of(row)
+    return view_of(row, with_private=True)
 
 
 def encode_cursor(created_at: datetime, listing_id: uuid.UUID, status: str | None) -> str:
@@ -338,9 +389,9 @@ def list_owned(
     require_signed_in(actor)
     if actor.kind is not ActorKind.USER or not can(actor, Capability.VIEW_DRAFTS):
         raise DomainError("forbidden")
-    rows = PropertyListing.objects.select_related(
-        "terms", "area", "residential", "plot", "commercial"
-    ).filter(owner_account_id=actor.account_id)
+    rows = PropertyListing.objects.select_related(*OWNER_RELATED).filter(
+        owner_account_id=actor.account_id
+    )
     if status is not None:
         rows = rows.filter(status=ListingStatus(status).value)
     if cursor is not None:
@@ -354,7 +405,10 @@ def list_owned(
     images = media_by_listing(r.id for r in page)
     public = policy.public_ids(r.id for r in page)
     return ListingPage(
-        tuple(view_of(r, images=images[r.id], public=r.id in public) for r in page), next_cursor
+        tuple(
+            view_of(r, images=images[r.id], public=r.id in public, with_private=True) for r in page
+        ),
+        next_cursor,
     )
 
 
@@ -418,7 +472,8 @@ def public_fields(values: Mapping[str, object], definition=None) -> dict[str, ob
 
 
 def public_view_of(row: PropertyListing) -> PublicListingView:
-    view = view_of(row, public=True)  # callers pass only rows from `public_listings()`
+    # Callers pass only rows from `public_listings()`. The private address is never read.
+    view = view_of(row, public=True, with_private=False)
     return PublicListingView(
         id=row.id,
         purpose=row.purpose,
@@ -451,12 +506,7 @@ def public_listing(viewer: Actor, listing_id) -> PublicListingView:
     key = canonical_uuid(listing_id)
     if key is None:
         raise DomainError("not_found")
-    row = (
-        public_listings()
-        .select_related("terms", "area", "residential", "plot", "commercial")
-        .filter(id=key)
-        .first()
-    )
+    row = public_listings().select_related(*PUBLIC_RELATED).filter(id=key).first()
     if row is None:
         raise DomainError("not_found")
     return public_view_of(row)
