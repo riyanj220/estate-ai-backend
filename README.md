@@ -150,6 +150,8 @@ Signed-in accounts read their own in-app notifications at `GET /api/v1/notificat
 
 ## Reference data
 
+The amenity catalogue (`GET /api/v1/reference/amenities`, Story 2.8) works the same way; see `docs/reference-data.md`.
+
 Cities live in the `catalog` app (seeded with Karachi) and are served as plain strings at `GET /api/v1/reference/cities`, never as OpenAPI enums. See `docs/reference-data.md` for how they are managed and where localities arrive.
 
 ## Accounts

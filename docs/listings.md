@@ -353,6 +353,43 @@ purpose, category and Subtype, in `section: location`.
   events (`listing.model_inputs_changed` carries only the Listing id; none of these fields is a model input), OpenAPI
   examples or any URL. `tests/listings/test_location.py` has canary tests for each.
 
+### Amenities and seller-declared nearby facilities (Story 2.8)
+
+- One registry field, `amenities` (registry version 8, type `amenities`, section `amenities`, class public, optional,
+  every purpose and Subtype, `searchable`, a `valuation_input`, not sortable). Its value is a JSON object
+  `{<catalogue code>: "present" | "none"}`; the codes come from the `catalog` amenity catalogue
+  (`GET /api/v1/reference/amenities`, `docs/reference-data.md`), never from the client.
+- **Unanswered is a third state, and it is not stored.** A code that is not in the map is unanswered. It is never read
+  as `none` and never has a row. `none` is an answer the owner gave ("this property has no lift"), also for `nearby`
+  entries ("no school nearby").
+- A PATCH value REPLACES the whole map (so the revision check keeps it conflict-safe: two editors cannot merge
+  silently). `null` and `{}` both clear it. Refused as `invalid` on `amenities`, nothing written: a value that is not
+  an object, more than 40 entries, a key that is not an active catalogue code, a state other than the exact strings
+  `present` and `none`. One entry per code is inherent to a JSON object (a repeated key in the raw body is the
+  parser's last-wins). An entry the Listing already stores with the SAME state is kept even if the catalogue has
+  deactivated its code since, so a client re-sending what it read is not locked out (a new or changed entry must use an
+  active code).
+- Stored in `listings_listingamenity` (listing FK, `amenity_code` text, `state` CHECK `present`/`none`, unique
+  `(listing, amenity_code)`, index on `(amenity_code, state)` for later search). Written only inside `apply_updates`, in
+  the same transaction and under the same listing row lock and `base_revision` check as every other field: the rows are
+  replaced as a set. Provenance is recorded under `amenities` like any field; the revision row records the map of codes
+  and states (not private).
+- Read: the owner resource and `PublicListingView.fields` carry `fields.amenities` as the map of ANSWERED codes only,
+  or `null` when nothing is answered. Nothing else exists per entry: no distance, no verification flag, no score and no
+  computed value in any response, projection, OpenAPI, event or log.
+- **Seller-declared nearby facilities.** The catalogue entries of `kind` `nearby` (mosque, park, gym, school, hospital)
+  are the seller's own claim. This is a property of the catalogue kind, not of the stored entry: clients must label
+  every `nearby` entry "Seller-declared" and show no distance. EstateAI does not verify them. Unmatched mentions of other
+  facility types are not stored (a later AI story flags them).
+- A change to the map emits `listing.model_inputs_changed` after commit (the event carries only the Listing id):
+  `amenities` is deliberately flagged `valuation_input`.
+- Deactivated stored code: re-sending a stored entry unchanged is accepted; changing its state is `invalid`; to drop
+  the answer the owner omits the code from the map.
+- `selectors.public_view_of` reads the map with one query per Listing. That N+1 is deferred until a public list exists
+  (the owner's own list already batches it with `amenities_by_listing`).
+- The top-level `amenities` list that the Listing resource carried as an empty placeholder since Story 2.1 is gone: the
+  map lives in `fields.amenities`.
+
 ### Provenance
 
 `origin` is an argument chosen by the calling layer: the owner API passes `manual`, the future Assistant passes `ai`. It
@@ -405,7 +442,7 @@ edits of Published Listings.
 
 Wire order of `fields`: identity, the editable fields in `STORAGE` order, `area_sqft` last.
 `{id, status, visibility, revision, registry_version, fields: {purpose, category, subtype, title, description,
-asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, <the 30 residential details, electricity, water, gas, the 14 plot details, the 8 commercial details, the sale and rent terms, city, locality, society, phase, sector, block and the private street, house_number, latitude, longitude>, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [<ImageView, see "Images" below>], amenities: []}`.
+asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, <the 30 residential details, electricity, water, gas, the 14 plot details, the 8 commercial details, the sale and rent terms, city, locality, society, phase, sector, block and the private street, house_number, latitude, longitude, amenities>, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [<ImageView, see "Images" below>]}`.
 `visibility` is `public` only while the Listing really is public (published, not restricted, owner Active, derived from `listings.policy`), else `private` (`listings.lifecycle.Visibility`); who may see a Listing is `listings.policy.can_view`, see `docs/visibility.md`. `fields` is keyed by flat
 registry ids and returns `null` for unknown; `asking_price`, `area_value` (four decimals), `marla_basis` (`"225"`,
 `"250"`, `"272.25"`) and `area_sqft` (four decimals, `null` when not computable) are strings, never numbers; the residential integers and yes/no answers are JSON integers and booleans, and the feet and kilowatt fields are strings with two decimals. Provenance covers

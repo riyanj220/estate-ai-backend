@@ -232,12 +232,20 @@ tells the developer to bump the version and run the script.
 
 `GET /api/v1/registry` is public: `{version, taxonomy: {categories: [{id, subtypes}], purposes}, fields: [...]}`, each
 field with `id, type, requirement, applicability, allowed_values (null unless an enum), allowed_values_by_purpose (null
-unless narrowed), allowed_values_by_subtype (null unless narrowed), seller_declared, section (`details` or `terms`), min_length and max_length (text only), min and max (money, decimal and integer as plain decimal notation, never an exponent; a date as `YYYY-MM-DD` text), currency (money only), scale (decimal only),
-derived, reference (`city` or `locality` for a reference field, else null), description (null unless documented), class` and the five flags (`RESPONSE_SHAPE_VERSION` is 6: `reference` was added in version 7; `section` was added in version 6 and a date serves its bounds in `min` and `max`; `allowed_values_by_subtype` and `seller_declared` were added in version 5; earlier it
+unless narrowed), allowed_values_by_subtype (null unless narrowed), seller_declared, section (`details`, `terms`, `location` or `amenities`), min_length and max_length (text only), min and max (money, decimal and integer as plain decimal notation, never an exponent; a date as `YYYY-MM-DD` text), currency (money only), scale (decimal only),
+derived, reference (`city` or `locality` for a reference field, else null), description (null unless documented), class` and the five flags (`RESPONSE_SHAPE_VERSION` is 7: the `amenities` type and section came with registry version 8; `reference` was added in version 7; `section` was added in version 6 and a date serves its bounds in `min` and `max`; `allowed_values_by_subtype` and `seller_declared` were added in version 5; earlier it
 rose for `scale`, `derived` and `description`).
 `Cache-Control: public, max-age=300` and a strong `ETag` (`"<version>-<content hash>-<RESPONSE_SHAPE_VERSION>"`); `If-None-Match` gets `304`.
 OpenAPI enums for purpose, category and subtype are generated from the registry (`PurposeEnum`, `CategoryEnum`,
 `SubtypeEnum`), never copied by hand. Cities, localities and amenities are database reference data, not registry values.
+
+## The `amenities` type (version 8)
+
+A field of `type: amenities` (one exists, `amenities`, class `public`; the loader refuses any other class) holds a map
+from a `catalog` amenity code to `present` or `none`. The file carries no value rules for it: the catalogue is database
+data and the limits (at most 40 entries, the two states) live in `listings.validation.check_amenities`. A code that is
+absent from the map is UNANSWERED, never `none`. Entries of catalogue kind `nearby` are the seller's own declaration:
+clients label them "Seller-declared", and there is no distance and no verification anywhere. See `docs/listings.md`.
 
 ## Rules and caveats added in review
 

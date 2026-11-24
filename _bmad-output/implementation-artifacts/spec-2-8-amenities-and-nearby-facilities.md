@@ -67,6 +67,17 @@ context:
 
 ## Review Triage Log
 
+Backend half, as built (notes for the frontend half and reviewers):
+
+- The top-level `amenities: []` key of the Listing resource (a placeholder since Story 2.1) was removed on purpose; the map is `fields.amenities` (null when unanswered). The frontend follows after `npm run api:sync`.
+- A stored entry whose code the catalogue later deactivated can be re-sent unchanged; flipping it to a different state is `invalid`; to drop the answer the owner omits the code. A new code must be active.
+- `amenities` is flagged `valuation_input`, so a map change fires `listing.model_inputs_changed` (the event carries only the Listing id).
+- A repeated key in the raw JSON body is the parser's last-wins; no duplicate-key rejection was added.
+- `public_view_of` reads amenities with one query per Listing; the N+1 is deferred until a public list exists.
+- The state rule is exact at the HTTP boundary (padded, null, float, bool and empty states are all `400 invalid`, proven by test). No new FIELD_MESSAGES sentence was added.
+- The registry loader reserves the id `amenities` for the type and refuses sortable, derived or allowed values on it. `create_amenity` refuses a `sort_order` outside int32; the label CHECK enforces only length (control characters are the service rule).
+- The catalogue is read only when a request carries `amenities`; without a catalogue the validator accepts nothing new (fail safe).
+
 ## Verification
 
 **Backend:** `env -u DJANGO_SETTINGS_MODULE uv run lint-imports; uv run ruff check .; uv run ruff format --check .; env -u DJANGO_SETTINGS_MODULE uv run pytest -q; uv run python manage.py makemigrations --check --dry-run; uv run python manage.py spectacular --validate --file openapi.yaml` (openapi regenerated deliberately).
