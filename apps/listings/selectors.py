@@ -1,7 +1,9 @@
 """Read path for Listings. Returns plain immutable views, never model instances (AD-3).
 
-Reads are owner-only: any other account, a Visitor and an administrator get `not_found`, so the
-existence of a Listing is never confirmed.
+The owner-facing reads (`get_owned_listing`, `list_owned`) are owner-only: any other account, a
+Visitor and an administrator get `not_found`, so the existence of a Listing is never confirmed.
+Public reads start from `public_listings()` / `public_listing` / `listings.policy.can_view`, the
+only implementations of visibility (AD-5, `docs/visibility.md`).
 """
 
 import base64
@@ -24,6 +26,7 @@ from apps.identity.policy import can
 from apps.kernel import media
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
 from apps.kernel.errors import DomainError
+from apps.listings import policy
 from apps.listings.area import basis_text
 from apps.listings.fields import (
     AREA_FIELDS,
@@ -94,6 +97,7 @@ class ServedImage:
     content_type: str
     data: bytes  # empty for a headers-only lookup
     size: int  # the stored size (the asset row's), also for a headers-only lookup
+    public: bool = False  # the Listing is publicly visible right now (so the answer is cacheable)
 
 
 def image_url(listing_id, image_id) -> str:
@@ -197,6 +201,7 @@ def view_of(
     commercial: ListingCommercial | None = None,
     *,
     images: tuple[ImageView, ...] | None = None,
+    public: bool | None = None,
 ) -> ListingView:
     terms = terms if terms is not None else terms_of(row)
     area = area if area is not None else area_of(row)
@@ -222,7 +227,9 @@ def view_of(
     return ListingView(
         id=row.id,
         status=row.status,
-        visibility=visibility_of(ListingStatus(row.status)).value,
+        visibility=visibility_of(
+            ListingStatus(row.status), public=policy.is_public(row) if public is None else public
+        ).value,
         revision=row.revision,
         registry_version=row.registry_version,
         fields=MappingProxyType(fields),
@@ -345,40 +352,152 @@ def list_owned(
     page = page[:size]
     next_cursor = encode_cursor(page[-1].created_at, page[-1].id, status) if more else None
     images = media_by_listing(r.id for r in page)
-    return ListingPage(tuple(view_of(r, images=images[r.id]) for r in page), next_cursor)
+    public = policy.public_ids(r.id for r in page)
+    return ListingPage(
+        tuple(view_of(r, images=images[r.id], public=r.id in public) for r in page), next_cursor
+    )
+
+
+def public_listings():
+    """THE queryset of publicly visible Listings (AD-5): Published, not restricted, owner an
+    Active eligible owner. Lazy and internal to `listings`: it never crosses the app boundary
+    (other apps get views). Shares its predicate with `policy.can_view`."""
+    return PropertyListing.objects.filter(policy.public_q())
+
+
+@dataclass(frozen=True)
+class PublicImageView:
+    """An image as the public sees it: no asset id, storage key or owner."""
+
+    id: uuid.UUID
+    position: int
+    is_cover: bool
+    content_type: str
+    width: int
+    height: int
+    url: str
+
+
+@dataclass(frozen=True)
+class PublicListingView:
+    """The public projection of a Listing (AD-5, AD-24, AD-26), built field by field from public
+    registry fields only. It deliberately has no owner, status, restricted flag, provenance,
+    revision or private-class field; the type, not review discipline, keeps them out."""
+
+    id: uuid.UUID
+    purpose: str
+    category: str
+    subtype: str
+    title: str | None
+    description: str | None
+    fields: Mapping[str, object]  # the other registry fields of class `public`; null if unknown
+    media: tuple[PublicImageView, ...]
+    registry_version: int
+
+
+# Fields shown at the top of the projection, not repeated in `fields`.
+_PROJECTED_APART = (*IDENTITY_FIELDS, "title", "description")
+
+
+def public_fields(values: Mapping[str, object], definition=None) -> dict[str, object]:
+    """The registry fields of class `public` from `values`. A field of any other class is never
+    copied; a field the registry does not define raises (a new column must get a registry
+    definition and a class before it can reach a public response). `definition` is a seam for
+    the guard tests."""
+    definition = definition or registry.field
+    shown = {}
+    for name, value in values.items():
+        if name in _PROJECTED_APART:
+            continue
+        found = definition(name)
+        if found is None:
+            raise RuntimeError(f"field {name!r} has no registry definition; it cannot be projected")
+        if found.field_class == "public":
+            shown[name] = value
+    return shown
+
+
+def public_view_of(row: PropertyListing) -> PublicListingView:
+    view = view_of(row, public=True)  # callers pass only rows from `public_listings()`
+    return PublicListingView(
+        id=row.id,
+        purpose=row.purpose,
+        category=row.category,
+        subtype=row.subtype,
+        title=row.title,
+        description=row.description,
+        fields=MappingProxyType(public_fields(view.fields)),
+        media=tuple(
+            PublicImageView(
+                id=image.id,
+                position=image.position,
+                is_cover=image.is_cover,
+                content_type=image.content_type,
+                width=image.width,
+                height=image.height,
+                url=image.url,
+            )
+            for image in view.media
+        ),
+        registry_version=row.registry_version,
+    )
+
+
+def public_listing(viewer: Actor, listing_id) -> PublicListingView:
+    """The public projection of one Listing, or `not_found` for every other case (unknown or
+    malformed id, a Draft, restricted, owner Suspended or Deactivated, any viewer): existence is
+    never confirmed. Public means the same for every viewer, so `viewer` changes nothing here;
+    it is part of the signature so a later per-viewer extra (a favourite flag) has a place."""
+    key = canonical_uuid(listing_id)
+    if key is None:
+        raise DomainError("not_found")
+    row = (
+        public_listings()
+        .select_related("terms", "area", "residential", "plot", "commercial")
+        .filter(id=key)
+        .first()
+    )
+    if row is None:
+        raise DomainError("not_found")
+    return public_view_of(row)
 
 
 def image_for_serving(
     actor: Actor, listing_id, image_id, *, with_bytes: bool = True
 ) -> ServedImage:
     """THE seam of the media endpoint (AD-15, AD-22): the stored bytes of one image the actor may
-    see, or `not_found` for everything else (the same answer for a Visitor, an administrator, a
-    non-owner, a Deactivated owner, unknown or malformed ids, another Listing's image, a lost
-    file and a Listing that is not a Draft).
+    see, or `not_found` for everything else (the same answer for unknown or malformed ids,
+    another Listing's image, a lost file and a Listing the actor may not view).
 
-    Story 2.10 serves only the owner's Draft images (an owner with `view_drafts`; Suspended and
-    Email-unverified owners may see their own). Story 2.12 replaces this body with the single
-    visibility policy (public serving of Published listings); the endpoint does not change.
+    The decision is the policy's (Story 2.12): `is_public`, else `is_owner`, the two halves of
+    `can_view`. An image of a public Listing goes to anyone, a Visitor included; an image of any
+    other Listing goes only to its owner. `ServedImage.public` says whether the Listing is public
+    right now, so the endpoint may cache the answer.
 
     `with_bytes=False` (for `HEAD`) decides access the same way but reads no file: `data` is empty
     and `size` comes from the asset row.
     """
     listing_key, image_key = canonical_uuid(listing_id), canonical_uuid(image_id)
-    if listing_key is None or image_key is None or not _owner_actor(actor):
+    if listing_key is None or image_key is None:
         raise DomainError("not_found")
-    owned = PropertyListing.objects.filter(
-        id=listing_key, owner_account_id=actor.account_id, status=ListingStatus.DRAFT.value
-    ).exists()
+    row = PropertyListing.objects.filter(id=listing_key).first()
+    if row is None:
+        raise DomainError("not_found")
+    public = policy.is_public(row)  # once: it decides access and the cache header
+    if not (public or policy.is_owner(actor, row)):
+        raise DomainError("not_found")
     link = ListingImage.objects.filter(id=image_key, listing_id=listing_key).first()
-    if not owned or link is None:
+    if link is None:
         raise DomainError("not_found")
     if not with_bytes:
         asset = media.assets_by_id([link.asset_id]).get(link.asset_id)
         if asset is None:
             raise DomainError("not_found")
-        return ServedImage(content_type=asset.content_type, data=b"", size=asset.bytes)
+        return ServedImage(
+            content_type=asset.content_type, data=b"", size=asset.bytes, public=public
+        )
     stored = media.read_asset(link.asset_id)
     if stored is None:
         raise DomainError("not_found")
     asset, data = stored
-    return ServedImage(content_type=asset.content_type, data=data, size=len(data))
+    return ServedImage(content_type=asset.content_type, data=data, size=len(data), public=public)

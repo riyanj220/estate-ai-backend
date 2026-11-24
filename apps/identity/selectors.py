@@ -105,6 +105,20 @@ def is_active_owner(account_id) -> bool:
     )
 
 
+def active_owner_account_ids():
+    """A lazy queryset of the ids of every Active eligible owner (an Active Individual or Agency
+    account), for `listings.policy` to use as a subquery. It is the SAME rule as
+    `is_active_owner`, written as a filter on the columns the account state derives from
+    (verified, not suspended, not Deactivated); a test keeps the two in agreement for every
+    account state and type. The ids are not data about anyone beyond "is eligible"."""
+    return Account.objects.filter(
+        email_verified_at__isnull=False,
+        suspended_at__isnull=True,
+        deactivated_at__isnull=True,
+        account_type__in=(AccountType.INDIVIDUAL, AccountType.AGENCY),
+    ).values("id")
+
+
 @dataclass(frozen=True)
 class LiveSession:
     """A valid session and the account it belongs to; never carries the token or its hash."""

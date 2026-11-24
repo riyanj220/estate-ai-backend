@@ -1,14 +1,16 @@
-"""Code-defined Listing enums. Later stories extend them (Stories 2.12, 2.15, 2.17)."""
+"""Code-defined Listing enums. Later stories extend them (Stories 2.15, 2.17)."""
 
 from enum import StrEnum
 
 
 class ListingStatus(StrEnum):
     DRAFT = "draft"
+    PUBLISHED = "published"  # set by the publication story (2.15); fixtures only until then
 
 
 class Visibility(StrEnum):
     PRIVATE = "private"
+    PUBLIC = "public"
 
 
 class Origin(StrEnum):
@@ -22,6 +24,8 @@ class Origin(StrEnum):
 EDITABLE_STATUSES = frozenset({ListingStatus.DRAFT.value})
 
 
-def visibility_of(status: ListingStatus) -> Visibility:
-    """Drafts are private; Story 2.12 adds the public states."""
-    return Visibility.PRIVATE
+def visibility_of(status: ListingStatus, *, public: bool) -> Visibility:
+    """The owner-facing `visibility` label: `public` only for a Listing that IS public right now
+    (`public` comes from `listings.policy`, which also looks at `restricted` and the owner's
+    account state), else `private`. This function decides nothing about who may see what."""
+    return Visibility.PUBLIC if public and status is ListingStatus.PUBLISHED else Visibility.PRIVATE

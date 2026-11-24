@@ -198,6 +198,9 @@ class PropertyListing(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner_account_id = models.UUIDField()  # plain column: no key into identity
     status = models.CharField(max_length=16, choices=_choices(s.value for s in ListingStatus))
+    # Set by moderation (a later epic); fixtures only until then. A restricted Listing is never
+    # public, whatever its status (`listings.policy`).
+    restricted = models.BooleanField(default=False)
     revision = models.PositiveIntegerField(default=1)
     registry_version = models.PositiveIntegerField()
     purpose = models.CharField(max_length=32)
@@ -219,6 +222,10 @@ class PropertyListing(models.Model):
             models.Index(
                 fields=["owner_account_id", "status", "-created_at", "-id"],
                 name="listings_owner_status_idx",
+            ),
+            # the public predicate (`listings.policy.public_q`): published, not restricted, by owner
+            models.Index(
+                fields=["status", "restricted", "owner_account_id"], name="listings_public_idx"
             ),
         ]
         constraints = [
