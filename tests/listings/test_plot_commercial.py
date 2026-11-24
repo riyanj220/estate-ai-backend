@@ -897,7 +897,7 @@ def test_another_owner_gets_not_found_and_no_row():
     assert caught.value.code == "not_found" and no_rows()
 
 
-def test_a_draft_from_an_older_registry_is_revalidated_under_version_6():
+def test_a_draft_from_an_older_registry_is_revalidated_under_the_current_version():
     account, view = draft(PLOT_FILE)
     PropertyListing.objects.update(registry_version=4)
     assert codes(account, view, {"possession_status": "possession_ready"}) == {
@@ -905,8 +905,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_under_version_6():
     }
     assert PropertyListing.objects.get().registry_version == 4
     saved = update(account, view, {"possession_status": "file_only"})
-    assert saved.registry_version == registry.registry_version() == 6
-    assert PropertyListing.objects.get().registry_version == 6
+    assert saved.registry_version == registry.registry_version() == 7
+    assert PropertyListing.objects.get().registry_version == 7
 
 
 def drop_constraint(table, name):

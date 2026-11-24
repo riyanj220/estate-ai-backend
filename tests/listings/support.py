@@ -143,7 +143,10 @@ RENT_TERMS = (
 TERMS_IDS = (*BOTH_TERMS, *SALE_TERMS, *RENT_TERMS)  # the new terms columns, registry order
 # Story 2.6 appends the terms after every details field, so the registry, the storage map and the
 # wire all end with this run (the derived `area_sqft` stays last on the wire).
-TAIL_IDS = (*DETAIL_IDS, *TERMS_IDS)
+PUBLIC_LOCATION_IDS = ("city", "locality", "society", "phase", "sector", "block")
+PRIVATE_ADDRESS_IDS = ("street", "house_number", "latitude", "longitude")
+LOCATION_IDS = (*PUBLIC_LOCATION_IDS, *PRIVATE_ADDRESS_IDS)  # Story 2.7, registry order
+TAIL_IDS = (*DETAIL_IDS, *TERMS_IDS, *LOCATION_IDS)
 
 SALE_HOUSE = HOUSE  # a sale Draft
 RENT_HOUSE = ("rent", "house", "house")

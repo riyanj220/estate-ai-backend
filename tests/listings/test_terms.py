@@ -28,6 +28,7 @@ from apps.listings.models import (
 from tests.listings.support import (
     BOTH_TERMS,
     HOUSE,
+    LOCATION_IDS,
     RENT_TERMS,
     SALE_TERMS,
     TERMS_IDS,
@@ -166,7 +167,9 @@ def test_the_wire_order_follows_the_registry_and_the_terms_come_after_the_detail
     assert names.index("price_negotiable") > names.index("business_centre_facilities")
     assert tuple(n for n in names if n in TERMS_IDS) == TERMS_IDS
     assert names[-1] == "area_sqft"
-    assert [f.id for f in registry.fields()][-len(TERMS_IDS) :] == list(TERMS_IDS)
+    ids = [f.id for f in registry.fields()]
+    after = len(TERMS_IDS) + len(LOCATION_IDS)  # the location (Story 2.7) is appended after them
+    assert ids[-after : -len(LOCATION_IDS)] == list(TERMS_IDS)
 
 
 def test_a_date_is_the_same_text_whatever_the_server_time_zone():
@@ -756,7 +759,7 @@ def test_another_owner_gets_not_found_and_nothing_changes():
     assert caught.value.code == "not_found" and terms().security_deposit is None
 
 
-def test_a_draft_from_an_older_registry_is_revalidated_under_version_6():
+def test_a_draft_from_an_older_registry_is_revalidated_under_the_current_version():
     account, view = draft()
     PropertyListing.objects.update(registry_version=5)  # before the terms existed
     assert codes(account, view, {"availability_date": "2101-01-01"}) == {
@@ -764,8 +767,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_under_version_6():
     }
     assert PropertyListing.objects.get().registry_version == 5
     saved = update(account, view, {"availability_date": "2027-03-01"})
-    assert saved.registry_version == registry.registry_version() == 6
-    assert PropertyListing.objects.get().registry_version == 6
+    assert saved.registry_version == registry.registry_version() == 7
+    assert PropertyListing.objects.get().registry_version == 7
 
 
 # --- stored values outside today's rules --------------------------------------------------------

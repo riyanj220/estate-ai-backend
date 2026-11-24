@@ -10,7 +10,9 @@ from apps.listings import fields, selectors
 from apps.listings.models import (
     ListingArea,
     ListingCommercial,
+    ListingLocation,
     ListingPlot,
+    ListingPrivateAddress,
     ListingResidential,
     ListingTerms,
     PropertyListing,
@@ -46,6 +48,8 @@ def test_each_mapped_field_is_a_column_of_its_table():
         fields.RESIDENTIAL: ListingResidential,
         fields.PLOT: ListingPlot,
         fields.COMMERCIAL: ListingCommercial,
+        fields.LOCATION: ListingLocation,
+        fields.ADDRESS: ListingPrivateAddress,
     }
     for name, table in {**fields.STORAGE, **fields.DERIVED}.items():
         assert table in tables, name
@@ -57,6 +61,8 @@ def test_each_mapped_field_is_a_column_of_its_table():
         fields.RESIDENTIAL_FIELDS,
         fields.PLOT_FIELDS,
         fields.COMMERCIAL_FIELDS,
+        fields.LOCATION_FIELDS,
+        fields.ADDRESS_FIELDS,
     ]
     assert set().union(*parts) == set(fields.EDITABLE_FIELDS)
     assert sum(len(part) for part in parts) == len(fields.EDITABLE_FIELDS)  # one table each
@@ -127,6 +133,8 @@ def test_every_decimal_money_integer_and_date_field_fits_its_column():
         fields.RESIDENTIAL: ListingResidential,
         fields.PLOT: ListingPlot,
         fields.COMMERCIAL: ListingCommercial,
+        fields.LOCATION: ListingLocation,
+        fields.ADDRESS: ListingPrivateAddress,
     }
     checked = dict.fromkeys(("decimal", "money", "integer", "date"), 0)
     for definition in registry.fields():

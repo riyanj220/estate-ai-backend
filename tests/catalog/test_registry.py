@@ -10,7 +10,7 @@ import yaml
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.catalog import registry
-from tests.listings.support import TAIL_IDS, TERMS_IDS
+from tests.listings.support import PRIVATE_ADDRESS_IDS, TAIL_IDS, TERMS_IDS
 
 GOOD = yaml.safe_load(registry.FIELDS_PATH.read_text())
 
@@ -52,7 +52,7 @@ def add_field(**overrides):
 
 def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
     loaded = registry.load()
-    assert loaded.version == 6
+    assert loaded.version == 7
     assert [f.id for f in registry.fields()] == [
         "purpose",
         "category",
@@ -75,7 +75,9 @@ def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
         assert definition.field_class == "public" and definition.quota_identity
         assert not (definition.searchable or definition.sortable or definition.valuation_input)
     for definition in registry.fields():
-        assert definition.field_class == "public"
+        assert definition.field_class == (
+            "private" if definition.id in PRIVATE_ADDRESS_IDS else "public"
+        )
     assert {f.id for f in registry.fields() if f.valuation_input} == {
         "area_value",
         "area_unit",
@@ -131,7 +133,7 @@ def test_plot_file_is_a_distinct_subtype_of_plot():
 
 
 def test_accessors_return_immutable_values():
-    assert registry.registry_version() == 6
+    assert registry.registry_version() == 7
     assert registry.field("purpose").allowed_values == ("sale", "rent")
     assert registry.field("nope") is None
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -206,12 +208,12 @@ def test_allowed_values_on_a_non_enum():
     refused(add_field(allowed_values=["a"]), "only an enum")
 
 
-@pytest.mark.parametrize("flag", ["searchable", "sortable", "valuation_input"])
+@pytest.mark.parametrize("flag", ["searchable", "sortable", "valuation_input", "ai_extractable"])
 def test_private_field_cannot_carry_the_public_flags(flag):
     refused(add_field(**{"class": "private", flag: True}), "private field")
 
 
-@pytest.mark.parametrize("flag", ["ai_extractable", "quota_identity"])
+@pytest.mark.parametrize("flag", ["quota_identity"])
 def test_private_field_may_carry_the_other_flags(flag):
     parsed = registry.parse(text(add_field(**{"class": "private", flag: True})))
     assert parsed.fields[-1].field_class == "private"
@@ -271,7 +273,7 @@ def test_startup_fails_on_an_invalid_file(monkeypatch, tmp_path):
     finally:
         monkeypatch.undo()
         registry.load.cache_clear()
-    assert registry.load().version == 6
+    assert registry.load().version == 7
 
 
 def test_catalog_ready_loads_the_registry(monkeypatch):
@@ -338,8 +340,8 @@ def test_the_files_are_found_from_any_working_directory(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     registry.load.cache_clear()
     try:
-        assert registry.load().version == 6
-        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 6
+        assert registry.load().version == 7
+        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 7
     finally:
         registry.load.cache_clear()
 
@@ -586,7 +588,9 @@ def test_a_decimal_field_carries_bounds_and_scale():
     "overrides",
     [
         {"min": 1},
-        {"min": "-1"},
+        {"min": "--1"},
+        {"min": "-"},
+        {"min": "- 1"},
         {"min": "0.001"},  # more decimals than the scale
         {"max": "abc"},
         {"max": "1" * 17},
@@ -737,7 +741,7 @@ def test_a_boolean_field_takes_no_bounds_values_or_scale():
 
 
 def test_the_residential_fields_are_defined_by_the_registry():
-    assert registry.registry_version() == 6
+    assert registry.registry_version() == 7
     bedrooms = registry.field("bedrooms")
     assert bedrooms.requirement == "required_for_publication"
     assert bedrooms.searchable and bedrooms.valuation_input and bedrooms.ai_extractable
@@ -1123,7 +1127,7 @@ def test_a_private_date_field_is_allowed_but_cannot_be_searchable():
 
 
 def test_version_6_adds_the_terms_after_every_details_field():
-    assert registry.registry_version() == 6
+    assert registry.registry_version() == 7
     ids = [f.id for f in registry.fields()]
     assert ids[-len(TAIL_IDS) :] == list(TAIL_IDS)
     assert registry.field("availability_date").type == "date"
@@ -1199,3 +1203,102 @@ def test_the_shipped_terms_fields_are_in_the_terms_section():
     terms = {f.id for f in registry.fields() if f.section == "terms"}
     assert terms == {*TERMS_IDS, "rental_period"}
     assert registry.field("asking_price").section == "details"
+
+
+# --- the reference type, negative decimal bounds and the location fields (Story 2.7) -----------
+
+
+def reference_field(**overrides):
+    base = {"id": "place", "type": "reference", "reference": "city"}
+    base.update(overrides)
+    return add_field(**base)
+
+
+@pytest.mark.parametrize("kind", ["city", "locality"])
+def test_a_reference_field_carries_what_it_points_at(kind):
+    parsed = registry.parse(text(reference_field(reference=kind)))
+    assert (parsed.fields[-1].type, parsed.fields[-1].reference) == ("reference", kind)
+    assert all(f.reference is None for f in parsed.fields[:-1] if f.type != "reference")
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        reference_field(reference="country"),
+        reference_field(reference=None),
+        reference_field(reference=5),
+        lambda d: (reference_field()(d), d["fields"][-1].update(max_length=5)),
+        reference_field(allowed_values=["a"]),
+        reference_field(min="0", max="1"),
+        reference_field(scale=2),
+        reference_field(currency="PKR"),
+        add_field(reference="city"),  # a text field has no reference
+        add_field(type="enum", allowed_values=["a"], reference="city"),
+    ],
+)
+def test_bad_reference_definitions(mutate):
+    refused(mutate)
+
+
+def test_a_reference_field_needs_the_reference_key():
+    def drop(data):
+        reference_field()(data)
+        data["fields"][-1].pop("reference")
+
+    refused(drop, "needs reference")
+
+
+def test_a_negative_decimal_bound_needs_the_signed_marker():
+    for overrides in (
+        {"min": "-90", "max": "90", "scale": 6},
+        {"min": "0", "max": "-1", "scale": 6},
+        {"min": "-90", "max": "90", "scale": 6, "signed": False},
+    ):
+        refused(decimal_field(**overrides))
+    refused(decimal_field(signed="yes"), "signed")
+    refused(add_field(signed=True), "only a decimal field has signed")
+    refused(decimal_field(min="5", max="-5", signed=True, scale=2), "min is above max")
+    parsed = registry.parse(text(decimal_field(min="-90", max="90", scale=6, signed=True)))
+    assert parsed.fields[-1].signed
+    assert not registry.field("area_value").signed
+    assert {f.id for f in registry.fields() if f.signed} == {"latitude", "longitude"}
+
+
+def test_a_decimal_bound_may_be_negative():
+    parsed = registry.parse(text(decimal_field(min="-90", max="90", scale=6, signed=True)))
+    latitude = parsed.fields[-1]
+    assert (latitude.minimum, latitude.maximum) == (Decimal("-90"), Decimal("90"))
+    refused(decimal_field(min="-91.1234567", max="90", scale=6, signed=True))
+    refused(decimal_field(min="90", max="-90", scale=6, signed=True), "min is above max")
+
+
+def test_out_of_range_is_a_decimal_error_code_and_nothing_else_is():
+    assert registry.parse(text(decimal_field(error_code="out_of_range"))).fields[-1].error_code == (
+        "out_of_range"
+    )
+    refused(decimal_field(error_code="bad_code"))
+
+
+def test_the_location_section_is_a_known_section():
+    assert "location" in registry.SECTIONS
+    refused(add_field(section="elsewhere"))
+    assert registry.parse(text(add_field(section="location"))).fields[-1].section == "location"
+
+
+def test_version_7_adds_the_location_after_the_terms():
+    assert registry.registry_version() == 7
+    ids = [f.id for f in registry.fields()]
+    assert ids[-len(TAIL_IDS) :] == list(TAIL_IDS)
+    assert ids[-10:] == [
+        "city",
+        "locality",
+        "society",
+        "phase",
+        "sector",
+        "block",
+        "street",
+        "house_number",
+        "latitude",
+        "longitude",
+    ]
+    assert {f.id for f in registry.fields() if f.type == "reference"} == {"city", "locality"}

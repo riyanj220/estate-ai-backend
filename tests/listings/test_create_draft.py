@@ -46,7 +46,7 @@ def test_active_owner_creates_a_draft(kind):
     account = make_account(account_type=kind)
     view = services.create_draft(user(account), *HOUSE)
     assert view.status == "draft" and view.visibility == "private"
-    assert (view.revision, view.registry_version) == (1, 6)
+    assert (view.revision, view.registry_version) == (1, 7)
     assert dict(view.fields) == {
         "purpose": "sale",
         "category": "house",
