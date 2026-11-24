@@ -72,6 +72,13 @@ Backend half, as built (notes for the frontend half and reviewers):
 - A stored city or locality that was deactivated later can be re-saved unchanged; only new values must be active. Ids are accepted in any common uuid form and stored canonical.
 - `list_localities` returns at most 500 rows.
 
+Frontend half, as built (frontend main `ed0053a`; 1254 Playwright tests, prod checks green):
+
+- Reviewers (blind, edge-case, verification-gap) found a real-wire mismatch: backend `error.fields` carries static sentences, not codes. Fixed once in `readErrorBody` through `src/lib/error-sentences.ts` (reverse table of all `FIELD_MESSAGES`); the stub now emits real sentences by default (`field-sentences.json`, codes mode via `/__wire-mode`), and `error-sentences.spec.ts` fails if either table drifts from `errors.py`. Register, resend-link and admin sign-in keep showing the server sentence through a `raw` option.
+- Fixed: stale city/locality pair on conflict, "Latest saved" locality of another city, stale saved-locality option after a city change, 404 on localities only counts as empty with the backend `not_found` envelope, city A-B-A restores the locality, private inputs disable spellcheck/autocorrect/autocomplete, `aria-describedby` on both selects, signed decimals only for fields with a negative `min` and a `max`.
+- Tests: privacy test checks request bodies (only the owner's PATCH carries private values), counters replace sleeps, registry variant with an unknown `class` renders private.
+- Accepted/deferred: the registry serves no `signed` marker yet, so the client infers it from bounds; the two shared sentences (`max_length`, `max_digits`) map to the first code; other pages mapping by code now see codes rather than sentences; the real backend was not checked route by route for sentence vs code.
+
 ## Verification
 
 **Backend:** `env -u DJANGO_SETTINGS_MODULE uv run lint-imports; uv run ruff check .; uv run ruff format --check .; env -u DJANGO_SETTINGS_MODULE uv run pytest -q; uv run python manage.py makemigrations --check --dry-run; uv run python manage.py spectacular --validate --file openapi.yaml` (openapi regenerated deliberately).
