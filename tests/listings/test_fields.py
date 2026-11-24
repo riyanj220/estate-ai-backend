@@ -1,12 +1,27 @@
 """The single map of editable fields (`listings.fields`) against the registry and storage."""
 
+from decimal import Decimal
+
 from django.db import models
 
 from apps.catalog import registry
 from apps.listings import fields, selectors
-from apps.listings.models import ListingArea, ListingResidential, ListingTerms, PropertyListing
+from apps.listings.models import (
+    ListingArea,
+    ListingCommercial,
+    ListingPlot,
+    ListingResidential,
+    ListingTerms,
+    PropertyListing,
+)
 from apps.listings.validation import EDITABLE_FIELDS as VALIDATED
-from tests.listings.support import RESIDENTIAL_IDS
+from tests.listings.support import (
+    COMMERCIAL_FIELDS,
+    DETAIL_IDS,
+    PLOT_FIELDS,
+    RESIDENTIAL_IDS,
+    UNIT_IDS,
+)
 
 
 def test_every_registry_field_has_exactly_one_storage_route_and_vice_versa():
@@ -28,6 +43,8 @@ def test_each_mapped_field_is_a_column_of_its_table():
         fields.TERMS: ListingTerms,
         fields.AREA: ListingArea,
         fields.RESIDENTIAL: ListingResidential,
+        fields.PLOT: ListingPlot,
+        fields.COMMERCIAL: ListingCommercial,
     }
     for name, table in {**fields.STORAGE, **fields.DERIVED}.items():
         assert table in tables, name
@@ -37,6 +54,8 @@ def test_each_mapped_field_is_a_column_of_its_table():
         fields.TERMS_FIELDS,
         fields.AREA_FIELDS,
         fields.RESIDENTIAL_FIELDS,
+        fields.PLOT_FIELDS,
+        fields.COMMERCIAL_FIELDS,
     ]
     assert set().union(*parts) == set(fields.EDITABLE_FIELDS)
     assert sum(len(part) for part in parts) == len(fields.EDITABLE_FIELDS)  # one table each
@@ -72,14 +91,51 @@ def test_derived_fields_are_the_registrys_derived_fields_and_never_editable():
         assert definition.requirement == "optional"
     assert fields.WIRE_FIELDS[-1] == "area_sqft"
     assert fields.WIRE_FIELDS.index("rental_period") + 1 == fields.WIRE_FIELDS.index("area_value")
-    assert fields.WIRE_FIELDS[-1 - len(RESIDENTIAL_IDS) : -1] == RESIDENTIAL_IDS
+    assert fields.WIRE_FIELDS[-1 - len(DETAIL_IDS) : -1] == DETAIL_IDS
 
 
-def test_the_residential_fields_are_the_registrys_details_in_registry_order():
-    assert fields.RESIDENTIAL_FIELDS == RESIDENTIAL_IDS
+def test_the_unit_plot_and_commercial_fields_are_the_registrys_details_in_registry_order():
+    assert fields.RESIDENTIAL_FIELDS == UNIT_IDS
+    assert fields.PLOT_FIELDS == PLOT_FIELDS
+    assert fields.COMMERCIAL_FIELDS == COMMERCIAL_FIELDS
     registry_ids = [f.id for f in registry.fields()]
-    assert registry_ids[-len(RESIDENTIAL_IDS) :] == list(RESIDENTIAL_IDS)
-    for name in fields.RESIDENTIAL_FIELDS:
-        column = ListingResidential._meta.get_field(name)
-        assert column.null is True and column.default is models.NOT_PROVIDED, name
-        assert registry.field(name).field_class == "public" and registry.field(name).ai_extractable
+    assert registry_ids[-len(DETAIL_IDS) :] == list(DETAIL_IDS)
+    assert tuple(fields.STORAGE)[-len(DETAIL_IDS) :] == DETAIL_IDS
+    assert UNIT_IDS[: len(RESIDENTIAL_IDS)] == RESIDENTIAL_IDS
+    tables = {
+        fields.RESIDENTIAL: (ListingResidential, UNIT_IDS),
+        fields.PLOT: (ListingPlot, PLOT_FIELDS),
+        fields.COMMERCIAL: (ListingCommercial, COMMERCIAL_FIELDS),
+    }
+    for table, (model, names) in tables.items():
+        for name in names:
+            column = model._meta.get_field(name)
+            assert column.null is True and column.default is models.NOT_PROVIDED, name
+            assert fields.STORAGE[name] == table, name
+            assert registry.field(name).field_class == "public", name
+            claim = registry.field(name).seller_declared
+            # legal and possession claims are never extracted by the Assistant
+            assert registry.field(name).ai_extractable is not claim, name
+
+
+def test_every_decimal_and_money_field_fits_its_column():
+    tables = {
+        fields.LISTING: PropertyListing,
+        fields.TERMS: ListingTerms,
+        fields.AREA: ListingArea,
+        fields.RESIDENTIAL: ListingResidential,
+        fields.PLOT: ListingPlot,
+        fields.COMMERCIAL: ListingCommercial,
+    }
+    checked = 0
+    for definition in registry.fields():
+        if definition.type not in ("decimal", "money") or definition.id in fields.IDENTITY_FIELDS:
+            continue
+        table = {**fields.STORAGE, **fields.DERIVED}[definition.id]
+        column = tables[table]._meta.get_field(definition.id)
+        scale = definition.scale if definition.type == "decimal" else registry.MONEY_DECIMALS
+        assert scale <= column.decimal_places, f"{definition.id}: scale {scale} exceeds its column"
+        ceiling = Decimal(10) ** (column.max_digits - column.decimal_places)
+        assert definition.maximum < ceiling, f"{definition.id}: max does not fit its column"
+        checked += 1
+    assert checked >= 11

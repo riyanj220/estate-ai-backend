@@ -517,8 +517,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_and_advanced():
     assert codes(account, view, {"title": "short"}) == {"title": "too_short"}
     assert PropertyListing.objects.get().registry_version == 1  # a failed edit changes nothing
     saved = update(account, view, {"title": TITLE})
-    assert saved.registry_version == registry.registry_version() == 4
-    assert PropertyListing.objects.get().registry_version == 4
+    assert saved.registry_version == registry.registry_version() == 5
+    assert PropertyListing.objects.get().registry_version == 5
 
 
 def test_a_registry_change_does_not_alter_a_listing_nobody_edits():
@@ -598,7 +598,7 @@ def test_emitting_with_no_subscribers_is_a_no_op(
     assert callbacks == []
 
 
-def test_only_the_area_and_residential_inputs_are_valuation_inputs():
+def test_only_the_area_residential_plot_and_commercial_inputs_are_valuation_inputs():
     flagged = {f.id for f in registry.fields() if f.valuation_input}
     assert flagged == {
         "area_value",
@@ -609,6 +609,12 @@ def test_only_the_area_and_residential_inputs_are_valuation_inputs():
         "construction_year",
         "condition",
         "covered_area_sqft",
+        "plot_width",
+        "plot_depth",
+        "road_width_ft",
+        "corner_plot",
+        "development_status",
+        "frontage_ft",
     }  # never the derived area_sqft
 
 

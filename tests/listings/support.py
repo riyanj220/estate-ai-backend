@@ -85,3 +85,41 @@ APARTMENT_FIELDS = (
     "maintenance_charges",
 )
 RESIDENTIAL_IDS = (*BOTH_FIELDS, *HOUSE_FIELDS, *APARTMENT_FIELDS)
+
+# Story 2.5. The utilities live in the unit-details table with the residential fields; plot and
+# commercial details have their own tables. Independent lists, in registry order.
+UTILITY_FIELDS = ("electricity", "water", "gas")
+PLOT_FIELDS = (
+    "plot_width",
+    "plot_depth",
+    "possession_status",
+    "corner_plot",
+    "road_width_ft",
+    "balloting_status",
+    "sewerage",
+    "development_status",
+    "approval_authority",
+    "park_facing",
+    "main_boulevard",
+    "boundary_wall",
+    "orientation",
+    "plot_file_status",
+)
+COMMERCIAL_FIELDS = (
+    "business_use",
+    "frontage_ft",
+    "road_access",
+    "ceiling_height_ft",
+    "power_load_kw",
+    "three_phase_electricity",
+    "conference_rooms",
+    "business_centre_facilities",
+)
+UNIT_IDS = (*RESIDENTIAL_IDS, *UTILITY_FIELDS)  # the columns of the unit-details table
+DETAIL_IDS = (*UNIT_IDS, *PLOT_FIELDS, *COMMERCIAL_FIELDS)  # every detail field, registry order
+
+RESIDENTIAL_PLOT = ("sale", "plot", "residential_plot")
+COMMERCIAL_PLOT = ("sale", "plot", "commercial_plot")
+PLOT_FILE = ("sale", "plot", "plot_file")
+SHOP = ("rent", "commercial", "shop")
+OFFICE = ("rent", "commercial", "office")

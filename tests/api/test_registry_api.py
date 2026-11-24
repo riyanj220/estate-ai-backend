@@ -5,7 +5,7 @@ from django.test import Client
 
 from apps.catalog import registry
 from apps.presentation.api.registry import RESPONSE_SHAPE_VERSION
-from tests.listings.support import RESIDENTIAL_IDS
+from tests.listings.support import DETAIL_IDS
 
 URL = "/api/v1/registry"
 FIELD_KEYS = {
@@ -21,6 +21,8 @@ FIELD_KEYS = {
     "valuation_input",
     "quota_identity",
     "allowed_values_by_purpose",
+    "allowed_values_by_subtype",
+    "seller_declared",
     "min_length",
     "max_length",
     "min",
@@ -37,7 +39,7 @@ def test_served_publicly_with_the_defined_shape():
     assert response.status_code == 200
     body = response.json()
     assert list(body) == ["version", "taxonomy", "fields"]
-    assert body["version"] == 4
+    assert body["version"] == 5
     assert body["taxonomy"] == {
         "categories": [
             {"id": "house", "subtypes": ["house"]},
@@ -60,7 +62,7 @@ def test_served_publicly_with_the_defined_shape():
         "area_unit",
         "marla_basis",
         "area_sqft",
-        *RESIDENTIAL_IDS,
+        *DETAIL_IDS,
     ]
     for field in body["fields"]:
         assert set(field) == FIELD_KEYS
@@ -115,7 +117,7 @@ def test_cache_headers_and_strong_etag():
     response = Client().get(URL)
     assert response.headers["Cache-Control"] == "public, max-age=300"
     tag = response.headers["ETag"]
-    assert tag == f'"4-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
+    assert tag == f'"5-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
         "W/"
     )
 
@@ -152,7 +154,7 @@ def test_a_shape_change_alone_changes_the_etag(monkeypatch):
 
 
 def test_the_shape_version_is_pinned_and_the_area_fields_are_served_in_full():
-    assert RESPONSE_SHAPE_VERSION == 3
+    assert RESPONSE_SHAPE_VERSION == 4
     served = {f["id"]: f for f in Client().get(URL).json()["fields"]}
     value = served["area_value"]
     assert (value["type"], value["min"], value["max"], value["scale"]) == (
@@ -192,7 +194,7 @@ def test_the_residential_fields_are_served_in_registry_order_with_their_rules():
         "2100",
     )
     assert served["lift"]["type"] == "boolean" and served["lift"]["min"] is None
-    assert served["lift"]["applicability"]["subtypes"] == ["apartment"]
+    assert served["lift"]["applicability"]["subtypes"] == ["apartment", "office"]
     assert served["kitchens"]["applicability"]["subtypes"] == ["house"]
     assert served["condition"]["allowed_values"] == ["new", "excellent", "good", "needs_renovation"]
     covered = served["covered_area_sqft"]
@@ -206,3 +208,82 @@ def test_the_residential_fields_are_served_in_registry_order_with_their_rules():
     assert charges["requirement"] == "optional"
     assert "E" not in "".join(f"{f['min']}{f['max']}" for f in served.values() if f["min"])
     assert {"integer", "boolean"} <= {f["type"] for f in served.values()}
+
+
+def test_seller_declared_and_the_by_subtype_map_are_served_and_the_shape_is_bumped():
+    assert RESPONSE_SHAPE_VERSION == 4  # the payload gained two keys per field
+    served = {f["id"]: f for f in Client().get(URL).json()["fields"]}
+    assert {n for n, f in served.items() if f["seller_declared"]} == {
+        "possession_status",
+        "balloting_status",
+        "development_status",
+        "approval_authority",
+        "plot_file_status",
+    }
+    for field in served.values():
+        assert isinstance(field["seller_declared"], bool)
+        assert field["allowed_values_by_subtype"] is None or isinstance(
+            field["allowed_values_by_subtype"], dict
+        )
+    possession = served["possession_status"]
+    assert possession["allowed_values"] == ["possession_ready", "possession_pending", "file_only"]
+    assert possession["allowed_values_by_subtype"] == {
+        "residential_plot": ["possession_ready", "possession_pending"],
+        "commercial_plot": ["possession_ready", "possession_pending"],
+        "plot_file": ["file_only"],
+    }
+    assert possession["applicability"]["subtypes"] == [
+        "residential_plot",
+        "commercial_plot",
+        "plot_file",
+    ]
+    assert [n for n, f in served.items() if f["allowed_values_by_subtype"] is not None] == [
+        "possession_status"
+    ]
+    assert served["condition"]["seller_declared"] is False
+    assert served["condition"]["allowed_values_by_subtype"] is None
+
+
+def test_the_plot_and_commercial_fields_are_served_in_registry_order_with_their_rules():
+    body = Client().get(URL).json()
+    assert [f["id"] for f in body["fields"]][-len(DETAIL_IDS) :] == list(DETAIL_IDS)
+    served = {f["id"]: f for f in body["fields"]}
+    width = served["plot_width"]
+    assert (width["type"], width["min"], width["max"], width["scale"]) == (
+        "decimal",
+        "0.01",
+        "99999.99",
+        2,
+    )
+    assert width["requirement"] == "recommended" and width["valuation_input"] is True
+    assert (served["road_width_ft"]["min"], served["road_width_ft"]["max"]) == ("1.00", "999.99")
+    assert (served["ceiling_height_ft"]["min"], served["ceiling_height_ft"]["max"]) == (
+        "1.00",
+        "99.99",
+    )
+    assert served["frontage_ft"]["applicability"]["subtypes"] == ["shop"]
+    assert served["plot_file_status"]["applicability"]["subtypes"] == ["plot_file"]
+    assert served["conference_rooms"]["applicability"]["subtypes"] == ["office"]
+    assert (served["conference_rooms"]["min"], served["conference_rooms"]["max"]) == ("0", "50")
+    for name in ("electricity", "water", "gas"):
+        assert served[name]["type"] == "boolean" and served[name]["ai_extractable"] is True
+        assert served[name]["class"] == "public"
+    assert served["floor_number"]["applicability"]["subtypes"] == ["apartment", "shop", "office"]
+    assert served["building_security"]["applicability"]["subtypes"] == [
+        "apartment",
+        "shop",
+        "office",
+    ]
+    assert served["gas"]["requirement"] == "optional" and served["water"]["requirement"] == (
+        "recommended"
+    )
+    for name in ("business_use", "frontage_ft", "road_access"):
+        assert served[name]["requirement"] == "recommended"
+    for field in served.values():
+        for key in ("min", "max"):
+            assert field[key] is None or "E" not in field[key].upper()
+
+
+def test_the_etag_names_version_five_and_the_new_shape():
+    tag = Client().get(URL).headers["ETag"]
+    assert tag == f'"5-{registry.content_hash()}-4"'

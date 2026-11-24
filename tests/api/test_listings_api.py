@@ -15,12 +15,14 @@ from apps.kernel.errors import field_message
 from apps.kernel.models import AuditRecord
 from apps.listings.models import (
     ListingArea,
+    ListingCommercial,
+    ListingPlot,
     ListingResidential,
     ListingRevision,
     ListingTerms,
     PropertyListing,
 )
-from tests.listings.support import PASSWORD, RESIDENTIAL_IDS, SYSTEM, make_account, seed_cap
+from tests.listings.support import DETAIL_IDS, PASSWORD, SYSTEM, make_account, seed_cap
 
 CREATE = "/api/v1/listings"
 MINE = "/api/v1/me/listings"
@@ -49,7 +51,7 @@ NEW_FIELDS = {
     "area_unit": None,
     "marla_basis": None,
     "area_sqft": None,
-    **dict.fromkeys(RESIDENTIAL_IDS),
+    **dict.fromkeys(DETAIL_IDS),
 }
 
 
@@ -105,7 +107,7 @@ def test_create_returns_the_wire_shape(kind):
     body = response.json()
     assert set(body) == WIRE_KEYS
     assert body["status"] == "draft" and body["visibility"] == "private"
-    assert (body["revision"], body["registry_version"]) == (1, 4)
+    assert (body["revision"], body["registry_version"]) == (1, 5)
     assert body["fields"] == {**BODY, **NEW_FIELDS} and body["provenance"] == {}
     assert body["media"] == [] and body["amenities"] == []
     uuid.UUID(body["id"])
@@ -368,7 +370,7 @@ def test_listing_resource_is_exactly_the_wire_shape():
         "area_value",
         "area_unit",
         "marla_basis",
-        *RESIDENTIAL_IDS,
+        *DETAIL_IDS,
         "area_sqft",
     ]
 
@@ -842,7 +844,7 @@ def test_openapi_describes_the_patch_route_and_the_409_with_current(tmp_path):
         "area_value",
         "area_unit",
         "marla_basis",
-        *RESIDENTIAL_IDS,
+        *DETAIL_IDS,
     }
     fields = schemas["ListingFields"]["properties"]
     assert set(fields) == {"purpose", "category", "subtype", *NEW_FIELDS}
@@ -1079,7 +1081,7 @@ APARTMENT_BODY = {"purpose": "sale", "category": "apartment", "subtype": "apartm
 def test_house_details_over_http_use_native_json_types_and_stay_null_when_unknown():
     client = signed_in()
     created = draft(client)
-    assert all(created["fields"][name] is None for name in RESIDENTIAL_IDS)
+    assert all(created["fields"][name] is None for name in DETAIL_IDS)
     response = edit(
         client,
         created,
@@ -1087,7 +1089,7 @@ def test_house_details_over_http_use_native_json_types_and_stay_null_when_unknow
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["revision"] == 2 and body["registry_version"] == 4
+    assert body["revision"] == 2 and body["registry_version"] == 5
     assert body["fields"]["bedrooms"] == 4 and type(body["fields"]["bedrooms"]) is int
     assert body["fields"]["basement"] is False
     assert body["fields"]["covered_area_sqft"] == "2400.0000"
@@ -1201,3 +1203,256 @@ def test_openapi_describes_the_residential_fields_with_native_types(tmp_path):
     assert schemas["ConditionEnum"]["enum"] == list(registry.field("condition").allowed_values)
     update = yaml.safe_load(target.read_text())["paths"]["/api/v1/listings/{listing_id}"]["patch"]
     assert "invalid_floor" in update["description"] and "invalid_range" in update["description"]
+
+
+# --- Plot, Plot File, Shop and Office details (Story 2.5) -----------------------------------------
+
+PLOT_BODY = {"purpose": "sale", "category": "plot", "subtype": "residential_plot"}
+PLOT_FILE_BODY = {"purpose": "sale", "category": "plot", "subtype": "plot_file"}
+SHOP_BODY = {"purpose": "rent", "category": "commercial", "subtype": "shop"}
+OFFICE_BODY = {"purpose": "rent", "category": "commercial", "subtype": "office"}
+
+
+def detail_rows():
+    return (
+        ListingPlot.objects.exists()
+        or ListingCommercial.objects.exists()
+        or ListingResidential.objects.exists()
+    )
+
+
+def test_plot_details_over_http_use_native_types_and_decimal_strings():
+    client = signed_in()
+    created = draft(client, PLOT_BODY)
+    assert all(created["fields"][name] is None for name in DETAIL_IDS)
+    response = edit(
+        client,
+        created,
+        {
+            "plot_width": "35",
+            "plot_depth": "70.5",
+            "possession_status": "possession_ready",
+            "corner_plot": True,
+            "road_width_ft": "40",
+            "development_status": "developed",
+            "approval_authority": "lda",
+            "water": False,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2 and body["registry_version"] == 5
+    assert body["fields"]["plot_width"] == "35.00" and body["fields"]["plot_depth"] == "70.50"
+    assert body["fields"]["road_width_ft"] == "40.00"
+    assert body["fields"]["corner_plot"] is True and body["fields"]["water"] is False
+    assert body["fields"]["sewerage"] is None and body["fields"]["frontage_ft"] is None
+    assert set(body["provenance"]) == {
+        "plot_width",
+        "plot_depth",
+        "possession_status",
+        "corner_plot",
+        "road_width_ft",
+        "development_status",
+        "approval_authority",
+        "water",
+    }
+    assert client.get(detail(created["id"])).json() == body
+    assert ListingPlot.objects.get().plot_width == Decimal("35.00")
+    assert not ListingCommercial.objects.exists()
+
+
+def test_a_plot_file_over_http_takes_file_only_and_refuses_possession_ready():
+    client = signed_in()
+    created = draft(client, PLOT_FILE_BODY)
+    bad = edit(client, created, {"possession_status": "possession_ready"})
+    assert (bad.status_code, code(bad)) == (400, "validation_error")
+    assert field_codes(bad) == {"possession_status": [field_message("invalid_choice")]}
+    assert "possession_ready" not in body_text(bad)
+    assert not detail_rows()
+    good = edit(
+        client, created, {"possession_status": "file_only", "plot_file_status": "allocation_letter"}
+    )
+    assert good.status_code == 200
+    assert good.json()["fields"]["possession_status"] == "file_only"
+    assert good.json()["fields"]["plot_file_status"] == "allocation_letter"
+
+
+def test_a_plot_refuses_file_only_and_plot_file_status():
+    client = signed_in()
+    created = draft(client, PLOT_BODY)
+    response = edit(
+        client, created, {"possession_status": "file_only", "plot_file_status": "open_file"}
+    )
+    assert field_codes(response) == {
+        "possession_status": [field_message("invalid_choice")],
+        "plot_file_status": [field_message("not_applicable")],
+    }
+    assert not detail_rows()
+
+
+def test_shop_and_office_details_over_http():
+    client = signed_in()
+    shop = draft(client, SHOP_BODY)
+    saved = edit(
+        client,
+        shop,
+        {
+            "business_use": "retail",
+            "frontage_ft": "18.25",
+            "road_access": "main_road",
+            "floor_number": 2,
+            "building_floors": 3,
+            "condition": "good",
+        },
+    ).json()
+    assert saved["fields"]["frontage_ft"] == "18.25" and saved["fields"]["floor_number"] == 2
+    assert ListingCommercial.objects.get().business_use == "retail"
+    assert ListingResidential.objects.get().floor_number == 2
+    bad = edit(client, saved, {"floor_number": 5, "building_floors": 3})
+    assert field_codes(bad) == {
+        "floor_number": [field_message("invalid_floor")],
+        "building_floors": [field_message("invalid_floor")],
+    }
+    office = draft(client, OFFICE_BODY)
+    saved = edit(client, office, {"conference_rooms": 3, "lift": True}).json()
+    assert saved["fields"]["conference_rooms"] == 3 and saved["fields"]["lift"] is True
+
+
+@pytest.mark.parametrize(
+    ("body", "fields", "expected"),
+    [
+        (PLOT_BODY, {"plot_width": "0"}, "invalid_measure"),
+        (PLOT_BODY, {"plot_width": "-5.5"}, "invalid_measure"),
+        (PLOT_BODY, {"plot_width": "12.345"}, "invalid_measure"),
+        (PLOT_BODY, {"plot_width": "100000"}, "invalid_measure"),
+        (PLOT_BODY, {"road_width_ft": "0.99"}, "invalid_measure"),
+        (PLOT_BODY, {"plot_width": "12,5"}, "invalid"),
+        (PLOT_BODY, {"plot_width": "1e3"}, "invalid"),
+        (PLOT_BODY, {"plot_width": "0012"}, "invalid"),
+        (PLOT_BODY, {"plot_width": 35}, "invalid"),
+        (PLOT_BODY, {"plot_width": 35.5}, "invalid"),
+        (PLOT_BODY, {"plot_width": True}, "invalid"),
+        (PLOT_BODY, {"corner_plot": "yes"}, "invalid"),
+        (PLOT_BODY, {"corner_plot": 1}, "invalid"),
+        (PLOT_BODY, {"approval_authority": "xyz"}, "invalid_choice"),
+        (PLOT_BODY, {"orientation": "up"}, "invalid_choice"),
+        (PLOT_BODY, {"possession_status": "file_only"}, "invalid_choice"),
+        (PLOT_BODY, {"frontage_ft": "10"}, "not_applicable"),
+        (PLOT_BODY, {"bedrooms": 2}, "not_applicable"),
+        (PLOT_FILE_BODY, {"possession_status": "possession_pending"}, "invalid_choice"),
+        (SHOP_BODY, {"conference_rooms": 2}, "not_applicable"),
+        (SHOP_BODY, {"lift": True}, "not_applicable"),
+        (SHOP_BODY, {"kitchens": 1}, "not_applicable"),
+        (SHOP_BODY, {"frontage_ft": "10000"}, "invalid_measure"),
+        (SHOP_BODY, {"frontage_ft": "abc"}, "invalid"),
+        (OFFICE_BODY, {"frontage_ft": "10"}, "not_applicable"),
+        (OFFICE_BODY, {"conference_rooms": 51}, "invalid_range"),
+        (OFFICE_BODY, {"conference_rooms": "3"}, "invalid"),
+        (OFFICE_BODY, {"power_load_kw": "0"}, "invalid_measure"),
+        (BODY, {"business_use": "retail"}, "not_applicable"),
+        (BODY, {"plot_width": "10"}, "not_applicable"),
+    ],
+)
+def test_plot_and_commercial_error_codes_over_http(body, fields, expected):
+    client = signed_in()
+    created = draft(client, body)
+    response = edit(client, created, fields)
+    assert (response.status_code, code(response)) == (400, "validation_error")
+    name = next(iter(fields))
+    assert field_codes(response) == {name: [field_message(expected)]}
+    sent = fields[name]
+    if isinstance(sent, str) and len(sent) >= 3:
+        assert sent not in body_text(response)  # the value is never echoed, anywhere in the body
+    assert not detail_rows()
+    assert client.get(detail(created["id"])).json()["revision"] == 1
+
+
+def test_the_measure_message_is_catalogue_text_without_the_value():
+    client = signed_in()
+    created = draft(client, PLOT_BODY)
+    response = edit(client, created, {"plot_width": "-77.123"})
+    assert field_codes(response) == {
+        "plot_width": [
+            "Enter a number above zero within the allowed range, "
+            "using digits and an optional decimal point."
+        ]
+    }
+    assert "-77.123" not in body_text(response)
+    office = draft(client, OFFICE_BODY)
+    power = edit(client, office, {"power_load_kw": "0"})
+    assert field_codes(power) == {"power_load_kw": [field_message("invalid_measure")]}
+    assert "feet" not in field_codes(power)["power_load_kw"][0]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "installment_available",
+        "down_payment",
+        "title_document_type",
+        "mortgage_declaration",
+        "approval_reference_number",
+    ],
+)
+def test_unsupported_attributes_are_unknown_fields_over_http(name):
+    client = signed_in()
+    created = draft(client, PLOT_BODY)
+    response = edit(client, created, {name: "anything", "plot_width": "10"})
+    assert (response.status_code, code(response)) == (400, "validation_error")
+    assert response.json()["error"]["fields"].get("non_field_errors") is not None
+    assert "anything" not in body_text(response)
+    assert not detail_rows()
+    assert client.get(detail(created["id"])).json()["revision"] == 1
+
+
+def test_a_clear_a_null_on_a_not_applicable_field_and_reads_never_create_rows():
+    client = signed_in()
+    created = draft(client, SHOP_BODY)
+    response = edit(client, created, {"plot_width": None, "frontage_ft": None, "water": None})
+    assert response.status_code == 200 and response.json()["revision"] == 1
+    client.get(detail(created["id"]))
+    client.get(MINE)
+    assert not detail_rows()
+    saved = edit(client, created, {"frontage_ft": "10"}).json()
+    cleared = edit(client, saved, {"frontage_ft": None}).json()
+    assert cleared["fields"]["frontage_ft"] is None and "frontage_ft" not in cleared["provenance"]
+    assert ListingCommercial.objects.get().frontage_ft is None
+
+
+def test_a_stale_edit_is_409_with_the_plot_details_and_a_replay_is_too():
+    client = signed_in()
+    created = draft(client, PLOT_BODY)
+    saved = edit(client, created, {"plot_width": "30", "corner_plot": True}).json()
+    for _ in range(2):
+        stale = edit(client, created, {"plot_width": "99"})
+        assert (stale.status_code, code(stale)) == (409, "stale_revision")
+        assert stale.json()["current"] == saved
+    assert stale.json()["current"]["fields"]["plot_width"] == "30.00"
+    assert ListingPlot.objects.get().plot_width == Decimal("30.00")
+
+
+def test_openapi_describes_the_plot_and_commercial_fields(tmp_path):
+    target = tmp_path / "openapi.yaml"
+    call_command("spectacular", "--validate", "--file", str(target))
+    document = yaml.safe_load(target.read_text())
+    schemas = document["components"]["schemas"]
+    for schema in ("ListingFields", "ListingFieldsUpdateRequest"):
+        props = schemas[schema]["properties"]
+        for name in DETAIL_IDS:
+            assert name in props, (schema, name)
+        assert props["plot_width"]["type"] == "string" and props["plot_width"]["nullable"] is True
+        assert "never a JSON number" in props["plot_width"]["description"]
+        assert props["corner_plot"]["type"] == "boolean"
+        assert props["conference_rooms"]["type"] == "integer"
+        assert (props["conference_rooms"]["minimum"], props["conference_rooms"]["maximum"]) == (
+            0,
+            50,
+        )
+        assert "Seller-declared" in props["possession_status"]["description"]
+        assert "Seller-declared" in props["approval_authority"]["description"]
+        assert "Seller-declared" not in props["business_use"].get("description", "")
+    update = document["paths"]["/api/v1/listings/{listing_id}"]["patch"]["description"]
+    assert "invalid_measure" in update and "seller-declared" in update
+    registry_schema = schemas["RegistryField"]["properties"]
+    assert "seller_declared" in registry_schema and "allowed_values_by_subtype" in registry_schema
+    assert "invalid_measure" in update

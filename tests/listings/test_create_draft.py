@@ -18,9 +18,9 @@ from apps.kernel.models import AuditRecord, RateLimitPolicy
 from apps.listings import selectors, services
 from apps.listings.models import ListingRevision, ListingTerms, PropertyListing
 from tests.listings.support import (
+    DETAIL_IDS,
     HOUSE,
     PASSWORD,
-    RESIDENTIAL_IDS,
     SYSTEM,
     make_account,
     random_email,
@@ -46,7 +46,7 @@ def test_active_owner_creates_a_draft(kind):
     account = make_account(account_type=kind)
     view = services.create_draft(user(account), *HOUSE)
     assert view.status == "draft" and view.visibility == "private"
-    assert (view.revision, view.registry_version) == (1, 4)
+    assert (view.revision, view.registry_version) == (1, 5)
     assert dict(view.fields) == {
         "purpose": "sale",
         "category": "house",
@@ -60,7 +60,7 @@ def test_active_owner_creates_a_draft(kind):
         "area_unit": None,
         "marla_basis": None,
         "area_sqft": None,
-        **dict.fromkeys(RESIDENTIAL_IDS),
+        **dict.fromkeys(DETAIL_IDS),
     }
     assert dict(view.provenance) == {}
     assert ListingTerms.objects.get(listing_id=view.id).asking_price is None

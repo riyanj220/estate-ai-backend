@@ -10,7 +10,7 @@ import yaml
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.catalog import registry
-from tests.listings.support import RESIDENTIAL_IDS
+from tests.listings.support import DETAIL_IDS
 
 GOOD = yaml.safe_load(registry.FIELDS_PATH.read_text())
 
@@ -52,7 +52,7 @@ def add_field(**overrides):
 
 def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
     loaded = registry.load()
-    assert loaded.version == 4
+    assert loaded.version == 5
     assert [f.id for f in registry.fields()] == [
         "purpose",
         "category",
@@ -66,7 +66,7 @@ def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
         "area_unit",
         "marla_basis",
         "area_sqft",
-        *RESIDENTIAL_IDS,
+        *DETAIL_IDS,
     ]
     assert registry.purposes() == ("sale", "rent")
     assert [c.id for c in registry.categories()] == ["house", "apartment", "plot", "commercial"]
@@ -85,6 +85,12 @@ def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
         "construction_year",
         "condition",
         "covered_area_sqft",
+        "plot_width",
+        "plot_depth",
+        "road_width_ft",
+        "corner_plot",
+        "development_status",
+        "frontage_ft",
     }
 
 
@@ -125,7 +131,7 @@ def test_plot_file_is_a_distinct_subtype_of_plot():
 
 
 def test_accessors_return_immutable_values():
-    assert registry.registry_version() == 4
+    assert registry.registry_version() == 5
     assert registry.field("purpose").allowed_values == ("sale", "rent")
     assert registry.field("nope") is None
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -265,7 +271,7 @@ def test_startup_fails_on_an_invalid_file(monkeypatch, tmp_path):
     finally:
         monkeypatch.undo()
         registry.load.cache_clear()
-    assert registry.load().version == 4
+    assert registry.load().version == 5
 
 
 def test_catalog_ready_loads_the_registry(monkeypatch):
@@ -321,18 +327,18 @@ def test_lock_script_refuses_a_change_without_a_bump(monkeypatch, tmp_path, caps
     monkeypatch.setattr(registry, "LOCK_PATH", lock)
     with pytest.raises(SystemExit, match="bump"):
         script.main()
-    fields.write_text(text(lambda d: (add_field()(d), d.update(version=5))))
+    fields.write_text(text(lambda d: (add_field()(d), d.update(version=6))))
     script.main()
-    assert registry.read_lock(lock.read_text())[0] == 5
-    assert "version 5" in capsys.readouterr().out
+    assert registry.read_lock(lock.read_text())[0] == 6
+    assert "version 6" in capsys.readouterr().out
 
 
 def test_the_files_are_found_from_any_working_directory(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     registry.load.cache_clear()
     try:
-        assert registry.load().version == 4
-        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 4
+        assert registry.load().version == 5
+        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 5
     finally:
         registry.load.cache_clear()
 
@@ -400,7 +406,7 @@ def test_lock_script_refuses_a_lower_version(monkeypatch, tmp_path):
     fields = tmp_path / "fields.yaml"
     fields.write_text(registry.FIELDS_PATH.read_text())
     lock = tmp_path / "fields.lock"
-    lock.write_text("version: 5\nsha256: " + "0" * 64 + "\n")
+    lock.write_text("version: 6\nsha256: " + "0" * 64 + "\n")
     monkeypatch.setattr(registry, "FIELDS_PATH", fields)
     monkeypatch.setattr(registry, "LOCK_PATH", lock)
     with pytest.raises(SystemExit, match="lower"):
@@ -729,7 +735,7 @@ def test_a_boolean_field_takes_no_bounds_values_or_scale():
 
 
 def test_the_residential_fields_are_defined_by_the_registry():
-    assert registry.registry_version() == 4
+    assert registry.registry_version() == 5
     bedrooms = registry.field("bedrooms")
     assert bedrooms.requirement == "required_for_publication"
     assert bedrooms.searchable and bedrooms.valuation_input and bedrooms.ai_extractable
@@ -739,3 +745,262 @@ def test_the_residential_fields_are_defined_by_the_registry():
     assert not registry.field("bedrooms").applies_to("sale", "plot", "residential_plot")
     assert registry.field("bedrooms").applies_to("rent", "house", "house")
     assert registry.field("lift").type == "boolean"
+
+
+# --- seller_declared, allowed_values_by_subtype and the version 5 catalogue (Story 2.5) -----------
+
+
+def by_subtype(
+    mapping, subtypes=("residential_plot", "plot_file"), applicability_categories=(), **overrides
+):
+    return add_field(
+        id="mode",
+        type="enum",
+        applicability={
+            "purposes": [],
+            "categories": list(applicability_categories),
+            "subtypes": list(subtypes),
+        },
+        allowed_values=["a", "b", "c"],
+        allowed_values_by_subtype=mapping,
+        **overrides,
+    )
+
+
+def test_allowed_values_by_subtype_narrows_an_enum_and_combines_with_purpose():
+    parsed = registry.parse(text(by_subtype({"residential_plot": ["a", "b"], "plot_file": ["c"]})))
+    mode = parsed.fields[-1]
+    assert mode.allowed_values_by_subtype == (
+        ("residential_plot", ("a", "b")),
+        ("plot_file", ("c",)),
+    )
+    assert mode.values_for("sale", "residential_plot") == ("a", "b")
+    assert mode.values_for("sale", "plot_file") == ("c",)
+    assert mode.values_for("sale", "house") == ()  # a Subtype the field does not list
+    assert mode.values_for("sale") == ()  # a Subtype map without a Subtype allows nothing
+    both = registry.parse(
+        text(
+            by_subtype(
+                {"residential_plot": ["a", "b"], "plot_file": ["b", "c"]},
+                allowed_values_by_purpose={"sale": ["a", "b"], "rent": ["b", "c"]},
+            )
+        )
+    ).fields[-1]
+    assert both.values_for("sale", "plot_file") == ("b",)
+    assert both.values_for("rent", "plot_file") == ("b", "c")
+    assert both.values_for("rent", "residential_plot") == ("b",)
+    assert both.values_for("rent", "house") == ()
+
+
+def test_a_field_without_a_subtype_map_is_not_narrowed():
+    assert registry.field("condition").allowed_values_by_subtype is None
+    assert (
+        registry.field("condition").values_for("sale", "shop")
+        == registry.field("condition").allowed_values
+    )
+
+
+@pytest.mark.parametrize(
+    ("mapping", "reason"),
+    [
+        ({"residential_plot": ["a", "b", "c"]}, "list every subtype"),  # a subtype is missing
+        (
+            {"residential_plot": ["a", "b"], "plot_file": ["c"], "shop": ["a"]},
+            "list every subtype",  # not an applicable subtype
+        ),
+        (
+            {"residential_plot": ["a", "b"], "plot_file": ["c"], "lease": ["a"]},
+            "list every subtype",  # not a subtype
+        ),
+        ({"residential_plot": [], "plot_file": ["a", "b", "c"]}, "non-empty subset"),
+        ({"residential_plot": ["z"], "plot_file": ["a", "b", "c"]}, "non-empty subset"),
+        ({"residential_plot": ["a", "a"], "plot_file": ["b", "c"]}, "duplicate"),
+        ({"residential_plot": "a", "plot_file": ["b", "c"]}, "list of snake_case ids"),
+        (["a"], "list every subtype"),
+        ({}, "list every subtype"),
+        ({"residential_plot": ["a", "b"], "plot_file": ["b"]}, "no subtype offers"),  # c is dead
+    ],
+)
+def test_bad_allowed_values_by_subtype(mapping, reason):
+    message = refused(by_subtype(mapping), "allowed_values_by_subtype")
+    assert reason in message
+
+
+def test_a_subtype_subset_must_overlap_every_purpose_subset():
+    refused(
+        by_subtype(
+            {"residential_plot": ["a", "b"], "plot_file": ["c"]},
+            allowed_values_by_purpose={"sale": ["a", "b"], "rent": ["a", "b", "c"]},
+        ),
+        "shares no value",
+    )
+    ok = by_subtype(
+        {"residential_plot": ["a", "b"], "plot_file": ["b", "c"]},
+        allowed_values_by_purpose={"sale": ["a", "b"], "rent": ["b", "c"]},
+    )
+    assert registry.parse(text(ok)).fields[-1].values_for("rent", "residential_plot") == ("b",)
+
+
+def test_with_categories_only_the_subtypes_of_those_categories_are_required():
+    plot = {"residential_plot": ["a"], "commercial_plot": ["b"], "plot_file": ["c"]}
+    mode = registry.parse(
+        text(by_subtype(plot, subtypes=(), applicability_categories=["plot"]))
+    ).fields[-1]
+    assert mode.values_for("sale", "plot_file") == ("c",)
+    refused(
+        by_subtype({**plot, "shop": ["a"]}, subtypes=(), applicability_categories=["plot"]),
+        "allowed_values_by_subtype",
+    )
+    refused(
+        by_subtype(
+            {"residential_plot": ["a", "b", "c"]}, subtypes=(), applicability_categories=["plot"]
+        ),
+        "list every subtype",
+    )
+
+
+def test_allowed_values_by_subtype_without_a_subtype_applicability_covers_every_subtype():
+    mapping = {s: ["a", "b", "c"] for s in registry.all_subtypes()}
+    assert registry.parse(text(by_subtype(mapping, subtypes=()))).fields[-1].values_for(
+        "sale", "shop"
+    ) == ("a", "b", "c")
+    refused(by_subtype({"house": ["a", "b", "c"]}, subtypes=()), "list every subtype")
+
+
+def test_allowed_values_by_subtype_is_for_enums_only():
+    refused(add_field(allowed_values_by_subtype={"shop": ["a"]}), "only an enum")
+
+
+def test_seller_declared_is_a_boolean_that_defaults_to_false():
+    assert registry.parse(text(add_field())).fields[-1].seller_declared is False
+    assert registry.parse(text(add_field(seller_declared=True))).fields[-1].seller_declared is True
+    assert (
+        registry.parse(text(add_field(seller_declared=False))).fields[-1].seller_declared is False
+    )
+    for bad in ("true", 1, 0, None, [True]):
+        refused(add_field(seller_declared=bad), "seller_declared must be true or false")
+
+
+def test_the_seller_declared_fields_are_exactly_the_legal_and_possession_claims():
+    declared = {f.id for f in registry.fields() if f.seller_declared}
+    assert declared == {
+        "possession_status",
+        "balloting_status",
+        "development_status",
+        "approval_authority",
+        "plot_file_status",
+    }
+
+
+def test_the_plot_file_possession_vocabulary_lives_in_the_registry():
+    possession = registry.field("possession_status")
+    assert possession.allowed_values == ("possession_ready", "possession_pending", "file_only")
+    assert dict(possession.allowed_values_by_subtype) == {
+        "residential_plot": ("possession_ready", "possession_pending"),
+        "commercial_plot": ("possession_ready", "possession_pending"),
+        "plot_file": ("file_only",),
+    }
+    assert possession.values_for("sale", "plot_file") == ("file_only",)
+    assert possession.values_for("rent", "commercial_plot") == (
+        "possession_ready",
+        "possession_pending",
+    )
+
+
+def test_version_5_widens_the_shared_fields_without_new_columns():
+    expected = {
+        "condition": ("house", "apartment", "shop", "office"),
+        "furnishing": ("house", "apartment", "shop", "office"),
+        "parking_spaces": ("house", "apartment", "shop", "office"),
+        "occupancy_status": ("house", "apartment", "shop", "office"),
+        "floor_number": ("apartment", "shop", "office"),
+        "building_floors": ("apartment", "shop", "office"),
+        "lift": ("apartment", "office"),
+        "building_security": ("apartment", "shop", "office"),
+        "building_lobby": ("apartment", "shop", "office"),
+        "maintenance_charges": ("apartment", "shop", "office"),
+    }
+    for name, subtypes in expected.items():
+        assert registry.field(name).applicability.subtypes == subtypes, name
+    assert registry.field("backup_electricity").applicability.subtypes == ("apartment",)
+
+
+def test_the_utility_plot_and_commercial_definitions():
+    plots = ("residential_plot", "commercial_plot", "plot_file")
+    for name, requirement in [
+        ("electricity", "recommended"),
+        ("water", "recommended"),
+        ("gas", "optional"),
+    ]:
+        definition = registry.field(name)
+        assert definition.type == "boolean" and definition.requirement == requirement
+        assert definition.applicability.subtypes == (*plots, "shop", "office")
+    for name in ("plot_width", "plot_depth"):
+        definition = registry.field(name)
+        assert (definition.type, definition.scale) == ("decimal", 2)
+        assert (definition.minimum, definition.maximum) == (Decimal("0.01"), Decimal("99999.99"))
+        assert (
+            definition.requirement == "recommended" and definition.applicability.subtypes == plots
+        )
+    road = registry.field("road_width_ft")
+    assert (road.minimum, road.maximum, road.scale) == (Decimal("1.00"), Decimal("999.99"), 2)
+    frontage = registry.field("frontage_ft")
+    assert (frontage.minimum, frontage.maximum) == (Decimal("0.01"), Decimal("9999.99"))
+    assert frontage.applicability.subtypes == ("shop",) and frontage.requirement == "recommended"
+    ceiling = registry.field("ceiling_height_ft")
+    assert (ceiling.minimum, ceiling.maximum) == (Decimal("1.00"), Decimal("99.99"))
+    power = registry.field("power_load_kw")
+    assert (power.minimum, power.maximum) == (Decimal("0.01"), Decimal("99999.99"))
+    rooms = registry.field("conference_rooms")
+    assert (rooms.type, rooms.minimum, rooms.maximum) == ("integer", Decimal(0), Decimal(50))
+    assert rooms.applicability.subtypes == ("office",)
+    assert registry.field("business_centre_facilities").applicability.subtypes == ("office",)
+    assert registry.field("plot_file_status").applicability.subtypes == ("plot_file",)
+    assert registry.field("orientation").allowed_values == (
+        "north",
+        "south",
+        "east",
+        "west",
+        "north_east",
+        "north_west",
+        "south_east",
+        "south_west",
+    )
+    assert registry.field("approval_authority").allowed_values[-3:] == (
+        "private_society",
+        "none",
+        "other",
+    )
+    for name in ("business_use", "road_access"):
+        assert registry.field(name).requirement == "recommended"
+        assert registry.field(name).applicability.subtypes == ("shop", "office")
+    assert not registry.field("business_use").seller_declared
+
+
+def test_unsupported_attributes_are_not_in_the_registry():
+    for name in (
+        "installment_available",
+        "down_payment",
+        "title_document_type",
+        "mortgage_declaration",
+        "approval_reference_number",
+    ):
+        assert registry.field(name) is None
+
+
+def test_error_code_is_a_decimal_property_defaulting_to_invalid_measure():
+    def decimal(**extra):
+        return add_field(id="width", type="decimal", min="1", max="9", scale=2, **extra)
+
+    assert registry.parse(text(decimal())).fields[-1].error_code == "invalid_measure"
+    assert (
+        registry.parse(text(decimal(error_code="invalid_area"))).fields[-1].error_code
+        == "invalid_area"
+    )
+    for bad in ("invalid", "invalid_price", 5, None):
+        refused(decimal(error_code=bad), "error_code")
+    refused(add_field(error_code="invalid_area"), "only a decimal field has error_code")
+    assert {f.id for f in registry.fields() if f.error_code == "invalid_area"} == {
+        "area_value",
+        "covered_area_sqft",
+    }

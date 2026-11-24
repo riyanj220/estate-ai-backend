@@ -34,6 +34,24 @@ from tests.listings.support import (
 D = Decimal
 
 
+# Story 2.5 widened these (same ids and columns) to Shops and Offices.
+SHOP_AND_OFFICE = ("shop", "office")
+SHARED_WITH_COMMERCIAL = {
+    "condition": ("house", "apartment", *SHOP_AND_OFFICE),
+    "furnishing": ("house", "apartment", *SHOP_AND_OFFICE),
+    "parking_spaces": ("house", "apartment", *SHOP_AND_OFFICE),
+    "occupancy_status": ("house", "apartment", *SHOP_AND_OFFICE),
+    "floor_number": ("apartment", *SHOP_AND_OFFICE),
+    "building_floors": ("apartment", *SHOP_AND_OFFICE),
+    "lift": ("apartment", "office"),
+    "building_security": ("apartment", *SHOP_AND_OFFICE),
+    "building_lobby": ("apartment", *SHOP_AND_OFFICE),
+    "maintenance_charges": ("apartment", *SHOP_AND_OFFICE),
+}
+SHOP_FIELDS = {n for n, subtypes in SHARED_WITH_COMMERCIAL.items() if "shop" in subtypes}
+OFFICE_FIELDS = {n for n, subtypes in SHARED_WITH_COMMERCIAL.items() if "office" in subtypes}
+
+
 @pytest.fixture(autouse=True)
 def cap(db):
     seed_cap()
@@ -89,11 +107,13 @@ def test_the_registry_defines_the_catalogue_with_the_specified_rules():
         ), name
         assert definition.requirement == requirement, name
     for name in BOTH_FIELDS:
-        assert registry.field(name).applicability.subtypes == both, name
+        wide = SHARED_WITH_COMMERCIAL.get(name)
+        assert registry.field(name).applicability.subtypes == (wide or both), name
     for name in HOUSE_FIELDS:
         assert registry.field(name).applicability.subtypes == ("house",), name
     for name in APARTMENT_FIELDS:
-        assert registry.field(name).applicability.subtypes == ("apartment",), name
+        wide = SHARED_WITH_COMMERCIAL.get(name)
+        assert registry.field(name).applicability.subtypes == (wide or ("apartment",)), name
     assert registry.field("condition").allowed_values == (
         "new",
         "excellent",
@@ -373,8 +393,8 @@ def test_all_failures_are_reported_at_once_and_nothing_is_written():
         (("sale", "plot", "residential_plot"), set()),
         (("sale", "plot", "commercial_plot"), set()),
         (("rent", "plot", "plot_file"), set()),
-        (("rent", "commercial", "shop"), set()),
-        (("rent", "commercial", "office"), set()),
+        (("rent", "commercial", "shop"), SHOP_FIELDS),
+        (("rent", "commercial", "office"), OFFICE_FIELDS),
     ],
 )
 def test_the_not_applicable_matrix(kind, allowed):
@@ -754,14 +774,14 @@ def test_another_owner_gets_not_found_and_no_row():
     assert caught.value.code == "not_found" and ListingResidential.objects.count() == 0
 
 
-def test_a_draft_from_an_older_registry_is_revalidated_under_version_4():
+def test_a_draft_from_an_older_registry_is_revalidated_under_version_5():
     account, view = draft()
     PropertyListing.objects.update(registry_version=3)
     assert codes(account, view, {"bedrooms": 51}) == {"bedrooms": "invalid_range"}
     assert PropertyListing.objects.get().registry_version == 3
     saved = update(account, view, {"bedrooms": 4})
-    assert saved.registry_version == registry.registry_version() == 4
-    assert PropertyListing.objects.get().registry_version == 4
+    assert saved.registry_version == registry.registry_version() == 5
+    assert PropertyListing.objects.get().registry_version == 5
 
 
 def test_a_changed_registry_bound_is_judged_on_the_next_save(monkeypatch):
@@ -812,7 +832,7 @@ def listing_row():
         owner_account_id=make_account(random_email()).id,
         status="draft",
         revision=1,
-        registry_version=4,
+        registry_version=5,
         purpose="sale",
         category="apartment",
         subtype="apartment",
@@ -961,5 +981,5 @@ def test_a_changed_bound_or_enum_would_differ_from_the_migration(db, monkeypatch
 
 
 def test_storage_follows_the_single_map():
-    assert fields.RESIDENTIAL_FIELDS == RESIDENTIAL_IDS
-    assert all(fields.STORAGE[name] == fields.RESIDENTIAL for name in RESIDENTIAL_IDS)
+    assert fields.RESIDENTIAL_FIELDS == (*RESIDENTIAL_IDS, "electricity", "water", "gas")
+    assert all(fields.STORAGE[name] == fields.RESIDENTIAL for name in fields.RESIDENTIAL_FIELDS)
