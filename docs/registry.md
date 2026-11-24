@@ -11,7 +11,7 @@ The Field registry (AD-4) is the one definition of which Listing fields exist. I
 ## File format
 
 ```yaml
-version: 4                     # positive integer
+version: 5                     # positive integer
 taxonomy:
   purposes: [sale, rent]       # code-defined, snake_case ids
   categories:
@@ -61,6 +61,17 @@ fields:
     allowed_values_by_purpose:   # optional, enums only: every purpose, each a non-empty subset
       sale: [total, per_unit]
       rent: [rental_period]
+  - id: possession_status
+    type: enum
+    allowed_values: [possession_ready, possession_pending, file_only]
+    allowed_values_by_subtype:   # optional, enums only: one entry per Subtype the field applies to, each a non-empty subset
+      residential_plot: [possession_ready, possession_pending]
+      commercial_plot: [possession_ready, possession_pending]
+      plot_file: [file_only]
+    seller_declared: true        # optional boolean, default false: an owner's claim, never platform-verified
+  - id: covered_area_sqft
+    type: decimal
+    error_code: invalid_area     # optional, decimals only: invalid_measure (default) or invalid_area
 ```
 
 Field types: `enum` (`allowed_values`), `text` (`max_length` 1 to 20 000, optional `min_length`; lengths count
@@ -77,7 +88,7 @@ An optional `description` documents what a value means (served to forms). A leng
 `currency` on a decimal field and
 `allowed_values_by_purpose` on a non-enum are refused. `applicability` decides whether a field applies to a Listing
 (`rental_period` applies only to purpose `rent`); `FieldDef.applies_to(purpose, category, subtype)` and
-`FieldDef.values_for(purpose)` answer it, and `listings.validation` enforces both from the registry.
+`FieldDef.values_for(purpose, subtype=None)` answer it, and `listings.validation` enforces both from the registry.
 
 `requirement` states when a value is needed, not when it may be saved: `required_for_publication` fields (and cross-field
 completeness such as a rental priced per rental period naming its period) are checked by publication (Story 2.15);
@@ -102,6 +113,35 @@ public and `ai_extractable`; `bedrooms`, `bathrooms`, `construction_year`, `cond
 `valuation_input`, and `bedrooms`, `bathrooms`, `furnishing` and `parking_spaces` are `searchable`.
 `construction_year` has one requirement level in the registry (`recommended`) for both Subtypes. Integer bounds are
 served in `min` and `max` as decimal strings (`"0"`, `"50"`), like money and decimal bounds.
+
+Version 5 (Story 2.5) adds two registry features and the Plot and Commercial catalogue (see `docs/listings.md`):
+
+- `seller_declared: true|false` (default false, must be a boolean) marks a legal, approval, possession or similar
+  claim the owner makes. It is served in the registry payload. **The rule:** a seller-declared attribute is shown with
+  a "Seller-declared" label and is never given a platform badge, check mark or "verified" wording; any later search or
+  display layer must read this flag rather than a hand-kept list. It does not change validation.
+- `allowed_values_by_subtype` (enums only) narrows `allowed_values` per Subtype, so vocabulary rules live in data
+  (a Plot File allows only `file_only` for `possession_status`). The loader requires one entry for every Subtype the
+  field applies to and no other (`applicability.subtypes`; else the subtypes of the listed `categories`; else all
+  Subtypes), each a non-empty subset of `allowed_values` without duplicates. A value that no Subtype offers is refused,
+  and with `allowed_values_by_purpose` every Subtype subset must share a value with every purpose subset.
+  `values_for(purpose)` without a Subtype on such a field returns `()` (nothing is allowed without the Subtype). It may be combined with `allowed_values_by_purpose`: a value must pass
+  both. Validation takes the Subtype from the Draft's identity; a value outside it is `invalid_choice`. The payload
+  serves the map (`allowed_values_by_subtype`, null when absent) and `RESPONSE_SHAPE_VERSION` is 4 because the two
+  keys were added.
+
+`error_code` (decimals only, `invalid_measure` default, `invalid_area` for `area_value` and `covered_area_sqft`) names the
+code for a well-formed value outside the field's rules; the validator reads it from the registry. `invalid_measure` is
+unit-neutral text. The five `seller_declared` fields are not `ai_extractable`: legal and possession claims are never
+extracted by the Assistant.
+
+**Known limitation:** a field has one requirement level, there are no per-Subtype levels yet, so `water` and
+`building_floors` are `recommended` for commercial Subtypes too (the story text wanted optional or per-Subtype levels).
+
+Version 5 also widens `applicability.subtypes` of ten shared unit fields to Shops and Offices (same ids and columns),
+adds the utilities `electricity`, `water`, `gas`, 14 plot fields (five `seller_declared`) and 8 commercial fields. The
+registry lets a field have one requirement level only. New field ids are always added at the END of the file, because
+the wire order of a Listing's `fields` follows the registry file order (see `docs/listings.md`).
 
 Only these keys are allowed. A Subtype belongs to exactly one Category; Plot File is a Subtype of Plot, distinct from
 Residential Plot.
@@ -129,9 +169,9 @@ tells the developer to bump the version and run the script.
 
 `GET /api/v1/registry` is public: `{version, taxonomy: {categories: [{id, subtypes}], purposes}, fields: [...]}`, each
 field with `id, type, requirement, applicability, allowed_values (null unless an enum), allowed_values_by_purpose (null
-unless narrowed), min_length and max_length (text only), min and max (money, decimal and integer, plain decimal notation, never an exponent), currency (money only), scale (decimal only),
-derived, description (null unless documented), class` and the five flags (`RESPONSE_SHAPE_VERSION` stays 3 in version 4, which adds no key: the `scale`, `derived` and
-`description` keys were added).
+unless narrowed), allowed_values_by_subtype (null unless narrowed), seller_declared, min_length and max_length (text only), min and max (money, decimal and integer, plain decimal notation, never an exponent), currency (money only), scale (decimal only),
+derived, description (null unless documented), class` and the five flags (`RESPONSE_SHAPE_VERSION` is 4: `allowed_values_by_subtype` and `seller_declared` were added in version 5; earlier it
+rose for `scale`, `derived` and `description`).
 `Cache-Control: public, max-age=300` and a strong `ETag` (`"<version>-<content hash>-<RESPONSE_SHAPE_VERSION>"`); `If-None-Match` gets `304`.
 OpenAPI enums for purpose, category and subtype are generated from the registry (`PurposeEnum`, `CategoryEnum`,
 `SubtypeEnum`), never copied by hand. Cities, localities and amenities are database reference data, not registry values.
@@ -151,7 +191,7 @@ OpenAPI enums for purpose, category and subtype are generated from the registry 
   (`tests/listings/test_constraints.py` fails when the migration and the registry disagree). The same holds for the
   generated CHECKs on `title`, `description`, `ListingTerms` (price range, basis and period values) and `ListingArea`
   (value and square-foot bounds, unit and basis values, the marla and kanal units a basis applies to) and
-  `ListingResidential` (integer, decimal and money bounds, enum sets, the floor rule): changing those
+  `ListingResidential`, `ListingPlot` and `ListingCommercial` (integer, decimal and money bounds, enum sets, the floor rule): changing those
   registry bounds or values needs a migration.
 - **Private fields are listed.** Private-class fields appear in the public registry response by design: it is field
   metadata for owner forms, never values. `ai_extractable` and `quota_identity` are allowed on private fields; only

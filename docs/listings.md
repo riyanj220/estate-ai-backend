@@ -1,7 +1,7 @@
 # Listings
 
 `apps/listings` owns the canonical Listing. Story 2.1 adds starting a Draft, Story 2.2 conflict-safe editing of title,
-description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
+description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details, Story 2.5 the Plot and Commercial details; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
 
 ## Model (`listings.models`, written only by `listings.services`)
 
@@ -30,6 +30,20 @@ description and price, Story 2.3 the area and its unit, Story 2.4 the House and 
   money bounds, enum sets, plus `listings_res_floor_within_building` (floor not above the building's floors when both
   are set). `tests/listings/test_constraints.py` style drift tests in `tests/listings/test_residential.py` fail when
   migration 0004 and the registry disagree.
+  **Story 2.5 (migration `0005_plot_commercial`) widens it**: this table now holds the attributes shared by residential,
+  plot and commercial units (the model keeps its name): Shops and Offices use its `condition`, `furnishing`,
+  `parking_spaces`, `occupancy_status`, `floor_number`, `building_floors`, `lift` (offices), `building_security`,
+  `building_lobby` and `maintenance_charges` columns, and the new utility booleans `electricity`, `water` and `gas`
+  (plots and commercial units) are three more columns here. The floor CHECK is unchanged. It is created lazily on the
+  first non-null value of any of these, whatever the Subtype.
+- `ListingPlot` (Story 2.5, migration `0005_plot_commercial`): one row per Listing for the Plot, Commercial Plot and
+  Plot File details (`related_name="plot"`): NUMERIC(10,2) feet (`plot_width`, `plot_depth`, `road_width_ft`), nullable
+  booleans and text enums, `updated_at`. Created lazily on the first non-null plot value (never by `create_draft`, a
+  read, a clear or an unrelated edit); unanswered is `NULL`. CHECKs generated from the registry
+  (`models.plot_constraints`, `listings_plot_<field>_range|_valid`). The column allows the union of the enum values; the
+  by-Subtype vocabulary (a Plot File only `file_only`) is enforced by the service.
+- `ListingCommercial` (Story 2.5): the same for Shop and Office details (`related_name="commercial"`;
+  `models.commercial_constraints`, `listings_com_<field>_range|_valid`).
 - `ListingRevision`: `listing`, `revision`, `origin` (`manual` or `ai`), `actor_account_id`, `changes` (the registry
   fields set at that revision and their new values: strings, JSON integers and booleans, or null), unique (`listing`, `revision`). Edits are
   recorded by these rows; there is no separate audit action for them.
@@ -192,6 +206,49 @@ uses the same native values. A change to a `valuation_input` field (bedrooms, ba
 covered area) emits one `listing.model_inputs_changed` per save, after commit; a clear of one counts as a change.
 `PATCH` still needs a current `base_revision` (409 with `current` otherwise).
 
+### Plot and Commercial details (Story 2.5)
+
+Registry version 5 adds the registry flag `seller_declared` and the map `allowed_values_by_subtype` (see
+`docs/registry.md`) and these fields. Applicability is by Subtype and judged from the Draft's identity (`not_applicable`
+otherwise, whatever the value; `null` on a field that does not apply is a `200` no-op, as in Story 2.4).
+
+- **Shared with residential units, widened** (same ids and columns): `condition`, `furnishing` (the frontend labels it
+  fit-out for commercial), `parking_spaces`, `occupancy_status`, `floor_number`, `building_floors` for Shop and Office
+  too; `lift` for Office (and Apartment); `building_security` for Shop and Office; `building_lobby` and
+  `maintenance_charges` for Shop and Office. The floor rule (`invalid_floor` on both sent floor fields) applies to
+  every Subtype where both floors apply. Known limitation: a registry field has one requirement level (no
+  per-Subtype levels yet), so `building_floors` and `water` are `recommended` for commercial Subtypes too.
+- **Utilities** `electricity` (recommended), `water` (recommended), `gas` (optional): yes/no, all plot and commercial
+  Subtypes, stored in the unit-details table.
+- **Plot, Commercial Plot and Plot File** (`ListingPlot`): `plot_width`, `plot_depth` (feet, `0.01` to `99999.99`),
+  `road_width_ft` (`1.00` to `999.99`), `corner_plot`, `sewerage` (yes/no), `possession_status`, `balloting_status`,
+  `development_status`, `approval_authority` (enums, all **seller-declared** and not `ai_extractable`), optional `park_facing`, `main_boulevard`,
+  `boundary_wall`, `orientation`, and `plot_file_status` (seller-declared, Plot File only).
+- **Shop and Office** (`ListingCommercial`): `business_use`, `road_access` (enums), `frontage_ft` (Shop only, `0.01`
+  to `9999.99`), optional `ceiling_height_ft` (`1.00` to `99.99`), `power_load_kw` (`0.01` to `99999.99`),
+  `three_phase_electricity`, and Office only `conference_rooms` (0 to 50) and `business_centre_facilities`.
+- **Plot File vocabulary**: `possession_status` has three values; a Plot File allows only `file_only`, the other plots
+  `possession_ready` and `possession_pending`. Anything else for the Draft's Subtype is `invalid_choice`. A Plot File is
+  therefore never presented as possession-ready. The rule lives in the registry map, not in code.
+- **Seller-declared**: possession, balloting, development, approval authority and plot file status are the owner's own
+  claims. The registry marks them (`seller_declared: true`, served) so a display or search layer shows them as
+  "Seller-declared" and never as a platform badge or verified fact.
+- **Unsupported attributes** such as `installment_available`, `down_payment`, `title_document_type`,
+  `mortgage_declaration` and `approval_reference_number` are not in the registry, so they are `unknown_field` under
+  `non_field_errors` like any unknown id, and nothing is written (they arrive in Epic 11).
+
+Validation: the feet and kilowatt fields are strict decimal text with the registry scale (`^\d{1,10}(\.\d{1,2})?$`
+shape, no leading zeros, exponent, comma, spaces or JSON numbers: `invalid`); a well-formed value that is zero,
+negative, below the minimum, above the maximum or has too many decimals is the new code `invalid_measure` (unit-neutral text in the
+kernel messages catalogue; the registry field's `error_code` decides, and the two area fields keep `invalid_area`). Values are stored and served at their stored scale
+(`"35.00"`, never exponent form). Integers, booleans and enums follow Story 2.4; a stored value outside today's rules
+that is sent again unchanged is rejected with the same code (stored values are revalidated only when sent, and only
+when the request touches the floor fields is the floor rule judged).
+
+Valuation inputs: `plot_width`, `plot_depth`, `road_width_ft`, `corner_plot`, `development_status`, `frontage_ft`
+(and `condition`, already). A change to one emits one `listing.model_inputs_changed` after commit; the other new fields
+emit nothing.
+
 ### Provenance
 
 `origin` is an argument chosen by the calling layer: the owner API passes `manual`, the future Assistant passes `ai`. It
@@ -244,10 +301,10 @@ edits of Published Listings.
 
 Wire order of `fields`: identity, the editable fields in `STORAGE` order, `area_sqft` last.
 `{id, status, visibility, revision, registry_version, fields: {purpose, category, subtype, title, description,
-asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, <the 30 residential details>, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [], amenities: []}`.
+asking_price, price_basis, rental_period, area_value, area_unit, marla_basis, <the 30 residential details, electricity, water, gas, the 14 plot details, the 8 commercial details>, area_sqft}, provenance: {<field id>: {origin, confirmed}}, media: [], amenities: []}`.
 `visibility` is `private` for Drafts (`listings.lifecycle.Visibility`, extended by Story 2.12). `fields` is keyed by flat
 registry ids and returns `null` for unknown; `asking_price`, `area_value` (four decimals), `marla_basis` (`"225"`,
-`"250"`, `"272.25"`) and `area_sqft` (four decimals, `null` when not computable) are strings, never numbers; the residential integers and yes/no answers are JSON integers and booleans. Provenance covers
+`"250"`, `"272.25"`) and `area_sqft` (four decimals, `null` when not computable) are strings, never numbers; the residential integers and yes/no answers are JSON integers and booleans, and the feet and kilowatt fields are strings with two decimals. Provenance covers
 the editable fields, not `area_sqft`. No owner or other internal column is returned. `tests/api/test_listings_api.py`
 asserts the shape and the OpenAPI schema.
 
