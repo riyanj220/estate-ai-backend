@@ -2,7 +2,7 @@
 title: 'Story 2.10: Media endpoint, cover image and ordering (backend half, then frontend half)'
 type: 'feature'
 created: '2026-11-24'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -100,6 +100,8 @@ Decisions beyond the story text: reorder and cover are one revision-checked muta
 ## Review Triage Log
 
 Backend half (three reviewers). Patched: images whose asset row is lost ("ghosts") are cleaned up under the lock by every image mutation so the set is always manageable; removing an image repairs a missing cover; uploads use max position + 1; the reorder route got a 64 KiB body cap (middleware and ASGI) and its own rate limit (`image_order`, 120/hour); HEAD answers from the asset row without reading the file; storage errors on read give the uniform 404; a pre-set CSP is kept only when it equals the media CSP; selector-level tests pin the access contract that Story 2.12 inherits; docs corrected. Accepted: positions became 0-based with a data migration (Story 2.9 stored 1-based), no rate limit on the media GET, whole-file response (up to 5 MB), a lost file shows 200 on HEAD but 404 on GET. Verification: lint-imports 14 kept, ruff, pytest 4107 passed, no migration drift, openapi regenerated.
+
+Frontend half (three reviewers). Patched: media parsing tolerates the gaps and missing cover the backend leaves until its next repair; late answers can no longer regress the revision or media; Save and the image actions exclude each other so uploads and field saves do not cause spurious conflicts; uploads: oversized files refused locally, 413 per file, uncertain rows say "it may have been added", overflow rows explain, no row stays Waiting, abort and a leave-page guard, a module-level busy lock; focus returns to the acted control on every failure; thumbnails load lazily with a retry and a cover-aware alt; suspended-owner and stop-after-first-refusal tests made deterministic. Found by the tests: the Next proxy answered 500 above 10 MB, so `experimental.proxyClientMaxBodySize` is raised to 32 MB and the backend's own limits answer. The production-build checks (`check:prod-admin`, `check:prod-listings`) now run in CI. Verification: lint, typecheck, build, api:check, prod checks, full Playwright once at 1081 passed with one timing-sensitive new test fixed afterwards and re-run 4 times (GitHub CI is the end-to-end confirmation).
 
 ## Design Notes
 
