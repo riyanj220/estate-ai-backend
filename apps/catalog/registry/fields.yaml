@@ -1,7 +1,7 @@
 # The Field registry (AD-4). Every change needs a version bump and a new lock:
 #   uv run python scripts/registry_lock.py
 # Format and rules: docs/registry.md
-version: 6
+version: 7
 
 taxonomy:
   purposes: [sale, rent]
@@ -682,3 +682,97 @@ fields:
     allowed_values: [no_restriction, families_only, bachelors_only]
     class: public
     ai_extractable: true
+  - id: city
+    type: reference
+    reference: city
+    section: location
+    requirement: required_for_publication
+    description: The city, chosen from the city list. Changing it clears the locality.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    class: public
+    searchable: true
+  - id: locality
+    type: reference
+    reference: locality
+    section: location
+    requirement: required_for_publication
+    description: The area or society, chosen from the localities of the city.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    class: public
+    searchable: true
+  - id: society
+    type: text
+    section: location
+    requirement: optional
+    description: Housing society or scheme, shown to everyone.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    max_length: 60
+    class: public
+    ai_extractable: true
+  - id: phase
+    type: text
+    section: location
+    requirement: optional
+    description: Phase, shown to everyone.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    max_length: 60
+    class: public
+    ai_extractable: true
+  - id: sector
+    type: text
+    section: location
+    requirement: optional
+    description: Sector, shown to everyone.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    max_length: 60
+    class: public
+    ai_extractable: true
+  - id: block
+    type: text
+    section: location
+    requirement: optional
+    description: Block, shown to everyone.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    max_length: 60
+    class: public
+    ai_extractable: true
+  - id: street
+    type: text
+    section: location
+    requirement: optional
+    description: Street of the property. Private, only the owner sees it.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    max_length: 120
+    class: private
+  - id: house_number
+    type: text
+    section: location
+    requirement: optional
+    description: House or plot number. Private, only the owner sees it.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    max_length: 30
+    class: private
+  - id: latitude
+    type: decimal
+    section: location
+    requirement: optional
+    description: Latitude in degrees, -90 to 90. Private, only the owner sees it.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    signed: true
+    min: "-90"
+    max: "90"
+    scale: 6
+    error_code: out_of_range
+    class: private
+  - id: longitude
+    type: decimal
+    section: location
+    requirement: optional
+    description: Longitude in degrees, -180 to 180. Private, only the owner sees it.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    signed: true
+    min: "-180"
+    max: "180"
+    scale: 6
+    error_code: out_of_range
+    class: private

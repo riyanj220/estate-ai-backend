@@ -157,8 +157,8 @@ SPECTACULAR_SETTINGS = {
         "RegistrationAcceptedStatusEnum": ["check_your_email"],
         "EmailVerifiedStatusEnum": ["verified"],
         "FieldClassEnum": ["public", "private"],
+        "LocalityKindEnum": ["area", "society"],
         "VisibilityEnum": "apps.listings.lifecycle.Visibility",
-        "FieldTypeEnum": ["enum", "text", "money", "integer", "decimal", "boolean"],
         "FieldRequirementEnum": ["required_for_publication", "recommended", "optional"],
     },
     "POSTPROCESSING_HOOKS": [

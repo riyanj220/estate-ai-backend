@@ -21,12 +21,13 @@ DIRECTORY = Path(__file__).resolve().parent / "registry"
 FIELDS_PATH = DIRECTORY / "fields.yaml"
 LOCK_PATH = DIRECTORY / "fields.lock"
 
-FIELD_TYPES = ("enum", "text", "money", "integer", "decimal", "boolean", "date")
+FIELD_TYPES = ("enum", "text", "money", "integer", "decimal", "boolean", "date", "reference")
 REQUIREMENTS = ("required_for_publication", "recommended", "optional")
 CLASSES = ("public", "private")
-SECTIONS = ("details", "terms")  # where a form groups a field; `details` unless the file says
+SECTIONS = ("details", "terms", "location")  # where a form groups a field; `details` by default
+REFERENCES = ("city", "locality")  # what a `reference` field points at (catalog reference data)
 FLAGS = ("searchable", "sortable", "ai_extractable", "valuation_input", "quota_identity")
-PRIVATE_FORBIDDEN_FLAGS = ("searchable", "sortable", "valuation_input")
+PRIVATE_FORBIDDEN_FLAGS = ("searchable", "sortable", "valuation_input", "ai_extractable")
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
 # A decimal part is only for an enum whose values are ALL numbers that fit NUMERIC(6,2)
 # (`272.25`, square feet per marla); see `_check_numeric_enum`.
@@ -51,6 +52,8 @@ _FIELD_KEYS = (
         "seller_declared",
         "section",
         "error_code",
+        "reference",
+        "signed",
         *FLAGS,
     }
     | _TEXT_KEYS
@@ -122,6 +125,10 @@ class FieldDef:
     error_code: str = "invalid_measure"
     # decimal: inclusive bounds (`minimum`, `maximum`) and the number of decimals stored
     scale: int | None = None
+    # decimal: the range may reach below zero (coordinates); false means min and max are >= 0
+    signed: bool = False
+    # reference: what the stored uuid points at (`city` or `locality`, catalog reference data)
+    reference: str | None = None
     # derived: computed by the service from other fields; never accepted as input
     derived: bool = False
     description: str | None = None
@@ -392,19 +399,22 @@ def _date_rules(entry: dict) -> dict:
     return {"minimum": minimum, "maximum": maximum}
 
 
-def _decimal_amount(entry: dict, key: str, scale: int) -> Decimal:
+def _decimal_amount(entry: dict, key: str, scale: int, signed: bool) -> Decimal:
     value = entry.get(key)
-    pattern = rf"^\d{{1,{DECIMAL_WHOLE_DIGITS}}}(?:\.\d{{1,{scale}}})?$"
+    sign = "-?" if signed else ""
+    pattern = rf"^{sign}\d{{1,{DECIMAL_WHOLE_DIGITS}}}(?:\.\d{{1,{scale}}})?$"
     if not isinstance(value, str) or not re.fullmatch(pattern, value, re.ASCII):
         _fail(f"{key} must be a decimal string with at most {scale} decimals")
     return Decimal(value)
 
 
-ERROR_CODES = ("invalid_measure", "invalid_area")
+ERROR_CODES = ("invalid_measure", "invalid_area", "out_of_range")
 
 
 def _decimal_rules(entry: dict) -> dict:
     if entry["type"] != "decimal":
+        if "signed" in entry:
+            _fail("only a decimal field has signed")
         if "scale" in entry:
             _fail("only a decimal field has scale")
         if "error_code" in entry:
@@ -419,11 +429,31 @@ def _decimal_rules(entry: dict) -> dict:
     scale = entry["scale"]
     if isinstance(scale, bool) or not isinstance(scale, int) or not 1 <= scale <= DECIMAL_SCALE_MAX:
         _fail(f"scale must be an integer from 1 to {DECIMAL_SCALE_MAX}")
-    minimum, maximum = _decimal_amount(entry, "min", scale), _decimal_amount(entry, "max", scale)
+    signed = entry.get("signed", False)
+    if not isinstance(signed, bool):
+        _fail("signed must be true or false")
+    minimum = _decimal_amount(entry, "min", scale, signed)
+    maximum = _decimal_amount(entry, "max", scale, signed)
     if minimum > maximum:
         _fail("min is above max")
     code = entry.get("error_code", "invalid_measure")
-    return {"minimum": minimum, "maximum": maximum, "scale": scale, "error_code": code}
+    return {
+        "minimum": minimum,
+        "maximum": maximum,
+        "scale": scale,
+        "error_code": code,
+        "signed": signed,
+    }
+
+
+def _reference_rules(entry: dict) -> dict:
+    if entry["type"] != "reference":
+        if "reference" in entry:
+            _fail("only a reference field has reference")
+        return {}
+    if entry.get("reference") not in REFERENCES:
+        _fail(f"a reference field needs reference: one of {', '.join(REFERENCES)}")
+    return {"reference": entry["reference"]}
 
 
 def _check_numeric_enum(values: tuple[str, ...]) -> None:
@@ -466,7 +496,7 @@ def _field(entry, purposes, categories) -> FieldDef:
         _fail("applicability lists a subtype outside its listed categories")
     flags = {name: _flag(entry, name) for name in FLAGS}
     if entry["class"] == "private" and any(flags[n] for n in PRIVATE_FORBIDDEN_FLAGS):
-        _fail("a private field cannot be searchable, sortable or a valuation input")
+        _fail("a private field cannot be searchable, sortable, ai_extractable or a valuation input")
     values = None
     if entry["type"] == "enum":
         values = _id_list(entry.get("allowed_values"), "allowed_values", _VALUE_OR_NUMBER)
@@ -500,6 +530,7 @@ def _field(entry, purposes, categories) -> FieldDef:
     decimal_rules = _decimal_rules(entry)
     integer_rules = _integer_rules(entry)
     date_rules = _date_rules(entry)
+    reference_rules = _reference_rules(entry)
     derived = entry.get("derived", False)
     if not isinstance(derived, bool):
         _fail("derived must be true or false")
@@ -528,6 +559,7 @@ def _field(entry, purposes, categories) -> FieldDef:
         **decimal_rules,
         **integer_rules,
         **date_rules,
+        **reference_rules,
         allowed_values_by_purpose=by_purpose,
         allowed_values_by_subtype=by_subtype,
         seller_declared=seller_declared,

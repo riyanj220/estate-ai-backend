@@ -14,7 +14,7 @@ from apps.presentation.api.permissions import AllowPublic
 MAX_AGE = 300
 # Bump when the response shape (serializers) changes without a registry change, so client
 # caches are invalidated.
-RESPONSE_SHAPE_VERSION = 5
+RESPONSE_SHAPE_VERSION = 6
 FIELD_TYPES = registry.FIELD_TYPES
 
 
@@ -55,7 +55,9 @@ class RegistryFieldSerializer(serializers.Serializer):
     section = serializers.ChoiceField(
         choices=registry.SECTIONS,
         help_text=(
-            "Where a form groups the field: `terms` (price, sale and rent terms) or `details`. "
+            "Where a form groups the field: `terms` (price, sale and rent terms), `location` "
+            "(city, locality, the public location text and the private address; group by `class`) "
+            "or `details`. "
             "Read this, never guess from applicability."
         ),
     )
@@ -84,6 +86,14 @@ class RegistryFieldSerializer(serializers.Serializer):
     currency = serializers.CharField(allow_null=True, help_text="Money only: `PKR`.")
     scale = serializers.IntegerField(
         allow_null=True, help_text="Decimal only: the number of decimals stored and returned."
+    )
+    reference = serializers.CharField(
+        allow_null=True,
+        help_text=(
+            "Reference fields only: what the stored uuid points at, `city` or `locality`. The "
+            "lists are `/api/v1/reference/cities` and "
+            "`/api/v1/reference/cities/{city_id}/localities`; the value is the uuid, never a name."
+        ),
     )
     derived = serializers.BooleanField(
         help_text="Computed by the server from other fields; read-only, never accepted as input."
@@ -180,6 +190,7 @@ def _body() -> dict:
                     "maximum": _bound(f.maximum),
                     "currency": f.currency,
                     "scale": f.scale,
+                    "reference": f.reference,
                     "derived": f.derived,
                     "description": f.description,
                     "field_class": f.field_class,

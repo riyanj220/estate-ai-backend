@@ -102,6 +102,8 @@ FIELD_MESSAGES: dict[str, str] = {
     "too_small": "The image is too small. Use at least 200 by 200 pixels.",
     "invalid_image": "The file is not a usable image.",
     "invalid_floor": "The floor cannot be above the number of floors in the building.",
+    "out_of_range": "Enter a number within the allowed range, using digits and a decimal point.",
+    "locality_not_in_city": "Choose a locality that belongs to the selected city.",
 }
 DEFAULT_FIELD_MESSAGE = "Enter a valid value."
 

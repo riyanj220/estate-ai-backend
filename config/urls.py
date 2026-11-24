@@ -33,7 +33,7 @@ from apps.presentation.api.profile_images import (
     ProfileImageFileView,
     ProfileImageView,
 )
-from apps.presentation.api.reference import CityView
+from apps.presentation.api.reference import CityView, LocalityView
 from apps.presentation.api.registrations import AgencyRegistrationView, IndividualRegistrationView
 from apps.presentation.api.registry import RegistryView
 from apps.presentation.api.schema import PublicSchemaView
@@ -48,6 +48,11 @@ handler500 = server_error
 urlpatterns = [
     path("api/v1/health", health, name="health"),
     path("api/v1/reference/cities", CityView.as_view(), name="reference-cities"),
+    path(
+        "api/v1/reference/cities/<str:city_id>/localities",
+        LocalityView.as_view(),
+        name="reference-city-localities",
+    ),
     path(
         "api/v1/registrations/individuals",
         IndividualRegistrationView.as_view(),
