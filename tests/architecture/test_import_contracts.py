@@ -154,6 +154,18 @@ VIOLATIONS = [
         id="domain-imports-drf",
     ),
     pytest.param(
+        "apps/listings/services.py",
+        "import PIL.Image\n",
+        "Pillow is imported only inside kernel",
+        id="listings-imports-pillow",
+    ),
+    pytest.param(
+        "apps/presentation/api/listings.py",
+        "from PIL import Image\n",
+        "Pillow is imported only inside kernel",
+        id="presentation-imports-pillow",
+    ),
+    pytest.param(
         "apps/messaging/services.py",
         "import channels\n",
         "Domain apps never import HTTP or WebSocket code",
@@ -175,6 +187,24 @@ def _model_violations() -> list:
             )
         )
     return params
+
+
+def test_pillow_contract_covers_every_app_but_the_kernel() -> None:
+    contracts = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["importlinter"][
+        "contracts"
+    ]
+    pillow = next(c for c in contracts if c["name"] == "Pillow is imported only inside kernel")
+    everyone = sorted(
+        p.name for p in (ROOT / "apps").iterdir() if p.is_dir() and p.name != "__pycache__"
+    )
+    assert sorted(pillow["source_modules"]) == [f"apps.{a}" for a in everyone if a != "kernel"]
+    assert pillow["forbidden_modules"] == ["PIL"]
+
+
+def test_kernel_may_import_pillow(project: Path) -> None:
+    append_code(project / "apps/kernel/images.py", "from PIL import ImageFilter\n")
+    result = run_contracts(project)
+    assert result.returncode == 0, result.stdout
 
 
 @pytest.mark.parametrize(("path", "code", "contract"), VIOLATIONS + _model_violations())

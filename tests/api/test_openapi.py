@@ -58,3 +58,19 @@ def test_envelope_schema_matches_serializer():
 def test_schema_route_serves_the_contract(client):
     response = client.get("/api/v1/schema")
     assert response.status_code == 200
+
+
+def test_image_routes_declare_409_and_503_with_the_envelope_and_retry_after(tmp_path):
+    schema = yaml.safe_load(generate(tmp_path))
+    upload = schema["paths"]["/api/v1/listings/{listing_id}/images"]["post"]["responses"]
+    for status in ("409", "503"):
+        assert upload[status]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorEnvelope"
+        }
+    assert "Retry-After" in upload["503"]["headers"] and "Retry-After" in upload["429"]["headers"]
+    assert upload["201"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/Image"
+    }
+    request = schema["paths"]["/api/v1/listings/{listing_id}/images"]["post"]["requestBody"]
+    assert "multipart/form-data" in request["content"]
+    assert "delete" in schema["paths"]["/api/v1/listings/{listing_id}/images/{image_id}"]

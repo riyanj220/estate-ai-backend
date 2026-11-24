@@ -147,3 +147,20 @@ TAIL_IDS = (*DETAIL_IDS, *TERMS_IDS)
 
 SALE_HOUSE = HOUSE  # a sale Draft
 RENT_HOUSE = ("rent", "house", "house")
+
+
+def seed_media_policies(individual=None, agency=None):
+    """The image caps and upload limit (a transactional test may have flushed the seed rows)."""
+    mb = 1024 * 1024
+    for scope, limit in (
+        ("storage_cap_bytes_individual", individual or 200 * mb),
+        ("storage_cap_bytes_agency", agency or 1024 * mb),
+    ):
+        RateLimitPolicy.objects.update_or_create(
+            scope=scope,
+            defaults={"limit": limit, "window_seconds": None, "key_kind": "account", "note": "t"},
+        )
+    RateLimitPolicy.objects.update_or_create(
+        scope="image_upload",
+        defaults={"limit": 30, "window_seconds": 3600, "key_kind": "account", "note": "t"},
+    )
