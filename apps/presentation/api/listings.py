@@ -151,7 +151,10 @@ class ImageSerializer(serializers.Serializer):
 class ListingSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     status = serializers.ChoiceField(choices=_choices(s.value for s in ListingStatus))
-    visibility = serializers.ChoiceField(choices=_choices(v.value for v in Visibility))
+    # Labelled (value, NAME) pairs on purpose: `private` and `public` are also the registry's field
+    # classes, and drf-spectacular would merge two enums with the same (value, label) pairs into
+    # one component. The labels keep `VisibilityEnum` separate from `FieldClassEnum`.
+    visibility = serializers.ChoiceField(choices=[(v.value, v.name) for v in Visibility])
     revision = serializers.IntegerField(min_value=1)
     registry_version = serializers.IntegerField(min_value=1)
     fields = ListingFieldsSerializer()

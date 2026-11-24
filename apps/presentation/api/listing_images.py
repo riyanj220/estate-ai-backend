@@ -31,6 +31,7 @@ from apps.presentation.api.passwords import NoStoreMixin
 from apps.presentation.api.permissions import AllowPublic, RequireSignedIn
 from apps.presentation.api.throttling import PolicyThrottle
 
+PUBLIC_IMAGE_CACHE_SECONDS = 60
 ORDER_BODY = ("base_revision", "order", "cover_id")
 
 
@@ -245,22 +246,42 @@ class ListingImageFileView(NoStoreMixin, APIView):
     def finalize_response(self, request, response, *args, **kwargs):
         response = super().finalize_response(request, response, *args, **kwargs)
         if response.status_code == status.HTTP_200_OK:
-            response["Cache-Control"] = "private, no-store"
+            if getattr(response, "public_image", False):
+                # The answer does not depend on who asks, so it carries no cookie and varies by
+                # none: a request that arrives with a stale or malformed CSRF cookie would make
+                # Django's CSRF middleware reissue it (`Set-Cookie`, `Vary: Cookie`).
+                response["Cache-Control"] = f"public, max-age={PUBLIC_IMAGE_CACHE_SECONDS}"
+                request._request.META["CSRF_COOKIE_NEEDS_UPDATE"] = False
+                # belt and braces: nothing else may leave a cookie or a cookie variance behind
+                response.cookies.clear()
+                parts = [p.strip() for p in response.get("Vary", "").split(",") if p.strip()]
+                kept = [p for p in parts if p.lower() != "cookie"]
+                if kept:
+                    response["Vary"] = ", ".join(kept)
+                elif response.has_header("Vary"):
+                    del response["Vary"]
+            else:
+                response["Cache-Control"] = "private, no-store"
         return response
 
     @extend_schema(
         operation_id="get_listing_image_file",
-        summary="The bytes of one image of one of the signed-in account's own Drafts",
+        summary="The bytes of one image of a Listing the caller may see",
         description=(
-            "The media endpoint: the only place an image is served. Applied at request time: a "
-            "Draft's image goes only to the owning account (Suspended and Email-unverified owners "
-            "included, a Deactivated one not). Anyone else (another account, an administrator, a "
-            "Visitor), an unknown or malformed id, another Listing's image and a Listing that is "
-            "not a Draft get the same `404 not_found` (a Visitor gets 404, never 401). The body is "
-            "the stored, re-encoded image with its stored `Content-Type` (`image/jpeg`, "
-            "`image/png` or `image/webp`), `Content-Length`, `Cache-Control: private, no-store`, "
-            "`X-Content-Type-Options: nosniff`, `Content-Disposition: inline` (no file name) and "
-            "`Content-Security-Policy: default-src 'none'; sandbox`; no cookie is set. `HEAD` "
+            "The media endpoint: the only place an image is served, decided at request time by the "
+            "single visibility policy. An image of a public Listing (Published, not restricted, "
+            "owner Active) goes to anyone, a Visitor and an administrator included, with "
+            "`Cache-Control: public, max-age=60` (so it may stay in a cache for up to a minute "
+            "after the Listing stops being public), no cookie and nothing varying by cookie, "
+            "whatever cookies the request carries. An image of any other Listing (a Draft, a "
+            "restricted one, one whose owner is Suspended or Deactivated) goes only to the owning "
+            "account (Suspended and Email-unverified owners included, a Deactivated one not) with "
+            "`Cache-Control: private, no-store`. Anyone else (another account, an administrator, a "
+            "Visitor), an unknown or malformed id and another Listing's image get the same `404 "
+            "not_found` (a Visitor gets 404, never 401). The body is the stored, re-encoded image "
+            "with its stored `Content-Type` (`image/jpeg`, `image/png` or `image/webp`), "
+            "`Content-Length`, `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` "
+            "(no file name) and `Content-Security-Policy: default-src 'none'; sandbox`. `HEAD` "
             "answers the same headers without a body. `Range` is ignored (always `200`, the "
             "whole file) and there is no `ETag`. `Accept` is ignored."
         ),
@@ -289,4 +310,5 @@ class ListingImageFileView(NoStoreMixin, APIView):
         response["Content-Disposition"] = "inline"
         response["X-Content-Type-Options"] = "nosniff"
         response["Content-Security-Policy"] = MEDIA_CSP
+        response.public_image = served.public
         return response
