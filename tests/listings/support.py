@@ -165,6 +165,10 @@ def seed_media_policies(individual=None, agency=None):
         defaults={"limit": 30, "window_seconds": 3600, "key_kind": "account", "note": "t"},
     )
     RateLimitPolicy.objects.update_or_create(
+        scope="profile_image_upload",
+        defaults={"limit": 10, "window_seconds": 3600, "key_kind": "account", "note": "t"},
+    )
+    RateLimitPolicy.objects.update_or_create(
         scope="image_order",
         defaults={"limit": 120, "window_seconds": 3600, "key_kind": "account", "note": "t"},
     )

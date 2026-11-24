@@ -132,6 +132,9 @@ def expected(city, **overrides):
         "email": EMAIL,
         "pending_email": None,
         "verification_status": "unverified",
+        "image": None,  # Story 2.11 additions
+        "agency_id": str(AgencyProfile.objects.get().id),
+        "logo_url": None,
     }
     body.update(overrides)
     return body
@@ -644,4 +647,7 @@ def expected_keys():
         "email",
         "pending_email",
         "verification_status",
+        "image",
+        "agency_id",
+        "logo_url",
     )

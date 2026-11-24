@@ -131,3 +131,44 @@ def test_the_listing_media_items_have_the_documented_shape(tmp_path):
     }
     flat = " ".join(image["properties"])
     assert "asset" not in flat and "storage" not in flat and "owner" not in flat
+
+
+def test_the_profile_image_routes_are_documented_with_binary_and_error_responses(tmp_path):
+    schema = yaml.safe_load(generate(tmp_path))
+    paths = schema["paths"]
+    for route in ("/api/v1/me/profile/image", "/api/v1/me/agency-profile/image"):
+        assert set(paths[route]) == {"put", "delete"}
+        put = paths[route]["put"]["responses"]
+        assert put["200"]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ProfileImage"
+        }
+        for status in ("400", "401", "403", "404", "409", "429", "503"):
+            assert put[status]["content"]["application/json"]["schema"] == ENVELOPE, status
+        assert "Retry-After" in put["429"]["headers"] and "Retry-After" in put["503"]["headers"]
+        assert "multipart/form-data" in paths[route]["put"]["requestBody"]["content"]
+        assert "204" in paths[route]["delete"]["responses"]
+        assert paths[route]["delete"]["responses"]["403"]["content"]
+    for route in ("/api/v1/me/profile/image/file", "/api/v1/me/agency-profile/image/file"):
+        ok = paths[route]["get"]["responses"]["200"]["content"]
+        assert set(ok) == {"image/jpeg", "image/png", "image/webp"}
+        assert paths[route]["get"]["responses"]["404"]["content"]
+        assert "Cache-Control: private, no-store" in paths[route]["get"]["description"]
+    logo = paths["/api/v1/agencies/{agency_id}/logo"]["get"]
+    assert set(logo["responses"]["200"]["content"]) == {"image/jpeg", "image/png", "image/webp"}
+    assert logo["responses"]["404"]["content"]["application/json"]["schema"] == ENVELOPE
+    assert "public, max-age=60" in logo["description"] and "Active" in logo["description"]
+    assert "security" not in logo or logo["security"] in ([], [{}])  # no session needed
+
+
+def test_the_profile_responses_gain_the_image_and_the_agency_ids(tmp_path):
+    schemas = yaml.safe_load(generate(tmp_path))["components"]["schemas"]
+    assert set(schemas["ProfileImage"]["properties"]) == {
+        "content_type",
+        "width",
+        "height",
+        "bytes",
+        "url",
+    }
+    assert {"image"} <= set(schemas["Profile"]["properties"])
+    assert {"image", "agency_id", "logo_url"} <= set(schemas["AgencyProfile"]["properties"])
+    assert "agency_id" not in schemas["Profile"]["properties"]

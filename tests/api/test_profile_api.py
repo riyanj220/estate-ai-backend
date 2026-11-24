@@ -125,6 +125,7 @@ def test_read_returns_exactly_the_four_fields_no_store(owner):
         "phone": PHONE,
         "email": EMAIL,
         "pending_email": None,
+        "image": None,
     }
     assert response.headers["Cache-Control"] == "no-store"
 
@@ -159,6 +160,7 @@ def test_update_name_and_phone_audits_once(owner):
         "phone": "+923007654321",
         "email": EMAIL,
         "pending_email": None,
+        "image": None,
     }
     assert response.headers["Cache-Control"] == "no-store"
     assert AuditRecord.objects.filter(action="account.profile_updated").count() == 1
@@ -344,7 +346,9 @@ def test_pending_is_identical_across_free_taken_same_and_capped(
     for _ in range(5):  # exhaust the silent mail cap: the next free address gets no link
         ratelimit.hit("verification_email", ratelimit.derive_key("account", str(account.id)))
     check("capped-free@example.org")
-    assert {tuple(sorted(b)) for b in seen} == {("email", "full_name", "pending_email", "phone")}
+    assert {tuple(sorted(b)) for b in seen} == {
+        ("email", "full_name", "image", "pending_email", "phone")
+    }
     assert not EmailChangeToken.objects.filter(
         new_email="capped-free@example.org", link_issued=True
     ).exists()
@@ -766,6 +770,7 @@ def test_openapi_documents_the_routes(tmp_path):
         "phone",
         "email",
         "pending_email",
+        "image",
     }
     assert set(components["EmailChangeRequest"]["properties"]) == {"new_email", "current_password"}
     assert set(components["EmailChangeConfirmRequest"]["properties"]) == {"token"}

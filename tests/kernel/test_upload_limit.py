@@ -235,3 +235,64 @@ def test_the_asgi_wrapper_cuts_a_big_reorder_body_with_the_order_refusal():
     app = BodyLimitASGI(recorder2.app, reject, reject_order)
     sent = async_to_sync(drive)(app, scope(method="PATCH", length=100), body_chunks([100]), [])
     assert recorder2.called and sent[0]["status"] == 204
+
+
+# --- the profile image routes (Story 2.11) -----------------------------------------------------
+
+PROFILE_IMAGES = ["/api/v1/me/profile/image", "/api/v1/me/agency-profile/image"]
+
+
+@pytest.mark.parametrize("path", PROFILE_IMAGES)
+def test_a_profile_image_put_has_the_upload_cap(path):
+    assert run(str(CAP), path, "PUT") == {"flag": False, "length": str(CAP)}
+    assert run(str(CAP + 1), path, "PUT") == {"flag": True, "length": "0"}
+    assert run(None, path, "PUT")["flag"] is True
+    assert run("abc", path, "PUT")["flag"] is True
+
+
+@pytest.mark.parametrize("path", PROFILE_IMAGES)
+def test_other_methods_and_the_file_routes_of_the_profile_are_left_alone(path):
+    big = str(CAP * 10)
+    for method in ("GET", "DELETE", "POST", "PATCH"):
+        assert run(big, path, method) == {"flag": False, "length": big}
+    for other in (path + "/file", "/api/v1/me/profile", "/api/v1/me/profile/image/x"):
+        assert run(big, other, "PUT") == {"flag": False, "length": big}
+
+
+@pytest.mark.parametrize("path", PROFILE_IMAGES)
+def test_the_asgi_wrapper_cuts_a_big_profile_image_put_before_django_reads_it(path):
+    recorder, reads = Recorder(), []
+    app = BodyLimitASGI(recorder.app, reject)
+    sent = async_to_sync(drive)(app, scope(path, "PUT", length=CAP + 1), body_chunks([10]), reads)
+    assert sent[0]["status"] == 400 and not recorder.called and reads == []
+    chunked = body_chunks([CAP // 2, CAP // 2, 10, 10])
+    sent = async_to_sync(drive)(app, scope(path, "PUT"), chunked, reads := [])
+    assert sent[0]["status"] == 400 and not recorder.called and len(reads) == 3
+    ok = Recorder()
+    sent = async_to_sync(drive)(
+        BodyLimitASGI(ok.app, reject), scope(path, "PUT", length=30), body_chunks([30]), []
+    )
+    assert ok.called and sent[0]["status"] == 204
+
+
+@pytest.mark.parametrize("path", PROFILE_IMAGES)
+def test_the_real_application_refuses_an_oversize_profile_put_with_the_envelope(path):
+    import config.asgi as asgi
+
+    sent = async_to_sync(drive)(
+        asgi.application, scope(path, "PUT", length=CAP + 1), body_chunks([10]), reads := []
+    )
+    assert reads == []  # refused before a byte was read
+    headers = dict(sent[0]["headers"])
+    assert sent[0]["status"] == 400 and headers[b"content-type"] == b"application/json"
+    body = json.loads(sent[1]["body"])["error"]
+    assert (body["code"], list(body["fields"])) == ("validation_error", ["file"])
+    sent = async_to_sync(drive)(
+        asgi.application, scope(path, "PUT"), body_chunks([CAP // 2, CAP // 2, 10]), []
+    )
+    assert sent[0]["status"] == 400  # chunked and over the cap: counted as it arrives
+
+
+def test_a_chunked_put_without_a_length_is_flagged_by_the_middleware():
+    for path in PROFILE_IMAGES:
+        assert run(None, path, "PUT") == {"flag": True, "length": "0"}
