@@ -1,7 +1,7 @@
 # Listings
 
 `apps/listings` owns the canonical Listing. Story 2.1 adds starting a Draft, Story 2.2 conflict-safe editing of title,
-description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details, Story 2.5 the Plot and Commercial details; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
+description and price, Story 2.3 the area and its unit, Story 2.4 the House and Apartment details, Story 2.5 the Plot and Commercial details, Story 2.9 the image upload; later stories add more fields, media and publication (`_bmad-output/implementation-artifacts/epic-2-context.md`).
 
 ## Model (`listings.models`, written only by `listings.services`)
 
@@ -54,6 +54,10 @@ description and price, Story 2.3 the area and its unit, Story 2.4 the House and 
 - `ListingRevision`: `listing`, `revision`, `origin` (`manual` or `ai`), `actor_account_id`, `changes` (the registry
   fields set at that revision and their new values: strings, JSON integers and booleans, or null), unique (`listing`, `revision`). Edits are
   recorded by these rows; there is no separate audit action for them.
+
+- `ListingImage` (Story 2.9, migration `0007_images`): `id` (UUID), `listing`, `asset_id` (a plain UUID of the
+  `kernel.MediaAsset`, unique: an asset belongs to at most one image), `position` (1-based, unique per Listing),
+  `created_at`. The file itself is the kernel's; see `docs/media.md`. Written only by `listings.services`.
 
 Models never leave the app: callers get frozen `ListingView` values. Other apps import only `listings.services`,
 `listings.selectors` and `listings.lifecycle`.
@@ -359,3 +363,35 @@ asserts the shape and the OpenAPI schema.
    accept it through the revision-checked edit service `apply_updates` (Story 2.2).
 3. Serializers take enums from `catalog.registry`; never hand-copy values. New audit metadata is registered in
    `listings.apps` with enumerations only.
+
+
+## Images (Story 2.9)
+
+`services.upload_image(actor, listing_id, data) -> ImageView` and `services.remove_image(actor, listing_id, image_id)`.
+`ImageView` is `(id, position, content_type, width, height, bytes)`: never a URL or the storage key. `ListingView.media`
+stays empty until Story 2.10 (serving, reordering and the cover; until then the cover is the lowest `position`).
+
+Refusals of `upload_image`, in order: Visitor `unauthenticated`; a Listing the actor's account does not own (another
+owner, an administrator, the system, an unknown or malformed id) `not_found`, identical for all of them; no
+`edit_drafts` capability `forbidden` (evaluated after the not-found rule); a status outside
+`lifecycle.EDITABLE_STATUSES` `forbidden`; 10 images already `too_many_images` (409). Then the upload is processed
+OUTSIDE any lock (`kernel.images`: `ImageRejected` with a reason, or `Busy`), and in ONE transaction that locks the
+account (the state is decided again from the locked snapshot), the Listing row and the storage usage row: the image
+count is checked again (`too_many_images`), the cap is enforced (`storage_cap_exceeded`), the file and asset row are
+written (the asset's `attached_at` is set in the same transaction), the `ListingImage` is inserted at the next position
+(highest plus one; removals leave gaps), and the Listing `revision` rises by one with a `ListingRevision` whose
+`changes` is `{"images": <count>}` (no file data). If the transaction fails after the file was written, the file is
+removed. Uploads carry no `base_revision` (no stale detection), but because the revision moves, a concurrent editor
+holding the old revision gets `409 stale_revision` and reloads.
+
+`remove_image` has the same refusals; an unknown image, another Listing's image and a repeat are `not_found`. In one
+transaction the `ListingImage` and its asset are deleted (the storage usage is given back once), the revision rises by
+one and the file is deleted after commit. Removing a Listing's images when the Listing is deleted is Story 2.17.
+
+Endpoints: `POST /api/v1/listings/{id}/images` (signed in, CSRF, `no-store`, `multipart/form-data` with exactly one
+`file` part, a 6 MB request cap, `201` with the `ImageView`; the `image_upload` rate limit applies) and
+`DELETE /api/v1/listings/{id}/images/{image_id}` (`204`). Errors: `400 validation_error` with `fields.file` one of
+`too_large`, `unsupported_type`, `too_large_dimensions`, `too_small`, `invalid_image`, `required`, `invalid` (or
+`non_field_errors: unknown_field` for any other part); `401`; `403` (capability or status; CSRF); `404`; `409`
+`too_many_images` or `storage_cap_exceeded`; `415` for a non-multipart body; `429` with `Retry-After`; `503 busy` with
+`Retry-After`. Details and the pipeline limits are in `docs/media.md`.

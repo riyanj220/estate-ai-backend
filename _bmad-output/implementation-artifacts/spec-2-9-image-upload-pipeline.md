@@ -2,7 +2,7 @@
 title: 'Story 2.9: Image upload pipeline and storage (backend)'
 type: 'feature'
 created: '2026-11-24'
-status: 'in-progress'
+status: 'review'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -89,6 +89,8 @@ Decisions beyond the story text: assets are generic (`kernel.MediaAsset`) so Sto
 ## Spec Change Log
 
 ## Review Triage Log
+
+Three reviewers (blind, edge-case, verification-gap). Patched: the body limit now applies only to the image routes (the general JSON limit is back at the Django default) and is also enforced at the ASGI layer before Daphne buffers the body; 16-bit greyscale is scaled not clamped; phone JPEGs (MPO) are accepted; colour-keyed PNG transparency kept; odd decoder exceptions become `invalid_image`; fewer bitmap copies and at most two concurrent decodes; ownership and capability are checked before the body is parsed; a missing asset row no longer blocks removing an image; 409/503 declared in OpenAPI; storage directories 0700 and fsynced; metadata-strip tests for PNG, WebP and JPEG (proven to fail if the re-encode step is removed); log canaries on failure paths. Accepted and documented: the sync upload view blocks up to 20 s on the executor (known limitation; move to an async view later), retention walks the whole store, timed-out jobs keep their slot, two cap policy rows with the account type supplied by the caller, 400 `validation_error` rather than 413 for oversize bodies. Follow-up owed by Story 2.17: delete a Listing's images with `media.delete_asset` in the same transaction. Verification: lint-imports 14 kept, ruff, pytest 3968 passed, no migration drift, openapi regenerated.
 
 ## Design Notes
 

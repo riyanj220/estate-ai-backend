@@ -124,6 +124,15 @@ Events dispatch after commit, one callback per subscriber registered in `AppConf
 
 A bounded executor keeps capacity free for chat and sign-in (`RUNTIME_EXECUTOR_MAX_WORKERS`, default 4, and `RUNTIME_EXECUTOR_RESERVED_WORKERS`, default 1), feature flags are declared in code, the AI request log holds no content, and `run_retention [--dry-run]` runs every app-registered purge job. See `docs/runtime-and-retention.md` for usage, how an app registers a flag or a retention job, and the deployment schedule note.
 
+## Media and image uploads
+
+Story 2.9 adds the image pipeline: `kernel.storage` (a storage port with a filesystem adapter rooted at `MEDIA_ROOT`,
+an absolute path that defaults to the git-ignored `./media`; tests use a temporary directory), `kernel.images`
+(Pillow, imported only in `kernel`; validates, strips all metadata and re-encodes on the runtime executor) and
+`kernel.media` (per-account storage cap, 200 MB Individual and 1 GB Agency, orphan retention). Draft owners upload up to
+10 images per Listing at `POST /api/v1/listings/{id}/images`. Pillow's wheels bundle their image libraries, so no system
+packages are needed. No file is served yet (Story 2.10). See `docs/media.md`.
+
 ## Audit trail
 
 Security-sensitive actions are recorded in an append-only table through `kernel.audit`, in the caller's transaction, with allow-listed metadata; administrator reads of private data call `record_private_read` first with a per-read reason. See `docs/audit.md`. Stories 1.12 and 1.18 write the account-state and password-change records through this writer.

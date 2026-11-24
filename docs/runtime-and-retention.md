@@ -77,6 +77,15 @@ Jobs run in registration order, each in its own transaction. A failing job is lo
 the rest still run, and the command exits non-zero at the end. The kernel registers expired idempotency records
 (older than 7 days), ended rate-limit counters, and AI request log rows older than 90 days (PRD section 8.3).
 
+Story 2.9 adds `kernel.media_orphans` (`kernel.media.purge_orphans`): unattached media assets and stray stored files older
+than 24 hours, at most 500 of each per run, files deleted after commit; see `docs/media.md`. The image pipeline is the
+first user of `submit_heavy` for real work (`kernel.images.process_image`, 20 second timeout, `Busy` when the heavy
+slots are full). Caveats: the upload view is synchronous and blocks on the future for up to 20 s, occupying the ASGI
+thread-sensitive thread (a known limitation, to move to an async view later); a timed-out job keeps its slot until it
+ends; image decodes are further limited to two at a time; the orphan job walks the whole store each run (fine at MVP
+scale); and a reverse proxy should cap request bodies (the upload route's 6 MiB cap is enforced by the application too,
+see `docs/media.md`).
+
 A job must return an int row count; anything else counts as a failed job. Runs must not overlap: schedule a single
 instance (there is no advisory lock yet). Purges delete in one statement for now, with no batching.
 
