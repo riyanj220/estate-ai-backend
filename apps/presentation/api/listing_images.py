@@ -112,7 +112,7 @@ class ListingImagesView(NoStoreMixin, APIView):
 
     @extend_schema(
         operation_id="upload_listing_image",
-        summary="Add an image to one of the signed-in account's own Drafts",
+        summary="Add an image to one of the signed-in account's own editable Listings",
         description=(
             "Needs `X-CSRFToken` and a `multipart/form-data` body with exactly one part, `file` "
             "(any other part, a non-file `file` or more than one file is `validation_error`). The "
@@ -126,7 +126,8 @@ class ListingImagesView(NoStoreMixin, APIView):
             "`unsupported_type`, `too_large_dimensions` (above 10,000 px on a side or 40 "
             "megapixels), `too_small` (below 200 x 200), `invalid_image`, `required` or "
             "`invalid`. Another account's, an unknown or a malformed Listing is `404 not_found`; "
-            "an account that may not edit, or a Listing that is not an editable Draft, is `403 "
+            "an account that may not edit, or a Listing that is not editable (sold, rented, "
+            "removed or restricted), is `403 "
             "forbidden`. `409` carries `too_many_images` (a Listing holds at most 10) or "
             "`storage_cap_exceeded` (200 MB for an Individual, 1 GB for an Agency, counted on "
             "the stored size). `429` is the upload limit (30 per hour per account) with "
@@ -168,7 +169,8 @@ class ListingImagesView(NoStoreMixin, APIView):
             "`current` and nothing written (a replay is also a 409: reload). A request that "
             "changes nothing is `200` and keeps the revision; otherwise the revision rises by "
             "one. Another account's, an unknown or a malformed Listing is `404 not_found`; an "
-            "account that may not edit, or a Listing that is not an editable Draft, is `403 "
+            "account that may not edit, or a Listing that is not editable (sold, rented, removed "
+            "or restricted), is `403 "
             "forbidden`. The body may be at most 64 KiB (`400` with `fields.order` `invalid`) and "
             "the `image_order` limit (120 per hour per account) applies: `429` with `Retry-After`. "
             "Files are never touched. Never cached."
@@ -213,13 +215,19 @@ class ListingImageDetailView(NoStoreMixin, APIView):
             "the image with the lowest remaining position the cover) and raises the Listing "
             "`revision` by one. `204` has no body. "
             "Another account's, an unknown or an already removed image or Listing is `404 "
-            "not_found`; an account that may not edit, or a Listing that is not an editable "
-            "Draft, is `403 forbidden`. Never cached."
+            "not_found`; an account that may not edit, or a Listing that is not editable "
+            "(sold, rented, removed or restricted), is `403 forbidden`. A `published` Listing "
+            "can never lose its last image: `400 validation_error` with `images_required` under "
+            "`fields.images`, nothing changed. Images of a Draft, Published or Archived "
+            "Listing may be removed. Never cached."
         ),
         responses={204: OpenApiResponse(description="Removed")},
     )
     def delete(self, request, listing_id, image_id):
-        services.remove_image(get_actor(request), listing_id, image_id)
+        try:
+            services.remove_image(get_actor(request), listing_id, image_id)
+        except services.FieldsInvalid as exc:
+            raise field_errors(exc.fields) from None
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

@@ -18,7 +18,7 @@ from decimal import Decimal
 from types import MappingProxyType
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.db.models.functions import Greatest
 
 from apps.catalog import registry
@@ -86,6 +86,9 @@ class ListingView:
         default_factory=lambda: MappingProxyType({})
     )
     media: tuple = ()
+    # Owner resource only (Story 2.17): moderation's flag and its short plain-text reason.
+    restricted: bool = False
+    restriction_reason: str | None = None
 
     def __repr__(self) -> str:
         shown = {
@@ -314,6 +317,8 @@ def view_of(
         fields=MappingProxyType(fields),
         provenance=MappingProxyType(provenance),
         media=images if images is not None else media_by_listing([row.id])[row.id],
+        restricted=row.restricted,
+        restriction_reason=row.restriction_reason,
     )
 
 
@@ -457,6 +462,23 @@ def list_owned(
     )
 
 
+def owner_counts(actor: Actor) -> dict[str, int]:
+    """How many Listings the caller's own account has in each status: every status is present
+    (0 when none), in the order of `ListingStatus`. Same guard as `list_owned`: a Visitor is
+    `unauthenticated`; an account without `view_drafts` (an administrator, a Deactivated
+    account) is `forbidden`. A Suspended owner may read it."""
+    require_signed_in(actor)
+    if actor.kind is not ActorKind.USER or not can(actor, Capability.VIEW_DRAFTS):
+        raise DomainError("forbidden")
+    stored = dict(
+        PropertyListing.objects.filter(owner_account_id=actor.account_id)
+        .values_list("status")
+        .annotate(total=Count("id"))
+        .order_by()
+    )
+    return {s.value: stored.get(s.value, 0) for s in ListingStatus}
+
+
 def public_listings():
     """THE queryset of publicly visible Listings (AD-5): Published, not restricted, owner an
     Active eligible owner. Lazy and internal to `listings`: it never crosses the app boundary
@@ -560,10 +582,10 @@ def public_listing(viewer: Actor, listing_id) -> PublicListingView:
 def preview_of(actor: Actor, listing_id) -> PublicListingView:
     """What the public will see of the owner's own Listing (Story 2.13), built by the SAME
     projection function as the public read (`public_view_of`: no second field list), minus the
-    `is_public` gate, because the viewer is the owner. Allowed for the owner's own Draft and
-    Published Listing (`policy.is_owner`: Active, Email-unverified and Suspended owners; not a
-    Deactivated one). Everything else (another account, an administrator, a Visitor, an unknown or
-    malformed id, a status the owner may not see) is `not_found`, so existence is never confirmed.
+    `is_public` gate, because the viewer is the owner. Allowed for the owner's own Listing in
+    every status (Story 2.17; `policy.is_owner`: Active, Email-unverified and Suspended owners;
+    not a Deactivated one). Everything else (another account, an administrator, a Visitor, an
+    unknown or malformed id) is `not_found`, so existence is never confirmed.
     The private address is not read (`public_view_of` never joins it)."""
     key = canonical_uuid(listing_id)
     if key is None:

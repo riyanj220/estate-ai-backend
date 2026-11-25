@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 
 from apps.catalog import registry
 from apps.listings import publication, quota, selectors, services
+from apps.listings import status as lifecycle_status
 from apps.listings.fields import EDITABLE_FIELDS, WIRE_FIELDS
 from apps.listings.lifecycle import ListingStatus, Origin, Visibility
 from apps.presentation.api.actors import get_actor
@@ -193,6 +194,20 @@ class ListingSerializer(serializers.Serializer):
     )
     media = ImageSerializer(
         many=True, help_text="The images in `position` order; empty when there are none."
+    )
+    restricted = serializers.BooleanField(
+        help_text=(
+            "Set by moderation: a restricted Listing is never public and the owner cannot edit "
+            "it (it may still be archived). Owner resource only, never in a public shape."
+        )
+    )
+    restriction_reason = serializers.CharField(
+        allow_null=True,
+        max_length=200,
+        help_text=(
+            "A short plain-text reason for a restricted or removed Listing, shown to the owner "
+            "only; null otherwise."
+        ),
     )
 
 
@@ -392,6 +407,8 @@ def listing_data(view: selectors.ListingView) -> dict:
             "fields": dict(view.fields),
             "provenance": {name: dict(entry) for name, entry in view.provenance.items()},
             "media": [image_data(item) for item in view.media],
+            "restricted": view.restricted,
+            "restriction_reason": view.restriction_reason,
         }
     ).data
 
@@ -560,10 +577,18 @@ class ListingDetailView(NoStoreMixin, APIView):
             "`invalid_date`, "
             "`invalid_choice`, `not_applicable`, `invalid_measure`, `out_of_range`, "
             "`locality_not_in_city`, "
-            "`contains_contact_details`, `not_editable`; unknown ids are "
+            "`contains_contact_details`, `not_editable` (also an identity field of a `published` "
+            "Listing: `city`, `locality`, `area_value`, `area_unit` and `marla_basis` are locked "
+            "while it is published, editable as a Draft or Archived); unknown ids are "
             "`unknown_field` under `non_field_errors`) and never echoes a value. Another "
             "account's, an unknown or a malformed id is `404 not_found`; an account that may "
-            "not edit (Suspended, Deactivated) is `403 forbidden`. Never cached."
+            "not edit (Suspended, Deactivated) is `403 forbidden`, and so is a `sold`, `rented` or "
+            "`removed` Listing or a restricted one (view only). A `draft`, `published` and "
+            "`archived` Listing may be edited. An edit of a `published` Listing must leave it "
+            "complete (the same rules as publication): otherwise `400 validation_error` names "
+            "every missing or invalid item at once (clearing the title or a price, a locality "
+            "outside the city) and nothing is written; an edit of an `archived` one is judged "
+            "like a Draft edit. These edits use no publication and write no event. Never cached."
         ),
         request=ListingUpdateSerializer,
         responses={
@@ -600,7 +625,8 @@ class ListingPreviewView(NoStoreMixin, APIView):
         operation_id="preview_listing",
         summary="Preview what the public will see of one of the signed-in account's own Listings",
         description=(
-            "Owner only, for the account's own `draft` and `published` Listing. The body is the "
+            "Owner only, for the account's own Listing in any status (draft, published, archived, "
+            "sold, rented, removed). The body is the "
             "public projection (the same fields a visitor would get, built by the same function): "
             "never a private address, coordinates, a phone number, the revision, the provenance or "
             "the status. `media` lists the images in the public shape; their `url` is the media "
@@ -641,7 +667,8 @@ class MyListingsView(NoStoreMixin, APIView):
         description=(
             "Own Listings only, newest first, with cursor pagination (`next` link, `previous` is "
             "always null; 20 per page, `page_size` up to 50, an invalid `page_size` falls back to "
-            "the default). `status` filters by a known status. A bad `cursor` or `status` is "
+            "the default). `status` filters by one of the six statuses. A bad `cursor` or `status` "
+            "is "
             "`validation_error` (`fields.cursor`, `fields.status`). Never cached."
         ),
         parameters=[
@@ -671,6 +698,106 @@ class MyListingsView(NoStoreMixin, APIView):
                 "results": [listing_data(v) for v in page.items],
             }
         )
+
+
+class ListingCountsSerializer(serializers.Serializer):
+    draft = serializers.IntegerField(min_value=0)
+    published = serializers.IntegerField(min_value=0)
+    archived = serializers.IntegerField(min_value=0)
+    sold = serializers.IntegerField(min_value=0)
+    rented = serializers.IntegerField(min_value=0)
+    removed = serializers.IntegerField(min_value=0)
+
+
+class MyListingCountsView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="get_my_listing_counts",
+        summary="How many Listings the signed-in account has in each status",
+        description=(
+            "The caller's own Listings only, one count per status (every status is present, 0 "
+            "when none): `draft`, `published`, `archived`, `sold`, `rented`, `removed`. Same "
+            "rules as the list: a Visitor gets `401`, an administrator or a Deactivated account "
+            "`403 forbidden`, a Suspended owner may read it. Never cached."
+        ),
+        responses={
+            200: OpenApiResponse(ListingCountsSerializer, description="The counts"),
+            401: OpenApiResponse(ErrorBodySerializer, description="`unauthenticated`"),
+            403: OpenApiResponse(ErrorBodySerializer, description="`forbidden`"),
+        },
+    )
+    def get(self, request):
+        return Response(ListingCountsSerializer(selectors.owner_counts(get_actor(request))).data)
+
+
+class StatusBodySerializer(serializers.Serializer):
+    base_revision = serializers.IntegerField(
+        min_value=1, help_text="The `revision` of the Listing the client last read."
+    )
+    status = serializers.ChoiceField(
+        choices=_choices(lifecycle_status.TARGETS),
+        help_text="The status to move to: `archived`, `sold` or `rented`.",
+    )
+
+    def to_internal_value(self, data):
+        # Only the two keys are accepted; types and values are judged by the service.
+        values = exact_fields(data, ("base_revision", "status"))
+        return {name: values.get(name) for name in ("base_revision", "status")}
+
+
+class ListingStatusView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="change_listing_status",
+        summary="Archive, mark sold or mark rented one of the signed-in account's own Listings",
+        description=(
+            "Needs `X-CSRFToken`. Body: `{base_revision, status}` and nothing else; `status` is "
+            "`archived`, `sold` or `rented` (anything else is `400 validation_error`, "
+            "`fields.status`). Allowed moves: `published` to `archived`, `sold` or `rented`; "
+            "`sold` and `rented` to `archived`. Every other move (from a `draft`, an `archived` "
+            "or the same status) is `409 conflict` and nothing is written; a Listing never "
+            "returns to `published` here. `sold` is only for a Listing with purpose `sale` and "
+            "`rented` only for purpose `rent` (`409 conflict` otherwise). No publication is used "
+            "and no key is needed. "
+            "`200` is the updated Listing; it is no longer public. A Suspended owner may only "
+            "archive (`403 forbidden` for `sold` and `rented`); a restricted Listing may only be "
+            "archived by its owner (`403 forbidden` otherwise) and a `removed` one cannot be "
+            "changed (`403 forbidden`). A `base_revision` that is not the current `revision` is "
+            "`409 stale_revision` with the Listing under `current`. Another account's, an "
+            "administrator's, an unknown and a malformed id are `404 not_found`; a Visitor gets "
+            "`401`. Never cached."
+        ),
+        request=StatusBodySerializer,
+        responses={
+            200: OpenApiResponse(ListingSerializer, description="The updated Listing"),
+            400: OpenApiResponse(ErrorBodySerializer, description="`validation_error`"),
+            401: OpenApiResponse(ErrorBodySerializer, description="`unauthenticated`"),
+            403: OpenApiResponse(
+                ErrorBodySerializer,
+                description="`forbidden`: Suspended, restricted, removed, or a missing CSRF token",
+            ),
+            404: OpenApiResponse(ErrorBodySerializer, description="`not_found`"),
+            409: OpenApiResponse(
+                ListingConflictSerializer,
+                description="`stale_revision` (with `current`) or `conflict`",
+            ),
+        },
+    )
+    def post(self, request, listing_id):
+        serializer = StatusBodySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        body = serializer.validated_data
+        try:
+            view = lifecycle_status.change_status(
+                get_actor(request), listing_id, body["base_revision"], body["status"]
+            )
+        except services.FieldsInvalid as exc:
+            raise field_errors(exc.fields) from None
+        except services.StaleRevision as exc:
+            raise ConflictWithCurrent(listing_data(exc.current)) from None
+        return Response(listing_data(view))
 
 
 class PublicationAllowanceSerializer(serializers.Serializer):

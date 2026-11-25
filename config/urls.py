@@ -13,6 +13,8 @@ from apps.presentation.api.listings import (
     ListingDetailView,
     ListingPreviewView,
     ListingPublishView,
+    ListingStatusView,
+    MyListingCountsView,
     MyListingsView,
     PublicationAllowanceView,
 )
@@ -150,6 +152,11 @@ urlpatterns = [
         name="listing-publish",
     ),
     path(
+        "api/v1/listings/<str:listing_id>/status",
+        ListingStatusView.as_view(),
+        name="listing-status",
+    ),
+    path(
         "api/v1/listings/<str:listing_id>/images",
         ListingImagesView.as_view(),
         name="listing-images",
@@ -165,6 +172,7 @@ urlpatterns = [
         name="listing-image-file",
     ),
     path("api/v1/me/listings", MyListingsView.as_view(), name="me-listings"),
+    path("api/v1/me/listings/counts", MyListingCountsView.as_view(), name="me-listings-counts"),
     path(
         "api/v1/me/publication-allowance",
         PublicationAllowanceView.as_view(),

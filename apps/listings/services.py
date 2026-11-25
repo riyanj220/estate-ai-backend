@@ -22,6 +22,7 @@ from apps.kernel.errors import DomainError
 from apps.kernel.events import emit
 from apps.listings import lifecycle, validation
 from apps.listings.area import normalised_sqft
+from apps.listings.completeness import problems_of
 from apps.listings.events import ListingModelInputsChanged
 from apps.listings.fields import (
     ADDRESS,
@@ -290,7 +291,7 @@ def apply_updates(
         row = _locked_owned(key, actor)
         if row.revision != base_revision:
             raise StaleRevision(view_of(row, with_private=True))
-        if row.status not in lifecycle.EDITABLE_STATUSES:
+        if not lifecycle.owner_may_edit(row):
             raise DomainError("forbidden")
         terms = terms_of(row)
         stored_terms = terms is not None
@@ -347,6 +348,18 @@ def apply_updates(
             _resolve_reference,
             catalog.amenity_codes() if AMENITIES_FIELD in updates else None,
         )
+        if lifecycle.is_published(row):
+            # The identity fields (registry flag `quota_identity`) are locked while Published: a
+            # value that differs from the stored one is refused, all failures reported at once.
+            for name in updates:
+                definition = registry.field(name)
+                if (
+                    definition is not None
+                    and definition.quota_identity
+                    and name not in errors  # a more specific code (invalid, ...) stays
+                    and not (name in values and values[name] == current[name])
+                ):
+                    errors[name] = "not_editable"
         if errors:
             raise FieldsInvalid(errors)
         provenance = clean_provenance(row.provenance)
@@ -458,6 +471,14 @@ def apply_updates(
             amenities=stored_amenities,
             with_private=True,
         )
+        if lifecycle.is_published(row):
+            # A Published Listing stays complete: the same rules as publication, on the result.
+            # Raising here rolls the whole edit back (nothing written, revision unchanged).
+            problems = problems_of(
+                row, view, live_image_count(row.id) > 0, touched=frozenset(changed)
+            )
+            if problems:
+                raise FieldsInvalid(problems)
         if any(registry.field(n).valuation_input for n in changed if changed[n] != current[n]):
             emit(ListingModelInputsChanged(listing_id=row.id))  # last: after-commit
     return view
@@ -499,7 +520,7 @@ def _lock_for_images(actor: Actor, key: uuid.UUID, check_status: bool = True):
     ):
         raise DomainError("forbidden")
     row = _locked_owned(key, actor)
-    if check_status and row.status not in lifecycle.EDITABLE_STATUSES:
+    if check_status and not lifecycle.owner_may_edit(row):
         raise DomainError("forbidden")
     return account, row
 
@@ -561,8 +582,8 @@ def upload_image(actor: Actor, listing_id, data: bytes) -> ImageView:
     file was written, the file is removed again. No `base_revision` is needed.
     """
     key = _owned_editable(actor, listing_id)
-    listing = PropertyListing.objects.filter(id=key).values("status").first()
-    if listing is None or listing["status"] not in lifecycle.EDITABLE_STATUSES:
+    listing = PropertyListing.objects.filter(id=key).first()
+    if listing is None or not lifecycle.owner_may_edit(listing):
         raise DomainError("forbidden")
     if live_image_count(key) >= MAX_IMAGES:  # ghosts (lost asset rows) are not counted
         raise DomainError("too_many_images")
@@ -608,7 +629,9 @@ def remove_image(actor: Actor, listing_id, image_id) -> None:
     `revision` rises by one. Same refusals as `upload_image`; an unknown image, another Listing's
     image and a repeat are `not_found`. The positions of the rest are renumbered 0..n-1, and
     removing the cover makes the image with the lowest remaining position the cover (none left:
-    no cover). Ghost links (no asset row) are removed in the same transaction."""
+    no cover). Ghost links (no asset row) are removed in the same transaction. A Published
+    Listing can never lose its last image: `FieldsInvalid` `images: images_required`, nothing
+    changed."""
     key = _owned_editable(actor, listing_id)
     image_key = canonical_uuid(image_id)
     if image_key is None:
@@ -618,6 +641,16 @@ def remove_image(actor: Actor, listing_id, image_id) -> None:
         image = ListingImage.objects.select_for_update().filter(id=image_key, listing=row).first()
         if image is None:
             raise DomainError("not_found")
+        if lifecycle.is_published(row):
+            # Decided BEFORE anything is deleted (the Listing lock serialises racing removals): a
+            # Published Listing keeps at least one live image.
+            others = list(
+                ListingImage.objects.filter(listing=row)
+                .exclude(id=image.id)
+                .values_list("asset_id", flat=True)
+            )
+            if not media.assets_by_id(others):
+                raise FieldsInvalid({"images": "images_required"})
         asset_id = image.asset_id
         image.delete()
         media.delete_asset(actor, asset_id, missing_ok=True)  # a lost asset row is no obstacle
@@ -669,10 +702,13 @@ def set_image_order(actor: Actor, listing_id, base_revision, order, cover_id=Non
         _, row = _lock_for_images(actor, key, check_status=False)
         if row.revision != base_revision:
             raise StaleRevision(view_of(row, with_private=True))
-        if row.status not in lifecycle.EDITABLE_STATUSES:
+        if not lifecycle.owner_may_edit(row):
             raise DomainError("forbidden")
         repaired = _normalise_images(row)  # ghosts out, contiguous, one cover (counts as a change)
         links = sorted(ListingImage.objects.select_for_update().filter(listing=row), key=_position)
+        if not links and lifecycle.is_published(row):
+            # ghost links were just repaired away: raising rolls that back too
+            raise FieldsInvalid({"images": "images_required"})
         current = [link.id for link in links]
         cover = canonical_uuid(cover_id)
         if len(set(wanted)) != len(wanted) or set(wanted) != set(current):

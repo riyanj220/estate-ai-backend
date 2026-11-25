@@ -9,6 +9,7 @@ class ListingsConfig(AppConfig):
     def ready(self):
         from apps.catalog import registry
         from apps.kernel import audit, notifications, retention
+        from apps.listings import lifecycle
         from apps.listings import retention as draft_retention
 
         # Metadata holds the three enumerated registry values only: no free text, no address.
@@ -22,6 +23,11 @@ class ListingsConfig(AppConfig):
         )
         # The id and the reason only; never a title, address or other content.
         audit.register_action("listing.published", {})  # the Listing id is the audit target
+        # Status moves out of Published: the two statuses only (no content, no reason text).
+        audit.register_action(
+            "listing.status_changed",
+            {"from": lifecycle.MOVE_SOURCES, "to": lifecycle.MOVE_TARGETS},
+        )
         audit.register_action("listing.draft_deleted", {"reason": ["owner", "retention"]})
         audit.register_action("listing.sample_removed", {})  # sample-data reset: the id only
         # The Listing id and the days left; the frontend renders a fixed sentence from the kind.
