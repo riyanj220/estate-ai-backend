@@ -50,6 +50,7 @@ whose permission is not explicit.
 | `/api/v1/me/profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.ProfileDetailView` |
 | `/api/v1/me/profile/image` | DELETE, PUT | signed_in | `apps.presentation.api.profile_images.ProfileImageView` |
 | `/api/v1/me/profile/image/file` | GET, HEAD | public | `apps.presentation.api.profile_images.ProfileImageFileView` |
+| `/api/v1/me/publication-allowance` | GET | signed_in | `apps.presentation.api.listings.PublicationAllowanceView` |
 | `/api/v1/notifications` | GET | signed_in | `apps.presentation.api.notifications.NotificationListView` |
 | `/api/v1/notifications/<str:notification_id>/read` | POST | signed_in | `apps.presentation.api.notifications.MarkReadView` |
 | `/api/v1/notifications/read-all` | POST | signed_in | `apps.presentation.api.notifications.MarkAllReadView` |

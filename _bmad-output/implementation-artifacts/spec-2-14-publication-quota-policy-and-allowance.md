@@ -57,6 +57,26 @@ context:
 
 ## Review Triage Log
 
+### Backend (review batch 1)
+
+Decided in the backend half: the exclusion constraint is used (no fallback); `btree_gist` is created by the migration
+and by `create_roles.sh`; the events table is INSERT/SELECT-only for the runtime role; `listings.quota` holds the
+selectors; datetimes are serialised in Karachi time (`isoformat()`).
+
+Patched:
+1. Grant test: runtime role may INSERT and SELECT `listings_publicationevent`, not UPDATE, DELETE or TRUNCATE; `btree_gist` presence test beside the `vector` one.
+2. Deactivated is `401` over HTTP (no session), `403` only for administrators and direct service calls; docs, OpenAPI description and responses (401, 403) and the docstring now say so.
+3. The body is built through `PublicationAllowanceSerializer` (offset-preserving datetime field); a test compares the keys and types with the published schema component.
+4. `quota_limit_at` orders by `effective_from`; the boundary test asserts the newer row wins exactly at `effective_to` of the old one.
+5. Migration tests: forward, back and forward again via `MigrationExecutor`, dropping `btree_gist` first when the migrator owns it; the seed runs twice on the historical apps. The extension is never dropped on the way back (`KeepBtreeGist`), because it is shared infrastructure and may be owned by the superuser.
+6. The source-grep guard is an AST check of every non-migration module under `apps/` (with a self-test of the detector); the method test asserts exact `405 method_not_allowed` for POST (with CSRF), PUT, PATCH and DELETE.
+7. `quota_limit_at`, `month_bounds` and `allowance_for` reject naive datetimes; an HTTP test shows a missing policy as a generic `500` envelope; the "account vanished" branch is kept and reached by a test.
+8. Docs: Story 2.15 must call the allowance under `identity.lock_account`; the exclusion constraint is not deferrable (2.20 closes the old row first); `tzdata` is a dependency on every platform (`pyproject.toml`, `uv.lock`).
+
+Accepted deferrals:
+- Policy table grants (who may write `ListingQuotaPolicy` at runtime) are left for Story 2.20.
+- The allowance is two queries (limit, then count) with no lock; a policy change between them is harmless, and Story 2.15 takes the account lock anyway.
+
 ## Verification
 
 **Backend (narrow while developing, full in CI):** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, then `scripts/test-changed.sh` (changed dirs plus guards) and, before the merge, one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q`.

@@ -428,6 +428,7 @@ check is still refused.
 | `GET /api/v1/listings/{id}/preview` | owner only (own `draft` or `published`), `404` otherwise, `401` Visitor; the public projection plus `estimate: null`; no-store; counts as an open (below) |
 | `DELETE /api/v1/listings/{id}` | owner only; `204`; a non-draft is `409 conflict`; `404` for non-owners, unknown ids and repeats; `403` Suspended; CSRF; no-store (below) |
 | `GET /api/v1/me/listings` | own listings, `status` filter, `page_size`, `cursor`; `{next, previous, results}` (`previous` is always null); bad cursor or status is `validation_error`; no-store |
+| `GET /api/v1/me/publication-allowance` | owner allowance `{limit, used, remaining, period_start, resets_at, timezone}` (below); `401` Visitor and Deactivated (no session), `403` administrator; no-store |
 | `GET /api/v1/registry` | public Field registry (`docs/registry.md`) |
 
 ## The 409 body
@@ -602,3 +603,38 @@ Draft is `max(updated_at, last_opened_at, created_at)`.
 - Indexes: partial `listings_draft_idle_idx` (`updated_at`, drafts) and `listings_draft_expiry_idx` (`delete_after`, drafts
   with a notice); the constraint `listings_expiry_notice_paired` keeps the two notice columns both set or both null.
 
+## Publication quota and allowance (Story 2.14, AD-7)
+
+`listings.models.ListingQuotaPolicy` holds the monthly limit per account type (`individual`, `agency`; plain strings, the
+identity enum is never imported), effective-dated: `effective_from` inclusive, `effective_to` exclusive or NULL. CHECKs
+cover the type, a non-negative limit and `effective_to > effective_from`; a PostgreSQL exclusion constraint
+(`listings_quota_no_overlap`, `btree_gist`) makes overlapping ranges of one type impossible. Migration `0013` creates the
+extension and seeds individual 2 and agency 10 from 2000-01-01 UTC (idempotent: a type that has any row is left alone).
+`btree_gist` is a trusted extension, so the migrator (database owner) can create it; `docker/postgres/create_roles.sh`
+also creates it in the database and `template1` (like `vector`), so test databases have it. Policies are written only by
+that migration and, later, Story 2.20's service.
+
+`listings.PublicationEvent` is the empty-for-now history Story 2.15 writes (kinds `initial`, `republish_counted`,
+`republish_free`, `restore`, `seed`; `counted` only for the first two, by CHECK; no foreign keys, so history outlives a
+Listing; idempotency key unique per account). Never updated or deleted by application code: the runtime role has
+INSERT and SELECT only (`RUNTIME_APPEND_ONLY_TABLES`). No service writes it yet (tests insert directly).
+
+`listings.quota`: `quota_limit_at(account_type, at)` resolves the limit at the time of an attempt (never stored on an
+event; `QuotaPolicyMissing` if no row covers `at`). `allowance_for(account_id, account_type, now)` returns a frozen
+`Allowance(limit, used, remaining, period_start, resets_at)`: the month is the calendar month of `now` in `Asia/Karachi`
+(fixed UTC+5), `used` counts the account's counted events in `[period_start, resets_at)`, `remaining = max(limit -
+used, 0)`. `owner_allowance(actor, now)` adds the owner check (Visitor `unauthenticated`; administrator, system actor and,
+for a direct service call, Deactivated `forbidden`; over HTTP a Deactivated account has no session, so the route answers
+`401` before the service runs; Suspended and Email-unverified owners may read). The view passes the clock.
+Response datetimes carry the `+05:00` offset. Enforcement and consumption arrive with Story 2.15.
+
+Notes for the next stories:
+
+- Story 2.15 must read the allowance (and insert the event) inside one transaction that first calls
+  `identity.selectors.lock_account(account_id)`, so two simultaneous publishes cannot both see the last slot. The
+  allowance read itself is two queries (limit, then count) and takes no lock.
+- The exclusion constraint is not deferrable. Story 2.20 closes the current row (`effective_to`) and inserts the new
+  one in the same transaction, in that order.
+- All instants are timezone-aware; `quota_limit_at`, `month_bounds` and `allowance_for` raise `ValueError` for a naive
+  datetime. `ZoneInfo("Asia/Karachi")` needs tz data: `tzdata` is a runtime dependency on every platform.
+- `QuotaPolicyMissing` is an internal error: over HTTP it is the generic `500 server_error` envelope without detail.
