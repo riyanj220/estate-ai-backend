@@ -78,6 +78,12 @@ Implemented:
 8. `ListingPublished.republished: bool = False` (True on republish); the endpoint copy names all eight identity fields.
 No new error codes or field sentences.
 
+Frontend half, as built (checks: lint, typecheck, build, api:check, prod checks, the 23-test republish spec, the Listing-page specs (883 in one run) and `test:e2e:changed` 187 tests; the full suite runs in CI):
+
+- The Republish section reuses `PublishSection` in a `republish` mode (key per attempt, locks, error summary, Confirm button, quota/unverified/suspended messages). Outcome announcements: "Republished. This used 1 of your publications." (counted) / "Republished. This did not use any of your publications." (free) / neutral text when `publication_kind` is unreadable. Sold/Rented pages show "Archive this listing first to republish it."; restricted Archived pages show "This listing cannot be republished."
+- Review found and the implementer fixed: a 403 is only called "restricted" after re-reading the listing; a status change under a republish (sold, rented, removed, restricted) is explained, never silent; the mode is passed explicitly; extra tests (new key after edit, publish vs republish keys differ, restricted Sold page, 200 without kind); README lines corrected.
+- Accepted/deferred: the stub month rule is a fixed month and does not model "baseline later than now => counted" or seed/free events as non-baselines; a lost-outcome replay 404 is shown as not-found by design (backend decision).
+
 ## Verification
 
 **Backend (narrow while developing, full in CI):** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, then `scripts/test-changed.sh` and, before the merge, one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q`.
