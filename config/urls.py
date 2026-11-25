@@ -13,6 +13,7 @@ from apps.presentation.api.listings import (
     ListingDetailView,
     ListingPreviewView,
     ListingPublishView,
+    ListingRepublishView,
     ListingStatusView,
     MyListingCountsView,
     MyListingsView,
@@ -150,6 +151,11 @@ urlpatterns = [
         "api/v1/listings/<str:listing_id>/publish",
         ListingPublishView.as_view(),
         name="listing-publish",
+    ),
+    path(
+        "api/v1/listings/<str:listing_id>/republish",
+        ListingRepublishView.as_view(),
+        name="listing-republish",
     ),
     path(
         "api/v1/listings/<str:listing_id>/status",

@@ -165,6 +165,7 @@ SPECTACULAR_SETTINGS = {
         "FieldClassEnum": ["public", "private"],
         "LocalityKindEnum": ["area", "society"],
         "VisibilityEnum": "apps.listings.lifecycle.Visibility",
+        "ListingStatusEnum": ["draft", "published", "archived", "sold", "rented", "removed"],
         "FieldRequirementEnum": ["required_for_publication", "recommended", "optional"],
     },
     "POSTPROCESSING_HOOKS": [

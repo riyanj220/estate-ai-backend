@@ -375,6 +375,18 @@ class PublishConflictSerializer(serializers.Serializer):
     details = QuotaDetailsSerializer(required=False, help_text="With `quota_exhausted` only.")
 
 
+class RepublishedListingSerializer(ListingSerializer):
+    """The owner Listing plus how the republication was recorded (Story 2.18)."""
+
+    publication_kind = serializers.ChoiceField(
+        choices=["republish_counted", "republish_free"],
+        help_text=(
+            "`republish_counted` used one of the owner's monthly publications; `republish_free` "
+            "used none (same Karachi month as the last counted publication, identity unchanged)."
+        ),
+    )
+
+
 class ListingPageSerializer(serializers.Serializer):
     next = serializers.CharField(allow_null=True)
     previous = serializers.CharField(allow_null=True)
@@ -849,6 +861,75 @@ class PublicationAllowanceView(NoStoreMixin, APIView):
         )
 
 
+class ListingRepublishView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="republish_listing",
+        summary="Republish one of the signed-in account's own Archived Listings",
+        description=(
+            "Needs `X-CSRFToken` and an `Idempotency-Key` header (same rules as publishing). "
+            "Body: `{base_revision}` and nothing else. The Listing becomes `published` and public "
+            "again if its owner is Active, after the same complete validation as publishing "
+            "(every stored value is judged again, all problems at once). `publication_kind` says "
+            "how it was recorded: `republish_free` (no publication used) only when the Listing's "
+            "last counted publication is from the same Karachi calendar month as now and none of "
+            "the purpose, category, subtype, city, locality, area value, area unit or marla basis "
+            "has changed; otherwise "
+            "`republish_counted`, which uses one monthly publication. The same key with the same "
+            "body within 24 hours returns the Listing as it is now with the original "
+            "`publication_kind` and no second publication; the same key with another body is "
+            "`422 idempotency_key_reused`. Refusals, in order: another account's, an "
+            "administrator's, an unknown and a malformed id are `404 not_found`; a Visitor is "
+            "`401`; a `base_revision` that is not the current `revision` is `409 stale_revision` "
+            "with the Listing under `current`; a Listing that is not `archived` (a Sold or Rented "
+            "one must be archived first; a Removed one never returns) is `409 conflict`; a "
+            "restricted Listing is `403 forbidden`; an Email-unverified account is `403 "
+            "email_not_verified` and a Suspended one `403 publishing_unavailable`; every missing "
+            "or invalid item is `400 validation_error`, all at once, as for publishing; a counted "
+            "republication with no allowance left is `409 quota_exhausted` with the caller's own "
+            "`limit`, `used` and `resets_at` under `details`. A refused attempt consumes nothing. "
+            "Never cached."
+        ),
+        parameters=[
+            OpenApiParameter(
+                "Idempotency-Key", str, location=OpenApiParameter.HEADER, required=True
+            )
+        ],
+        request=PublishBodySerializer,
+        responses={
+            200: OpenApiResponse(
+                RepublishedListingSerializer, description="The republished Listing"
+            ),
+            409: OpenApiResponse(
+                PublishConflictSerializer,
+                description="`stale_revision`, `conflict` or `quota_exhausted`",
+            ),
+            422: OpenApiResponse(description="`idempotency_key_reused`"),
+        },
+    )
+    def post(self, request, listing_id):
+        serializer = PublishBodySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = publication.republish(
+                get_actor(request),
+                listing_id,
+                serializer.validated_data["base_revision"],
+                request.headers.get("Idempotency-Key"),
+            )
+        except services.FieldsInvalid as exc:
+            raise field_errors(exc.fields) from None
+        except services.StaleRevision as exc:
+            raise ConflictWithCurrent(listing_data(exc.current)) from None
+        except publication.QuotaExhausted as exc:
+            raise ConflictWithDetails(
+                exc.code,
+                {"limit": exc.limit, "used": exc.used, "resets_at": exc.resets_at.isoformat()},
+            ) from None
+        return Response({**listing_data(result.listing), "publication_kind": result.kind})
+
+
 class ListingPublishView(NoStoreMixin, APIView):
     permission_classes = [RequireSignedIn]
 
@@ -866,7 +947,8 @@ class ListingPublishView(NoStoreMixin, APIView):
             "Refusals, in order: another account's, an administrator's, an unknown and a "
             "malformed id are `404 not_found`; a Visitor is `401`; a `base_revision` that is not "
             "the current `revision` is `409 stale_revision` with the Listing under `current`; a "
-            "Listing that is not a `draft` is `409 conflict`; an Email-unverified account is "
+            "Listing that is not a `draft` is `409 conflict`; a restricted Listing is `403 "
+            "forbidden`; an Email-unverified account is "
             "`403 email_not_verified` and a Suspended one `403 publishing_unavailable`; every "
             "missing or invalid required item is `400 validation_error`, all at once, keyed by "
             "registry field id (`required` and the field's own codes), `images` "
