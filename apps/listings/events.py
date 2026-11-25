@@ -16,11 +16,13 @@ class ListingModelInputsChanged(DomainEvent):
 
 @dataclass(frozen=True)
 class ListingPublished(DomainEvent):
-    """A Draft became Published (after commit). Ids only; nothing subscribes yet."""
+    """A Draft became Published, or an Archived Listing was republished (`republished`), after
+    commit. Ids and that flag only; nothing subscribes yet."""
 
     name = "listing.published"
     listing_id: uuid.UUID
     account_id: uuid.UUID
+    republished: bool = False
 
 
 @dataclass(frozen=True)

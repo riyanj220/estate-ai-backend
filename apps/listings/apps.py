@@ -23,6 +23,10 @@ class ListingsConfig(AppConfig):
         )
         # The id and the reason only; never a title, address or other content.
         audit.register_action("listing.published", {})  # the Listing id is the audit target
+        # A republication: the Listing id is the target; the metadata is the event kind only.
+        audit.register_action(
+            "listing.republished", {"kind": ["republish_counted", "republish_free"]}
+        )
         # Status moves out of Published: the two statuses only (no content, no reason text).
         audit.register_action(
             "listing.status_changed",
