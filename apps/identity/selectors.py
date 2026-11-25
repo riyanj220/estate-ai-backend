@@ -9,10 +9,11 @@ from datetime import datetime
 
 from django.db import connection
 from django.db.models import Q
+from django.db.models.functions import Lower
 from django.utils import timezone
 
 from apps.catalog import selectors as catalog
-from apps.identity import sessions
+from apps.identity import sample_domain, sessions
 from apps.identity.models import (
     Account,
     AccountType,
@@ -408,3 +409,33 @@ def _served(asset_id, with_bytes: bool) -> ServedProfileImage:
         raise DomainError("not_found")
     asset, data = stored
     return ServedProfileImage(asset.content_type, data, len(data))
+
+
+SAMPLE_EMAIL_DOMAIN = sample_domain.SAMPLE_EMAIL_DOMAIN
+is_sample_email = sample_domain.is_sample_email
+
+
+def sample_accounts_q() -> Q:
+    """The SQL twin of `sample_domain.is_sample_email`: an Individual or Agency whose lowercase
+    address ends with the reserved suffix (the same rule, one constant). Annotate `lowered`."""
+    return Q(
+        account_type__in=(AccountType.INDIVIDUAL.value, AccountType.AGENCY.value),
+        lowered__endswith=sample_domain.SUFFIX,
+        email__regex=r"^[\x20-\x7e]+$",  # ASCII only, like `is_sample_email`
+    )
+
+
+def _sample_rows():
+    return Account.objects.annotate(lowered=Lower("email")).filter(sample_accounts_q())
+
+
+def sample_account_ids() -> dict[str, uuid.UUID]:
+    """The sample accounts (an Individual or Agency on the reserved domain), by lowercase email.
+    Internal to the sample-data tooling: callers must not print the addresses."""
+    rows = _sample_rows().values_list("email", "id")
+    return {email.lower(): account_id for email, account_id in rows}
+
+
+def is_sample_account(account_id) -> bool:
+    key = parse_id(account_id)
+    return key is not None and _sample_rows().filter(id=key).exists()

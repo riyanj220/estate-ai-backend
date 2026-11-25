@@ -61,6 +61,7 @@ from apps.identity.services.registration import (
     register_agency,
     register_individual,
 )
+from apps.identity.services.sample import create_sample_account, remove_sample_account
 from apps.identity.services.sessions_auth import (
     SignedIn,
     admin_sign_in,
@@ -90,6 +91,7 @@ __all__ = [
     "confirm_email_change",
     "confirm_password_reset",
     "create_account",
+    "create_sample_account",
     "deactivate",
     "disable_admin",
     "enable_admin",
@@ -110,6 +112,7 @@ __all__ = [
     "register_individual",
     "remove_admin",
     "remove_profile_image",
+    "remove_sample_account",
     "request_email_change",
     "request_password_reset",
     "request_verification_link",

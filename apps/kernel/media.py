@@ -225,6 +225,24 @@ def purge_owned_asset(actor: Actor, owner_account_id: uuid.UUID, asset_id: uuid.
     _remove_asset(owner_account_id, asset_id, True)
 
 
+def has_assets(account_id: uuid.UUID) -> bool:
+    """Whether the account still owns any stored asset (reads only)."""
+    return MediaAsset.objects.filter(owner_account_id=account_id).exists()
+
+
+def forget_usage(actor: Actor, account_id: uuid.UUID) -> bool:
+    """Erasure: drop the empty storage-usage row of an account that is going away. System actor
+    only (`forbidden` otherwise); refused (False, nothing changed) while the account still owns an
+    asset or the row still counts bytes. Returns whether a row was removed."""
+    require_signed_in(actor)
+    if actor.kind is not ActorKind.SYSTEM:
+        raise DomainError("forbidden")
+    with transaction.atomic():
+        if MediaAsset.objects.filter(owner_account_id=account_id).exists():
+            return False
+        return StorageUsage.objects.filter(pk=account_id, bytes_used=0).delete()[0] > 0
+
+
 def purge_orphans(now: datetime, dry_run: bool = False) -> int:
     """Retention hook: assets never attached within 24 hours, and stored files with no row that
     are older than 24 hours. At most `BATCH` of each per run; every step is idempotent and a failed

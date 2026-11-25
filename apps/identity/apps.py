@@ -25,6 +25,7 @@ class IdentityConfig(AppConfig):
             "account.suspended",
             "account.reactivated",
             "account.deactivated",
+            "account.sample_removed",
         ):
             audit.register_action(action, {})
         for action in ("account.password_reset", "account.password_changed"):

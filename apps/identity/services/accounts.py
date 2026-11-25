@@ -33,8 +33,8 @@ from apps.kernel.errors import DomainError
 from apps.kernel.privacy.patterns import LONG_DIGIT_RUN, reject_contact_details
 
 
-def _clean_email(email) -> str:
-    email, code = check_email(email)
+def _clean_email(email, *, allow_sample: bool = False) -> str:
+    email, code = check_email(email, allow_sample=allow_sample)
     if code:
         raise DomainError("validation_error")
     return email

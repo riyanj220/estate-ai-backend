@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from apps.identity import sample_domain
 from apps.identity.passwords import password_error
 from apps.kernel.privacy.patterns import (
     EMAIL_ADDRESS_SHAPE,
@@ -75,7 +76,7 @@ def check_full_name(value) -> tuple[str, str | None]:
     return name, None
 
 
-def check_email(value) -> tuple[str, str | None]:
+def check_email(value, *, allow_sample: bool = False) -> tuple[str, str | None]:
     """Case is kept as entered; uniqueness is decided case-insensitively elsewhere."""
     if _blank(value):
         return "", "required"
@@ -91,6 +92,8 @@ def check_email(value) -> tuple[str, str | None]:
     domain = email.rpartition("@")[2]
     if not domain.isascii() or "" in domain.split("."):  # mail needs an ASCII host, no empty label
         return "", "invalid_email"
+    if not allow_sample and sample_domain.is_reserved_domain(email):
+        return "", "invalid_email"  # the sample domain belongs to the sample service alone
     return email, None
 
 
