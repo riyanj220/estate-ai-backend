@@ -15,8 +15,10 @@ A Listing is **public** iff all three hold:
 owner's Listings are **not** public (they still see their own). Suspended and Deactivated owners' Listings are not public
 until the account is Active again.
 
-`restricted` and `published` are not set by any service or route yet. Moderation (a later epic) sets `restricted`, and
-the publication story (2.15) sets `published`; until then tests and fixtures write them through the model (see
+`published` is set only by `listings.publication.publish` (Story 2.15, `POST /api/v1/listings/{id}/publish`): a
+published Listing becomes public at once under this rule when its owner is Active (`tests/listings/test_publication.py`
+checks `public_listing` for an Active owner and `not_found` once the owner is Email-unverified). Moderation (a later
+epic) sets `restricted`; until then tests and fixtures write it through the model (see
 `tests/listings/support.py: set_listing_visibility`, `set_account_state`).
 
 ## The two implementations (nothing else decides)

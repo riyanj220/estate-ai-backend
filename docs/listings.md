@@ -6,7 +6,7 @@ description and price, Story 2.3 the area and its unit, Story 2.4 the House and 
 ## Model (`listings.models`, written only by `listings.services`)
 
 - `PropertyListing`: `id` (UUID), `owner_account_id` (a plain indexed UUID column, no foreign key into `identity`),
-  `status` (`draft` or `published`; the code-defined enum `listings.lifecycle.ListingStatus` grows later; nothing sets `published` yet, Story 2.15 will, so fixtures write it through the model), `restricted` (boolean, default false; set by moderation in a later epic, fixtures only until then), `revision` (starts at 1),
+  `status` (`draft` or `published`; the code-defined enum `listings.lifecycle.ListingStatus` grows later; only `listings.publication.publish` sets `published` (Story 2.15); visibility fixtures may still write it through the model), `restricted` (boolean, default false; set by moderation in a later epic, fixtures only until then), `revision` (starts at 1),
   `registry_version`, the registry fields `purpose`, `category`, `subtype` as columns with CHECK constraints generated
   from the taxonomy (including that the Subtype belongs to the Category), `title` and `description` (nullable, empty is
   `null`, length CHECKs from the registry), `provenance` (JSON, registry field id to `{"origin", "confirmed"}`, set
@@ -427,6 +427,7 @@ check is still refused.
 | `PATCH /api/v1/listings/{id}` | body strictly `{base_revision, fields}`; `200` with the Listing; `409 stale_revision` (below); `400` field codes keyed by registry id; `404` for non-owners; `403` Suspended; CSRF; no-store |
 | `GET /api/v1/listings/{id}/preview` | owner only (own `draft` or `published`), `404` otherwise, `401` Visitor; the public projection plus `estimate: null`; no-store; counts as an open (below) |
 | `DELETE /api/v1/listings/{id}` | owner only; `204`; a non-draft is `409 conflict`; `404` for non-owners, unknown ids and repeats; `403` Suspended; CSRF; no-store (below) |
+| `POST /api/v1/listings/{id}/publish` | body strictly `{base_revision}`, header `Idempotency-Key` (required); `200` with the owner Listing (`status: published`); `400`, `401`, `403`, `404`, `409`, `422` (see "Publication" below); owner only; CSRF; no-store |
 | `GET /api/v1/me/listings` | own listings, `status` filter, `page_size`, `cursor`; `{next, previous, results}` (`previous` is always null); bad cursor or status is `validation_error`; no-store |
 | `GET /api/v1/me/publication-allowance` | owner allowance `{limit, used, remaining, period_start, resets_at, timezone}` (below); `401` Visitor and Deactivated (no session), `403` administrator; no-store |
 | `GET /api/v1/registry` | public Field registry (`docs/registry.md`) |
@@ -614,10 +615,11 @@ extension and seeds individual 2 and agency 10 from 2000-01-01 UTC (idempotent: 
 also creates it in the database and `template1` (like `vector`), so test databases have it. Policies are written only by
 that migration and, later, Story 2.20's service.
 
-`listings.PublicationEvent` is the empty-for-now history Story 2.15 writes (kinds `initial`, `republish_counted`,
+`listings.PublicationEvent` is the history `listings.publication.publish` writes (Story 2.15; kinds `initial`, `republish_counted`,
 `republish_free`, `restore`, `seed`; `counted` only for the first two, by CHECK; no foreign keys, so history outlives a
 Listing; idempotency key unique per account). Never updated or deleted by application code: the runtime role has
-INSERT and SELECT only (`RUNTIME_APPEND_ONLY_TABLES`). No service writes it yet (tests insert directly).
+INSERT and SELECT only (`RUNTIME_APPEND_ONLY_TABLES`). Only `listings/publication.py` writes it (an AST guard in
+`tests/listings/test_quota.py` lists the writers; tests may insert directly).
 
 `listings.quota`: `quota_limit_at(account_type, at)` resolves the limit at the time of an attempt (never stored on an
 event; `QuotaPolicyMissing` if no row covers `at`). `allowance_for(account_id, account_type, now)` returns a frozen
@@ -626,11 +628,11 @@ event; `QuotaPolicyMissing` if no row covers `at`). `allowance_for(account_id, a
 used, 0)`. `owner_allowance(actor, now)` adds the owner check (Visitor `unauthenticated`; administrator, system actor and,
 for a direct service call, Deactivated `forbidden`; over HTTP a Deactivated account has no session, so the route answers
 `401` before the service runs; Suspended and Email-unverified owners may read). The view passes the clock.
-Response datetimes carry the `+05:00` offset. Enforcement and consumption arrive with Story 2.15.
+Response datetimes carry the `+05:00` offset. Enforcement and consumption: `publish`, below.
 
 Notes for the next stories:
 
-- Story 2.15 must read the allowance (and insert the event) inside one transaction that first calls
+- `publish` reads the allowance (and inserts the event) inside one transaction that first calls
   `identity.selectors.lock_account(account_id)`, so two simultaneous publishes cannot both see the last slot. The
   allowance read itself is two queries (limit, then count) and takes no lock.
 - The exclusion constraint is not deferrable. Story 2.20 closes the current row (`effective_to`) and inserts the new
@@ -638,3 +640,50 @@ Notes for the next stories:
 - All instants are timezone-aware; `quota_limit_at`, `month_bounds` and `allowance_for` raise `ValueError` for a naive
   datetime. `ZoneInfo("Asia/Karachi")` needs tz data: `tzdata` is a runtime dependency on every platform.
 - `QuotaPolicyMissing` is an internal error: over HTTP it is the generic `500 server_error` envelope without detail.
+
+## Publication (Story 2.15, AD-7)
+
+`listings.publication.publish(actor, listing_id, base_revision, idempotency_key, now=None)` is the only code that sets
+`ListingStatus.PUBLISHED` and the only writer of `PublicationEvent` (guards: `tests/architecture/
+test_publication_single_writer.py`, `tests/listings/test_quota.py`). `now` is the clock for tests. There is no
+`set_status` path: nothing else changes a Listing's status.
+
+One `transaction.atomic`, in this order: (1) claim the key (`kernel.idempotency`, scope `listings.publish`, per account,
+request hash over listing id and `base_revision`); a replay inside 24 hours returns the Listing as it is now (`200`,
+nothing else written) and the same key with another hash is `422 idempotency_key_reused`; (2) `lock_account`, then lock
+the owned Listing row; (3) `base_revision` against `revision` (`409 stale_revision` + `current`); (4) status must be
+`draft` (`409 conflict`); (5) account state: only Active publishes (`403 email_not_verified`, `403
+publishing_unavailable` for Suspended, `403 forbidden` for a Deactivated account called directly; a Visitor,
+administrator, system actor, other owner or unknown id is `401`/`404` before the transaction); (6) validate (below);
+(7) allowance: `quota.allowance_for` under the account lock with `now` (read after the lock wait unless the caller passes
+it, so a request that crosses Karachi midnight while waiting counts in the new month); `remaining < 1` is `409 quota_exhausted` with the
+caller's own `details: {limit, used, resets_at}` (`resets_at` is an offset-aware ISO string); (8) one counted `initial`
+event with the identity fingerprint and the key; (9) status `published`, `revision + 1`, a `ListingRevision` row
+(`changes: {"status": "published"}`), the Draft expiry markers cleared; (10) audit `listing.published` (target id only);
+(11) complete the claim (`listing:<id>`); (12) emit `ListingPublished(listing_id, account_id)` after commit (nothing
+subscribes yet). Any refusal or exception rolls all of it back, the claim included, so nothing is consumed and the key
+can be retried. A key older than 24 hours (or whose claim was purged) is looked up in the account's events: for the same Listing it
+replays the original success and completes the claim again (a late retry still learns it worked); for another Listing it is
+`idempotency_key_reused`. A malformed or dangling stored reference, or a Listing that is gone, replays as `not_found`; a
+claim with no result is `conflict`. No AI call, upload, mail or notification runs inside.
+
+Validation (`publication.problems_of`, all at once, `400 validation_error` keyed by registry id): the required list is
+derived from the registry (`requirement: required_for_publication` plus applicability: purpose, category, subtype,
+title, asking price, price basis, area value and unit, city and locality, plus rental period for a rent and bedrooms and
+bathrooms for a House or Apartment), a missing item is `required`, and each stored value is judged again with the
+current per-field rules (`validation.evaluate`, so a locality of another city is `locality_not_in_city`, an inactive
+city `invalid`). No LIVE image (a link whose asset row exists, `selectors.live_image_count`, the rule of the image cap too) is `images: images_required` ("Add at least one image."). Every stored value that is present, optional ones included, is judged again with the cross-field rules (floor against floors, coordinate pairing, marla basis, locality against city), so stale invalid data blocks with a field-level error; a field that does not apply but holds a value is `not_applicable`. A value of a `quota_identity` or
+`private` field that currently has a value and whose provenance is `origin: ai` with `confirmed` anything but `true` (missing included) is `confirm_required` ("Confirm this value before
+publishing."), keyed by that field; the owner confirms by saving the value. Optional data never blocks. The `Idempotency-Key` header (1 to 128 characters of
+`A-Za-z0-9._:-`) and `base_revision` problems are `400` under `idempotency_key` and `base_revision`.
+
+Fingerprint: `publication.identity_fingerprint(view)` is the SHA-256 hex of the canonical JSON (sorted keys, no
+whitespace, ASCII, decimals normalised, text in NFC) of the registry fields flagged `quota_identity` (today purpose,
+category and subtype). It is stored on the event and never leaves the service.
+
+Error codes added: `quota_exhausted` (409), `email_not_verified` (403), `publishing_unavailable` (403). Field
+sentences added: `images_required`, `confirm_required`.
+
+A `listing.draft_expiring` notice already delivered is not withdrawn when the Draft is published. It links to the Draft
+page and only says the Draft will be deleted if it is not opened, so a published Listing is never deleted by it (the
+retention job only considers Drafts, and publication clears `delete_after`).

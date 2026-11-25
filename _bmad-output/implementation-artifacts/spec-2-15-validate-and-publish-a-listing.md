@@ -64,6 +64,14 @@ context:
 
 ## Review Triage Log
 
+### Backend (round 1)
+
+Decisions accepted: the request checks run before the transaction (Visitor 401, not-owner 404, shape 400); the account state check follows the revision and Draft checks; replay returns the owner view as it is now; no `set_status` path exists (an AST guard covers the single writer); fingerprint covers today's `quota_identity` fields (purpose, category, subtype).
+
+Fixes from review: (1) images count only live links (`selectors.live_image_count`, shared with the image cap); (2) the unconfirmed-AI guard is `origin == ai and confirmed is not True` on raw provenance, only for fields that have a value and apply; (3) the key is looked up against `PublicationEvent` right after the claim and replays the original success after 24 hours or a purge (same Listing), `422` for another Listing, `not_found` for a gone Listing or malformed reference, and the `result_ref is None` branch is tested; (4) `now` is read after `lock_account` unless passed; (5) every present stored value is re-judged with the cross-field rules (a real defect found: stored amenities arrive as a mapping proxy and needed a plain dict), and a rich valid draft of every Subtype publishes; (6) no backend withdrawal of an already delivered `listing.draft_expiring` notice (documented); (7) deterministic fingerprint canonicaliser with a golden vector; (8) refusal-precedence, lock-before-allowance, no-external-call and import guard tests, whole-body 404 comparison, fingerprint never in a body, audit or event; (9) the single-writer guard flags `**kwargs`, computed `setattr`, `bulk_update` of status and raw SQL on the Listing table.
+
+Accepted deferrals: the fingerprint covers only today's `quota_identity` fields; `QuotaPolicyMissing` stays a 500; no new field sentences or error codes in this round.
+
 ## Verification
 
 **Backend (narrow while developing, full in CI):** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, then `scripts/test-changed.sh` and, before the merge, one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q`.
