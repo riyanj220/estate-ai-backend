@@ -55,6 +55,8 @@ archive), so the table above is unchanged.
 | mark sold or rented (published) | yes | yes | no (`403`) | no |
 | edit a Published or Archived Listing, change its images | yes | yes | no (`403`) | no |
 
+Republishing an Archived Listing (Story 2.18, `publication.republish`) is the `publish` row: only an Active owner may (`403 email_not_verified` and `403 publishing_unavailable` otherwise), and a restricted Listing cannot be republished (`403`).
+
 A restricted Listing may only be archived by its owner; a removed one cannot be changed; sold and rented are view only
 (`docs/listings.md`, "Lifecycle after publication").
 

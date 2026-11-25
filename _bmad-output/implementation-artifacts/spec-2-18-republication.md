@@ -63,6 +63,21 @@ context:
 
 ## Review Triage Log
 
+### Backend review batch (coordinator decisions)
+
+Accepted as built: shared `_run` for publish and republish; `Republication(listing, kind)`; `RepublishedListingSerializer`; a key belongs to one operation (`422 idempotency_key_reused` across publish and republish); a replay whose event row is gone is `404`.
+
+Implemented:
+1. Fingerprint migration made real and reusable: `apps/listings/identity_migration.py::recompute_fingerprints(apps, old, new, canonical, load)`, called by `0015` (semantics for unchanged data unchanged). Safety rule: an event is recomputed only when its stored value equals the OLD-set fingerprint of the Listing's current data; otherwise NULL (never matches, so the next republication is counted). Tested through `MigrationExecutor` (back to 0014 with data, forward again) and with a simulated new identity field; `docs/listings.md` states the drift rule and each claim names its test.
+2. The clock is read after the account lock: tests hold the lock on a second connection across 18:59:59 to 19:00:00 UTC for the free/counted decision and for the allowance month.
+3. Refusal order pinned and documented: stale, status, restricted, account state, validation, quota.
+4. A baseline later than `now` is never a free republication (`_republish_kind`); boundary rows added (first instant of the month, one second either side, first instant of the next month, baseline equal to or after now).
+5. Weak tests fixed: external-call patches without `raising=False`, exact `idempotency_key_reused`, honest event test names with field assertions, a really invalid stored locality (written through the ORM) proving the full re-judge, the lost-outcome replay (`404`).
+6. Extra concurrency (20 threads, one listing, different keys, one slot), HTTP Deactivated test, identity change and change back chain.
+7. `publish` refuses a restricted Draft (`403 forbidden`, nothing written), same position as in republish.
+8. `ListingPublished.republished: bool = False` (True on republish); the endpoint copy names all eight identity fields.
+No new error codes or field sentences.
+
 ## Verification
 
 **Backend (narrow while developing, full in CI):** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, then `scripts/test-changed.sh` and, before the merge, one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q`.

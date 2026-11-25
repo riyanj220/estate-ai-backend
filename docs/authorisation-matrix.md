@@ -41,6 +41,7 @@ whose permission is not explicit.
 | `/api/v1/listings/<str:listing_id>/images/<str:image_id>/file` | GET, HEAD | public | `apps.presentation.api.listing_images.ListingImageFileView` |
 | `/api/v1/listings/<str:listing_id>/preview` | GET | signed_in | `apps.presentation.api.listings.ListingPreviewView` |
 | `/api/v1/listings/<str:listing_id>/publish` | POST | signed_in | `apps.presentation.api.listings.ListingPublishView` |
+| `/api/v1/listings/<str:listing_id>/republish` | POST | signed_in | `apps.presentation.api.listings.ListingRepublishView` |
 | `/api/v1/listings/<str:listing_id>/status` | POST | signed_in | `apps.presentation.api.listings.ListingStatusView` |
 | `/api/v1/me` | GET | signed_in | `apps.presentation.api.sessions.MeView` |
 | `/api/v1/me/agency-profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.AgencyProfileDetailView` |

@@ -13,6 +13,8 @@ never emails, phones, addresses or message text.
 class ListingPublished(DomainEvent):
     name = "listing.published"
     listing_id: UUID
+    account_id: UUID
+    republished: bool = False  # True for an Archived Listing republished (Story 2.18)
 ```
 
 `kernel.events.emit(event)` registers one `transaction.on_commit(..., robust=True)` callback per subscriber.

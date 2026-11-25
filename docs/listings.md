@@ -417,7 +417,8 @@ removed and restricted ones included; the public sees only Published, not restri
 | --- | --- |
 | `published` | `archived`, `sold`, `rented` |
 | `sold`, `rented` | `archived` |
-| `draft`, `archived` | nothing (`409 conflict`); a Draft is deleted or published, an Archived Listing is republished by Story 2.18 |
+| `draft` | nothing (`409 conflict`); a Draft is deleted or published |
+| `archived` | nothing here (`409 conflict`); exactly one outgoing path, `publication.republish` (Story 2.18, below) |
 | `removed` | nothing (`403 forbidden`: moderation owns it) |
 
 Every other move (the same status, to `published`, to `removed`, to `draft`) is `409 conflict` (a target outside
@@ -427,7 +428,7 @@ restriction refusals, the table, then status + `revision + 1`, a `ListingRevisio
 audit `listing.status_changed` (`from`, `to`; the Listing id is the target), and the domain event `listing.status_changed`
 (`ListingStatusChanged`: listing id, account id, new status) as the last statement, after commit. No quota, no
 `PublicationEvent`, no idempotency key: a repeat is a clean `409 conflict`. There is no way back to `published` here
-(republication is Story 2.18).
+(`publication.republish`, Story 2.18, is the only way out of Archived).
 
 **Who may do what** (`docs/account-states.md`): Active and Email-unverified owners archive, mark sold and mark rented
 and edit; a Suspended owner may only archive (sold and rented are `403 forbidden`; edits and image changes are
@@ -507,6 +508,7 @@ check is still refused.
 | `GET /api/v1/listings/{id}/preview` | owner only (own `draft` or `published`), `404` otherwise, `401` Visitor; the public projection plus `estimate: null`; no-store; counts as an open (below) |
 | `DELETE /api/v1/listings/{id}` | owner only; `204`; a non-draft is `409 conflict`; `404` for non-owners, unknown ids and repeats; `403` Suspended; CSRF; no-store (below) |
 | `POST /api/v1/listings/{id}/publish` | body strictly `{base_revision}`, header `Idempotency-Key` (required); `200` with the owner Listing (`status: published`); `400`, `401`, `403`, `404`, `409`, `422` (see "Publication" below); owner only; CSRF; no-store |
+| `POST /api/v1/listings/{id}/republish` | body strictly `{base_revision}`, header `Idempotency-Key` (required); `200` with the owner Listing (`status: published`) plus `publication_kind` (`republish_counted` or `republish_free`); `400`, `401`, `403`, `404`, `409`, `422` (see "Republication" below); owner only; CSRF; no-store (Story 2.18) |
 | `POST /api/v1/listings/{id}/status` | body strictly `{base_revision, status}` (`status`: `archived`, `sold` or `rented`); `200` owner Listing; `400`, `401`, `403`, `404`, `409` (`stale_revision` with `current`, or `conflict`); owner only; CSRF; no-store (Story 2.17) |
 | `GET /api/v1/me/listings/counts` | `{draft, published, archived, sold, rented, removed}` for the caller; no-store; same guards as the list (Story 2.17) |
 | `GET /api/v1/me/listings` | own listings, `status` filter, `page_size`, `cursor`; `{next, previous, results}` (`previous` is always null); bad cursor or status is `validation_error`; no-store |
@@ -734,7 +736,7 @@ One `transaction.atomic`, in this order: (1) claim the key (`kernel.idempotency`
 request hash over listing id and `base_revision`); a replay inside 24 hours returns the Listing as it is now (`200`,
 nothing else written) and the same key with another hash is `422 idempotency_key_reused`; (2) `lock_account`, then lock
 the owned Listing row; (3) `base_revision` against `revision` (`409 stale_revision` + `current`); (4) status must be
-`draft` (`409 conflict`); (5) account state: only Active publishes (`403 email_not_verified`, `403
+`draft` (`409 conflict`), and the Listing must not be restricted (`403 forbidden`, Story 2.18: a restriction freezes a Listing whatever its status); (5) account state: only Active publishes (`403 email_not_verified`, `403
 publishing_unavailable` for Suspended, `403 forbidden` for a Deactivated account called directly; a Visitor,
 administrator, system actor, other owner or unknown id is `401`/`404` before the transaction); (6) validate (below);
 (7) allowance: `quota.allowance_for` under the account lock with `now` (read after the lock wait unless the caller passes
@@ -742,7 +744,7 @@ it, so a request that crosses Karachi midnight while waiting counts in the new m
 caller's own `details: {limit, used, resets_at}` (`resets_at` is an offset-aware ISO string); (8) one counted `initial`
 event with the identity fingerprint and the key; (9) status `published`, `revision + 1`, a `ListingRevision` row
 (`changes: {"status": "published"}`), the Draft expiry markers cleared; (10) audit `listing.published` (target id only);
-(11) complete the claim (`listing:<id>`); (12) emit `ListingPublished(listing_id, account_id)` after commit (nothing
+(11) complete the claim (`listing:<id>`); (12) emit `ListingPublished(listing_id, account_id, republished=False)` after commit (nothing
 subscribes yet). Any refusal or exception rolls all of it back, the claim included, so nothing is consumed and the key
 can be retried. A key older than 24 hours (or whose claim was purged) is looked up in the account's events: for the same Listing it
 replays the original success and completes the claim again (a late retry still learns it worked); for another Listing it is
@@ -766,15 +768,89 @@ stored on the event and never leaves the service. Version 9 changes the fingerpr
 `0015_identity_fingerprint_v9` recomputes `identity_fingerprint` of every event (`initial`, `seed`, later kinds) whose
 Listing still exists, from the stored Listing with the canonicalisation frozen inside the migration (no live imports),
 without consuming quota or writing events; it is idempotent and its reverse is a no-op. Events of deleted Listings keep
-their value. The widening of the identity set also widens `confirm_required` (an AI-written, unconfirmed value of
+their value. Since Story 2.18 the loop is `identity_migration.recompute_fingerprints` (below, the drift rule). The widening of the identity set also widens `confirm_required` (an AI-written, unconfirmed value of
 city, locality, area value, area unit or marla basis blocks publication until the owner confirms it): this is intended.
 
-Error codes added: `quota_exhausted` (409), `email_not_verified` (403), `publishing_unavailable` (403). Field
+Error codes added (Story 2.15; Story 2.18 adds none): `quota_exhausted` (409), `email_not_verified` (403), `publishing_unavailable` (403). Field
 sentences added: `images_required`, `confirm_required`.
 
 A `listing.draft_expiring` notice already delivered is not withdrawn when the Draft is published. It links to the Draft
 page and only says the Draft will be deleted if it is not opened, so a published Listing is never deleted by it (the
 retention job only considers Drafts, and publication clears `delete_after`).
+
+## Republication (Story 2.18, AD-7)
+
+`listings.publication.republish(actor, listing_id, base_revision, idempotency_key, now=None)` takes an **Archived**
+Listing back to Published. It returns `Republication(listing, kind)` (`kind` is `republish_counted` or `republish_free`).
+`publish` and `republish` share ONE transaction, `publication._run`, parameterised by a `_Mode` (idempotency scope, the
+status the Listing must have, the event kinds a key of this mode may have produced, the audit action); nothing is
+copied. The guard (`tests/architecture/test_publication_single_writer.py`) pins that `publication.py` writes only the
+published status and only `publish` and `republish` call `_run`.
+
+**Order of refusals** (pinned by `test_republication.py`): shape checks, then inside the transaction stale revision, status,
+restricted, account state, validation, quota (so an incomplete Listing with a used-up allowance is a `400`, a restricted
+Listing of an Email-unverified owner a `403 forbidden`). Same guarantees as `publish`: shape checks before the transaction (Visitor `401`; another owner, an administrator,
+a system actor, an unknown or malformed id `404`; a bad `base_revision` or key `400`), then inside one transaction: claim
+(scope `listings.republish`, hash over listing id and `base_revision`; a replay returns the original result, the original
+`publication_kind` included, with no second charge, event or audit record; the same key with other content is `422
+idempotency_key_reused`; an expired or purged claim replays from the event exactly as for `publish`), `lock_account` then
+the Listing row, the clock is read after the lock, `base_revision` (`409 stale_revision` + `current`), the status must be
+`archived` (`409 conflict` for a Draft, Published, **Sold or Rented** Listing, which must first be returned to Archived
+with `change_status`, and for a Removed one, which never republishes), a **restricted** Listing is `403 forbidden` (the
+restriction stays in force), account state (only Active: `403 email_not_verified`, `403 publishing_unavailable`, `403
+forbidden` for Deactivated called directly), then the FULL re-judge of the whole Listing through the same completeness
+core as `publish` (`completeness.problems_of` without the `touched` set: every required item, every stored value with the
+current rules, city and locality, at least one live image, unconfirmed Assistant values of private or identity fields),
+all problems at once as `400 validation_error`; then the counted or free decision; the event; status `published` and
+`revision + 1` with a `ListingRevision` row (`changes: {"status": "published"}`); audit `listing.republished` (the Listing
+id is the target; metadata `{"kind": <event kind>}` only); the claim result; `ListingPublished` after commit (the SAME
+event as `publish`, with `republished=True` so a future consumer can tell them apart; `false` for a publication). Any refusal
+or failure rolls all of it back: no quota, event, audit record, claim or status change. Images, revision history and
+everything else on the Listing are untouched.
+
+**Counted or free (the rule).** Compute `identity_fingerprint` of the Listing as it is now. The baseline is the Listing's
+last COUNTED event (`initial` or `republish_counted`; `seed` and `republish_free` events are never a baseline; events of
+the Listing only, latest `created_at`). The event is `republish_free` (`counted=false`, no allowance needed or used) only if
+ALL hold: a baseline exists, its `created_at` falls in the same **Karachi** calendar month as `now`
+(`quota.month_bounds(now)`, half-open; UTC and Karachi differ by five hours, so 18:59:59 UTC on the 30th is still that
+month and 19:00:00 UTC is the next), and is not later than `now` (a baseline in the future of the clock is not in the past, so it never makes a free
+republication), and its stored fingerprint equals the current one (a NULL one never does). Otherwise it is
+`republish_counted` (no baseline, another month, a baseline later than `now`, a NULL fingerprint, or a changed identity field). A counted republication
+needs `allowance.remaining >= 1` under the account lock (else `409 quota_exhausted`, same `details` as publishing,
+nothing consumed); a free one never reads the allowance, so an exhausted account or a limit of 0 can still republish free.
+A counted event becomes the new baseline; a free one never moves it. `identity_fingerprint` is always stored. The eight
+identity fields are the registry flag `quota_identity` (purpose, category, subtype, city, locality, area value, area unit,
+marla basis); the owner may edit them while Archived (2.17), which is exactly what makes the next republication counted (changing a field and back is counted both times, because each counted
+republication moves the baseline).
+`quota.allowance_for` counts `republish_counted` events and ignores free ones. A key belongs to one operation: a key that
+produced a publication cannot republish (`422 idempotency_key_reused`) and the other way round (the unique
+`(account, key)` index is shared by every event kind).
+
+**Endpoint.** `POST /api/v1/listings/{id}/republish`, body `{base_revision}`, header `Idempotency-Key` (validated as for
+publish), CSRF, owner only, `Cache-Control: no-store`. `200` returns the owner Listing plus `publication_kind`
+(`RepublishedListing` in the OpenAPI; the publish response is unchanged). `400`, `401`, `403`, `404`, `409` (`stale_revision`
+with `current`, `conflict`, `quota_exhausted` with `details`), `422`. No new error code and no new field sentence.
+
+**Changing the identity set (the procedure).** A registry change that adds or removes a `quota_identity` field changes
+`identity_fingerprint` for every Listing, so stored baselines would no longer match and every republication would be
+counted. A story that changes the set MUST, in the same change: (1) bump the registry version; (2) add a data migration
+modelled on `0015_identity_fingerprint_v9`: it keeps the OLD and NEW identity tuples and its own FROZEN canonicalisation
+(no import of `publication` or `registry`: decimal fields, NFC-trimmed text, integers as numbers, sorted-key compact ASCII
+JSON, SHA-256) and calls `listings.identity_migration.recompute_fingerprints(apps, old, new, canonical, load)`; (3) test it.
+
+The drift rule (never overwrite baseline evidence with data that drifted): an event's fingerprint is recomputed only
+when the stored value equals the OLD-set fingerprint of the Listing's CURRENT data, which proves the data is what the event
+recorded. When it does not (typically an Archived Listing whose identity was edited after the event) it is set to NULL, and a
+NULL baseline never matches, so the next republication is COUNTED: conservative, it can cost the owner a publication but
+never let them dodge the quota. A value already equal to the NEW fingerprint is kept (a second run changes nothing).
+Events of deleted Listings are left alone. Only the fingerprint column changes: no quota consumed, no event, claim or audit
+record written. Tests that pin each claim: `test_the_migration_through_the_executor_recomputes_unchanged_nulls_drifted_and_keeps_the_rest`
+(`MigrationExecutor` back to 0014 and forward again: unchanged recomputed to the live value, seed and free events alike,
+drifted NULL then counted, already-new kept, deleted left alone, ledger identical, idempotent, reverse a no-op) and
+`test_a_new_identity_field_recomputes_unchanged_listings_and_nulls_drifted_ones` (a simulated new field, `bedrooms`, through
+the same function: the frozen result equals the live fingerprint under the grown registry) in
+`tests/listings/test_republication.py`; `tests/listings/test_lifecycle_review.py` covers the version-9 migration itself
+and the frozen canonicalisation against the live one for every field shape.
 
 ### The `seed` kind (Story 2.16)
 
