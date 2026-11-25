@@ -1,10 +1,13 @@
 """AD-7: `listings.publication.publish` is the only code that sets a Listing to published and the
 only writer of `PublicationEvent`. Inside `apps/listings` every write of `status` must name the
 Draft status (creating a Draft); anywhere in `apps`, a write of `status` that mentions the
-published status, by name or as text, is refused. (`PublicationEvent` writes: see
-`tests/listings/test_quota.py`.) Story 2.17: `listings/status.py` may also write exactly
-archived, sold and rented (a literal, or a lookup in its `_WRITABLE` table, whose values are
-pinned below), never published or removed; `removed` is written by nobody in `apps`."""
+published status, by name or as text, is refused. Story 2.18: `publication.republish` (Archived back
+to Published) lives in the same module and shares `_run` with `publish`; below, the real module is
+pinned to ONE status write, of `PUBLISHED`, reached only from those two functions.
+(`PublicationEvent` writes: see `tests/listings/test_quota.py`.) Story 2.17: `listings/status.py`
+may also write exactly archived, sold and rented (a literal, or a lookup in its `_WRITABLE`
+table, whose values are pinned below), never published or removed; `removed` is written by nobody in
+`apps`."""
 
 import ast
 import re
@@ -340,6 +343,31 @@ def test_the_status_table_cannot_be_widened_after_its_definition(tmp_path, code)
         "_WRITABLE = {'archived': ListingStatus.ARCHIVED.value}\n" + code + "\n"
     )
     assert violations(tmp_path, tmp_path.rglob("*.py")) == ["apps/listings/status.py:2"]
+
+
+def test_the_publication_module_writes_only_published_and_only_publish_and_republish_run_it():
+    tree = ast.parse((ROOT / WRITER).read_text())
+    # the row's status and the revision row's `changes`: both the published status, nothing else
+    assert {ast.unparse(value) for _, value in _status_writes(tree)} == {
+        "ListingStatus.PUBLISHED.value"
+    }
+    callers = {
+        fn.name
+        for fn in ast.walk(tree)
+        if isinstance(fn, ast.FunctionDef)
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_run"
+    }
+    assert callers == {"publish", "republish"}
+
+
+def test_a_republish_outside_the_publication_module_cannot_set_published(tmp_path):
+    listings = tmp_path / "apps" / "listings"
+    listings.mkdir(parents=True)
+    (listings / "republication.py").write_text(
+        "def republish(row):\n    row.status = ListingStatus.PUBLISHED.value\n"
+    )
+    assert violations(tmp_path, tmp_path.rglob("*.py")) == ["apps/listings/republication.py:2"]
 
 
 def test_creating_a_draft_and_other_apps_are_fine(tmp_path):
