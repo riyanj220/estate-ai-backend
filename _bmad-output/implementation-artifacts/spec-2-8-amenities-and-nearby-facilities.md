@@ -78,6 +78,12 @@ Backend half, as built (notes for the frontend half and reviewers):
 - The registry loader reserves the id `amenities` for the type and refuses sortable, derived or allowed values on it. `create_amenity` refuses a `sort_order` outside int32; the label CHECK enforces only length (control characters are the service rule).
 - The catalogue is read only when a request carries `amenities`; without a catalogue the validator accepts nothing new (fail safe).
 
+Frontend half, as built (frontend main `3368251`; 1298 Playwright tests green, prod checks green):
+
+- Reviewers (blind, edge-case, verification-gap) found: Keep mine could resend a stale inactive code the other session had removed and be refused `invalid` forever (fixed: stale codes are dropped from the sent map, and each read-only "Other" entry has a Remove control); a partly parsed catalogue turned active codes into read-only "Other" (fixed: any unusable or repeated item fails the whole load with Retry, code/group regex aligned to the backend, label 2..80); `hasControl` now needs type, id and section all `amenities`; the summary and "Latest saved" show loading/unavailable lines instead of guessing, are grouped by kind and tag Nearby as seller-declared; focus moves to the heading after a successful Retry, every nearby fieldset is described by the helper, Retry ignores a second click while in flight; editing an item clears the amenities error; stub aligned (`valuation_input`, null clears).
+- Tests: 44+ new Playwright tests in `listing-amenities.spec.ts`. Multi-state axe tests got a 120 s timeout because the page now carries about 26 radio groups and each full-page scan is slower.
+- Accepted/deferred: an Other entry that is stale after a conflict disappears without a banner mention; the catalogue is not refetched on a conflict; the 40-entry cap cannot be hit with the 26-code catalogue in the stub; Retry/aria details of the catalogue hook are covered by the e2e test only.
+
 ## Verification
 
 **Backend:** `env -u DJANGO_SETTINGS_MODULE uv run lint-imports; uv run ruff check .; uv run ruff format --check .; env -u DJANGO_SETTINGS_MODULE uv run pytest -q; uv run python manage.py makemigrations --check --dry-run; uv run python manage.py spectacular --validate --file openapi.yaml` (openapi regenerated deliberately).
