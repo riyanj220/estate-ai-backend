@@ -6,6 +6,8 @@ from django.core.management import call_command
 
 from apps.kernel import errors
 
+pytestmark = pytest.mark.guard
+
 ROOT = Path(__file__).resolve().parents[2]
 
 

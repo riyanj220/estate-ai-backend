@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.guard
+
 ROOT = Path(__file__).resolve().parents[2]
 LINT_IMPORTS = shutil.which("lint-imports") or str(Path(sys.executable).parent / "lint-imports")
 SKIP_DIRS = {"__pycache__", "kernel", "presentation"}

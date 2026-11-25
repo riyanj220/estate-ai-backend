@@ -5,7 +5,7 @@ from django.test import override_settings
 
 from tests.authz.conftest import ACCOUNT, as_identity
 
-pytestmark = pytest.mark.urls("tests.authz.urls")
+pytestmark = [pytest.mark.urls("tests.authz.urls"), pytest.mark.guard]
 
 
 def error_of(response):

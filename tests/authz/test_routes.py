@@ -4,6 +4,8 @@ import pytest
 
 from apps.presentation.api.authz_matrix import route_table
 
+pytestmark = pytest.mark.guard
+
 
 def undeclared(urlconf):
     return [f"{r.path} ({r.view})" for r in route_table(urlconf) if not r.is_explicit]

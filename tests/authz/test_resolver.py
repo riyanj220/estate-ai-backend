@@ -6,6 +6,8 @@ import pytest
 from apps.kernel.actor import ActorKind
 from apps.presentation.api.actors import get_actor, resolve_actor
 
+pytestmark = pytest.mark.guard
+
 ID = uuid.uuid4()
 
 

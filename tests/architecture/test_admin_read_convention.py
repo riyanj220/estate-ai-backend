@@ -1,6 +1,10 @@
 import ast
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.guard
+
 ROOT = Path(__file__).resolve().parents[2]
 PREFIX = "admin_read_"
 RECORDER = "record_private_read"

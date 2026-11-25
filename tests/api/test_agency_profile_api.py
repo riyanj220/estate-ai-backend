@@ -325,7 +325,7 @@ def test_wrong_types_are_invalid(owner):
     assert len(fields(response)) == 5
 
 
-@pytest.mark.parametrize("bad", ["not-a-uuid", str(uuid.uuid4())])
+@pytest.mark.parametrize("bad", ["not-a-uuid", str(uuid.UUID(int=6))])
 def test_invalid_or_unknown_city(owner, city, bad):
     response = patch(owner, {"city_id": bad})
     assert (response.status_code, error_code(response)) == (400, "validation_error")

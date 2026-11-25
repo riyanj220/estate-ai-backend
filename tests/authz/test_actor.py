@@ -10,6 +10,8 @@ import pytest
 from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.errors import DomainError
 
+pytestmark = pytest.mark.guard
+
 ID = uuid.uuid4()
 
 

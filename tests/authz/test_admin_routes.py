@@ -15,6 +15,8 @@ from apps.kernel.errors import DomainError
 from apps.presentation.api.authz_matrix import route_table
 from apps.presentation.api.permissions import RequireAdmin
 
+pytestmark = pytest.mark.guard
+
 ROOT = Path(__file__).resolve().parents[2]
 SERVICES = ROOT / "apps" / "identity" / "services"
 ADMIN_PREFIX = "/api/v1/admin/"

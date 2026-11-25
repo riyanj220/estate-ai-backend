@@ -270,7 +270,7 @@ def test_an_empty_known_city_is_an_empty_list(client, karachi, lahore):
     assert response.status_code == 200 and response.json() == {"items": []}
 
 
-@pytest.mark.parametrize("bad", ["nope", str(uuid.uuid4()), "1234", "%20", "A" * 80])
+@pytest.mark.parametrize("bad", ["nope", str(uuid.UUID(int=3)), "1234", "%20", "A" * 80])
 def test_an_unknown_or_malformed_city_is_not_found(client, karachi, bad):
     response = client.get(url(bad))
     assert response.status_code == 404

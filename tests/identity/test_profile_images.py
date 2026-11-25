@@ -496,7 +496,7 @@ def test_the_public_logo_is_served_only_while_the_agency_is_active(state, visibl
 
 
 @pytest.mark.parametrize(
-    "bad", ["", "nope", "ABCDEF", str(uuid.uuid4()), None, 5, uuid.uuid4().hex]
+    "bad", ["", "nope", "ABCDEF", str(uuid.UUID(int=7)), None, 5, uuid.UUID(int=8).hex]
 )
 def test_unknown_or_malformed_logo_ids_are_not_found(bad):
     agency = owner("agency")

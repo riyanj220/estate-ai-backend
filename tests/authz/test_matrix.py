@@ -4,6 +4,8 @@ import pytest
 
 from apps.presentation.api.authz_matrix import BEGIN, END, render_document, route_table
 
+pytestmark = pytest.mark.guard
+
 DOC = Path(__file__).resolve().parents[2] / "docs" / "authorisation-matrix.md"
 
 

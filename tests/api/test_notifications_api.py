@@ -129,7 +129,7 @@ def test_reads_without_a_session_are_401(db, url):
     assert response.headers["Cache-Control"] == "no-store"
 
 
-@pytest.mark.parametrize("url", [READ_ALL, read_url(uuid.uuid4())])
+@pytest.mark.parametrize("url", [READ_ALL, read_url(uuid.UUID(int=1))])
 def test_posts_without_a_session_are_401(db, url):
     response = Client(enforce_csrf_checks=True).post(url, content_type="application/json")
     assert (response.status_code, error_code(response)) == (401, "unauthenticated")
@@ -349,7 +349,9 @@ def test_marking_someone_elses_is_404_and_changes_nothing(owner):
     }  # the same answer, so existence is never confirmed
 
 
-@pytest.mark.parametrize("raw", ["not-a-uuid", "123", "A" * 36, "%20", str(uuid.uuid4()).upper()])
+@pytest.mark.parametrize(
+    "raw", ["not-a-uuid", "123", "A" * 36, "%20", str(uuid.UUID(int=2)).upper()]
+)
 def test_malformed_id_is_404(owner, raw):
     store(owner.account_id)
     response = mark(owner, raw)

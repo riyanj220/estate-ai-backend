@@ -249,7 +249,7 @@ def test_wrong_types_are_invalid(city):
     }
 
 
-@pytest.mark.parametrize("bad", [str(uuid.uuid4()), uuid.uuid4()])
+@pytest.mark.parametrize("bad", [str(uuid.UUID(int=4)), uuid.UUID(int=5)])
 def test_unknown_city_is_refused(city, bad):
     view = make(city)
     assert errors_of(view, {"city_id": bad}) == {"city_id": "invalid_city"}

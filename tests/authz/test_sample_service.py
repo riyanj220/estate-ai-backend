@@ -8,6 +8,8 @@ from apps.kernel.errors import DomainError
 from tests.authz import sample_service
 from tests.authz.sample_service import Widget, rename_widget
 
+pytestmark = pytest.mark.guard
+
 OWNER = uuid.uuid4()
 
 

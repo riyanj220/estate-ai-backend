@@ -7,6 +7,10 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.guard
+
 ROOT = Path(__file__).resolve().parents[2]
 ALLOWED = {
     "apps/listings/policy.py",

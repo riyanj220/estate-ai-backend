@@ -10,6 +10,8 @@ from apps.kernel.privacy.patterns import (
     reject_contact_details,
 )
 
+pytestmark = pytest.mark.guard
+
 ZW = chr(0x200B)
 
 

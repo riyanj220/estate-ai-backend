@@ -3,6 +3,10 @@
 import ast
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.guard
+
 ROOT = Path(__file__).resolve().parents[2]
 ALLOWED = {"subscribers.py", "apps.py"}
 
