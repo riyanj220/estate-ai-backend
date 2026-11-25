@@ -59,8 +59,13 @@ the list may be empty when the frontend proxy is the only caller. `TRUSTED_PROXI
 uv run ruff check . && uv run ruff format --check .
 uv run lint-imports           # layering and import contracts (pyproject.toml)
 uv run pytest                 # needs the compose database running and .env present
+uv run pytest -n 3            # whole suite in parallel (pytest-xdist, one database per worker)
+uv run pytest tests/<app>     # just the affected app; `-m guard` runs the architecture, authz, privacy and OpenAPI guards
+scripts/test-changed.sh       # guards plus the tests of whatever changed against main
 uv audit
 ```
+
+See `docs/testing.md` for the test selection, the `guard` marker and the parallel-run rules.
 
 ## Architecture checks
 

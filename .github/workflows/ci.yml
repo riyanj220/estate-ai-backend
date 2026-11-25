@@ -66,7 +66,8 @@ jobs:
       - run: uv sync --frozen
       - name: Create database roles
         run: docker/postgres/create_roles.sh
-      - run: uv run pytest
+      # One database per xdist worker (test_estate_ai_gw0, ...), created by the migrator role.
+      - run: uv run pytest -n auto
 
   secret-scan:
     runs-on: ubuntu-latest
