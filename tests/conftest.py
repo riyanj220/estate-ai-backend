@@ -47,4 +47,11 @@ def _reseed_flushed_policies(request):
 
             seed = importlib.import_module("apps.catalog.migrations.0006_seed_amenities")
             seed.seed_amenities(apps, None)
+        from apps.listings.models import ListingQuotaPolicy
+
+        if not ListingQuotaPolicy.objects.exists():  # the quota policies, the same way
+            import importlib
+
+            seed = importlib.import_module("apps.listings.migrations.0013_quota_policy_and_events")
+            seed.seed_policies(apps, None)
     yield

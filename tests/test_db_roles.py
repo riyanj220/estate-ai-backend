@@ -100,6 +100,13 @@ def test_vector_extension_present():
         assert cursor.fetchone() is not None
 
 
+@pytest.mark.django_db
+def test_btree_gist_extension_present():
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM pg_extension WHERE extname = 'btree_gist'")
+        assert cursor.fetchone() is not None
+
+
 def test_runtime_can_upsert_counters_and_read_policy_but_not_ddl(runtime_conn):
     runtime_conn.execute("SELECT count(*) FROM kernel_ratelimitpolicy").fetchone()
     sql = (
@@ -191,6 +198,32 @@ def _audit_probe(runtime_conn):
         "UPDATE kernel_auditrecord SET reason = 'x'",
         "DELETE FROM kernel_auditrecord",
         "TRUNCATE kernel_auditrecord",
+    ):
+        with pytest.raises(errors.InsufficientPrivilege):
+            runtime_conn.execute(sql)
+
+
+def test_runtime_publication_events_are_append_only(runtime_conn, django_db_blocker):
+    try:
+        _publication_event_probe(runtime_conn)
+    finally:
+        with django_db_blocker.unblock(), connection.cursor() as cursor:
+            cursor.execute("DELETE FROM listings_publicationevent WHERE kind = 'seed'")
+
+
+def _publication_event_probe(runtime_conn):
+    runtime_conn.execute(
+        "INSERT INTO listings_publicationevent (id, account_id, listing_id, kind, counted, "
+        "correction_used, created_at) VALUES (gen_random_uuid(), gen_random_uuid(), "
+        "gen_random_uuid(), 'seed', false, false, now())"
+    )
+    assert runtime_conn.execute(
+        "SELECT count(*) FROM listings_publicationevent WHERE kind = 'seed'"
+    ).fetchone() == (1,)
+    for sql in (
+        "UPDATE listings_publicationevent SET counted = false",
+        "DELETE FROM listings_publicationevent",
+        "TRUNCATE listings_publicationevent",
     ):
         with pytest.raises(errors.InsufficientPrivilege):
             runtime_conn.execute(sql)
