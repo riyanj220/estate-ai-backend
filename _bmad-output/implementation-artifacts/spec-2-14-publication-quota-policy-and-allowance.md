@@ -77,6 +77,12 @@ Accepted deferrals:
 - Policy table grants (who may write `ListingQuotaPolicy` at runtime) are left for Story 2.20.
 - The allowance is two queries (limit, then count) with no lock; a policy change between them is harmless, and Story 2.15 takes the account lock anyway.
 
+Frontend half, as built (checks: lint, typecheck, build, api:check, prod checks, the 49-test allowance spec, the dashboard-visiting specs and `test:e2e:changed` 135 tests; the full suite runs in CI):
+
+- Review (one combined reviewer) found and the implementer fixed: the parser now enforces `remaining === max(limit - used, 0)`, offset-carrying ISO datetimes on day 1 at 00:00 Karachi, `resets_at` exactly one month after `period_start`, and exactly six keys; a limit of 0 says "Your account has no publications this month."; the focus re-read is throttled to 5 s, a failed quiet re-read keeps the numbers with a "may be out of date" note, and a quiet 401 reuses the existing session-gone path; stronger tests (month printed in other zones around the 19:00 UTC boundary, Suspended owner, real Visitor 307, retry state, hang timeout, focus re-read, 401 on focus).
+- Decisions: a quiet 403 keeps the numbers and shows the stale note (changing the shared hook to clear would affect the profile pages); `useProfileLoad` gained `focusIntervalMs` and `stale`, other pages unchanged.
+- Accepted/deferred: bar colour contrast is not axe-checked (native progress); `test.describe` serial mode as elsewhere.
+
 ## Verification
 
 **Backend (narrow while developing, full in CI):** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, then `scripts/test-changed.sh` (changed dirs plus guards) and, before the merge, one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q`.
