@@ -86,6 +86,12 @@ context:
 - **Deferred / noted:** the idle partial index does not serve the `GREATEST(...)` expression (fine at MVP scale);
   `GREATEST` NULL handling is Postgres-only.
 
+Frontend half, as built (frontend main see `git log`; checks: lint, typecheck, build, api:check, the three prod checks, the new 62-test spec and `test:e2e:changed` 144 tests; the full suite runs in CI):
+
+- Reviewers found and the implementer fixed: native dialog drift after a platform close (second Escape during a running delete) leaving an invisible error and a dead Delete button; flash confirmation not announced and possibly stale (now path + timestamp, 5 s expiry, empty live region filled after mount); a 409 left the page stale (now refetches and shows "no longer a draft"); only the backend `not_found` envelope counts as "already deleted"; navigation failsafe releases the locks after 4 s; Preview link moved into the editor with a "shows your saved changes" hint; privacy test now has a `leaky` stub mode; published-with-images preview, lock tests that really attempt Enter-submit and uploads while deleting, unused stub modes covered.
+- Decisions (departures from spec text, chosen as best option): a published listing opened on the Draft page now shows a read-only "no longer a draft" note instead of the edit form (the backend already refuses its edits; Story 2.19 correction window will need to re-enable limited edits there); the notification link's accessible name carries the sentence.
+- Accepted/deferred: the idle partial index does not serve the `Greatest()` expression (fine at this scale); `Greatest` NULL handling is Postgres-specific; notification kinds are not enumerated in openapi.
+
 ## Verification
 
 **Backend:** `env -u DJANGO_SETTINGS_MODULE uv run lint-imports; uv run ruff check .; uv run ruff format --check .; env -u DJANGO_SETTINGS_MODULE uv run pytest -q; uv run python manage.py makemigrations --check --dry-run; uv run python manage.py spectacular --validate --file openapi.yaml` (openapi regenerated deliberately).
