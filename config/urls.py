@@ -13,6 +13,7 @@ from apps.presentation.api.listings import (
     ListingDetailView,
     ListingPreviewView,
     MyListingsView,
+    PublicationAllowanceView,
 )
 from apps.presentation.api.notifications import (
     MarkAllReadView,
@@ -158,5 +159,10 @@ urlpatterns = [
         name="listing-image-file",
     ),
     path("api/v1/me/listings", MyListingsView.as_view(), name="me-listings"),
+    path(
+        "api/v1/me/publication-allowance",
+        PublicationAllowanceView.as_view(),
+        name="me-publication-allowance",
+    ),
     path("api/v1/schema", PublicSchemaView.as_view(), name="schema"),
 ]

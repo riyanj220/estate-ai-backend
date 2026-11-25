@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates the migrator and runtime roles and the pgvector extension.
+# Creates the migrator and runtime roles and the pgvector and btree_gist extensions.
 # Runs from the Postgres image's init directory, and from CI against a service
 # container (set PGHOST, PGPORT and PGPASSWORD there). Idempotent.
 #
@@ -33,6 +33,8 @@ SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'db', :'r_user') \gexec
 
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS btree_gist;
 \connect template1
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS btree_gist;
 SQL

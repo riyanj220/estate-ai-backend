@@ -46,7 +46,7 @@ MIGRATOR_DB_USER = env("MIGRATOR_USER", "migrator")
 RUNTIME_DB_USER = env("RUNTIME_USER", "runtime")
 
 # Tables the runtime role may only read and insert (the audit table, Story 1.10).
-RUNTIME_APPEND_ONLY_TABLES: list[str] = ["kernel_auditrecord"]
+RUNTIME_APPEND_ONLY_TABLES: list[str] = ["kernel_auditrecord", "listings_publicationevent"]
 
 
 def build_database(user: str, password: str) -> dict:

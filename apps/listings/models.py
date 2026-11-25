@@ -3,7 +3,10 @@ from decimal import Decimal
 from functools import reduce
 from operator import or_
 
+from django.contrib.postgres.constraints import ExclusionConstraint
+from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
 from django.db import models
+from django.db.models import Func
 from django.db.models.functions import Length
 from django.db.models.lookups import GreaterThanOrEqual, LessThanOrEqual
 from django.utils import timezone
@@ -559,5 +562,93 @@ class ListingImage(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(position__gte=0), name="listings_image_position_gte_0"
+            ),
+        ]
+
+
+QUOTA_ACCOUNT_TYPES = ("individual", "agency")  # the identity enum values, never imported (AD-7)
+PUBLICATION_KINDS = ("initial", "republish_counted", "republish_free", "restore", "seed")
+COUNTED_KINDS = ("initial", "republish_counted")
+
+
+class ListingQuotaPolicy(models.Model):
+    """The monthly publication allowance of an account type, effective-dated (AD-7).
+
+    Rows of one account type never overlap (an exclusion constraint). A limit is always resolved
+    at the time of the attempt, never stored on an event. Written by the seed migration and,
+    later, Story 2.20's service only."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account_type = models.CharField(max_length=16)
+    monthly_limit = models.IntegerField()
+    effective_from = models.DateTimeField()
+    effective_to = models.DateTimeField(null=True)  # exclusive end; NULL is open-ended
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(account_type__in=QUOTA_ACCOUNT_TYPES),
+                name="listings_quota_type_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(monthly_limit__gte=0), name="listings_quota_limit_nonneg"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gt=models.F("effective_from")),
+                name="listings_quota_range_valid",
+            ),
+            ExclusionConstraint(
+                name="listings_quota_no_overlap",
+                expressions=[
+                    ("account_type", RangeOperators.EQUAL),
+                    (
+                        Func(
+                            "effective_from",
+                            "effective_to",
+                            function="tstzrange",
+                            output_field=DateTimeRangeField(),
+                        ),
+                        RangeOperators.OVERLAPS,
+                    ),
+                ],
+            ),
+        ]
+
+
+class PublicationEvent(models.Model):
+    """One publication, republication, restore or seed, for the monthly count (AD-7).
+
+    Written by Story 2.15's publish service only (none yet), never updated or deleted by
+    application code. `account_id` and `listing_id` are plain columns: no foreign key, so the
+    quota history survives a Listing's deletion."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account_id = models.UUIDField()
+    listing_id = models.UUIDField()
+    kind = models.CharField(max_length=24)
+    counted = models.BooleanField()
+    identity_fingerprint = models.TextField(null=True)
+    correction_used = models.BooleanField(default=False)
+    idempotency_key = models.TextField(null=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["account_id", "created_at"], name="listings_pubevent_month_idx")
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(kind__in=PUBLICATION_KINDS), name="listings_pubevent_kind_valid"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(counted=False) | models.Q(kind__in=COUNTED_KINDS),
+                name="listings_pubevent_counted_kind",
+            ),
+            models.UniqueConstraint(
+                fields=["account_id", "idempotency_key"],
+                condition=models.Q(idempotency_key__isnull=False),
+                name="listings_pubevent_idempotency_unique",
             ),
         ]
