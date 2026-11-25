@@ -8,7 +8,12 @@ from apps.presentation.api.listing_images import (
     ListingImageFileView,
     ListingImagesView,
 )
-from apps.presentation.api.listings import DraftCreateView, ListingDetailView, MyListingsView
+from apps.presentation.api.listings import (
+    DraftCreateView,
+    ListingDetailView,
+    ListingPreviewView,
+    MyListingsView,
+)
 from apps.presentation.api.notifications import (
     MarkAllReadView,
     MarkReadView,
@@ -132,6 +137,11 @@ urlpatterns = [
     path("api/v1/registry", RegistryView.as_view(), name="registry"),
     path("api/v1/listings", DraftCreateView.as_view(), name="listings"),
     path("api/v1/listings/<str:listing_id>", ListingDetailView.as_view(), name="listing"),
+    path(
+        "api/v1/listings/<str:listing_id>/preview",
+        ListingPreviewView.as_view(),
+        name="listing-preview",
+    ),
     path(
         "api/v1/listings/<str:listing_id>/images",
         ListingImagesView.as_view(),

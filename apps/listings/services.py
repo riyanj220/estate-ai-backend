@@ -2,10 +2,12 @@
 
 import uuid
 from collections.abc import Mapping
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.catalog import registry
@@ -13,7 +15,8 @@ from apps.catalog import selectors as catalog
 from apps.identity.capabilities import Access, Capability, matrix_access
 from apps.identity.policy import can
 from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, lock_account
-from apps.kernel import audit, media, ratelimit
+from apps.identity.state import AccountState
+from apps.kernel import audit, media, notifications, ratelimit
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.kernel.events import emit
@@ -58,8 +61,14 @@ from apps.listings.models import (
     PropertyListing,
 )
 from apps.listings.selectors import (
+    DRAFT_EXPIRING,
+    GRACE_DAYS,
+    IDLE_DAYS,
+    LATE_AFTER_DAYS,
+    REGRACE_DAYS,
     ImageView,
     ListingView,
+    activity_of,
     address_of,
     amenities_of,
     area_of,
@@ -69,6 +78,7 @@ from apps.listings.selectors import (
     field_text,
     image_url,
     location_of,
+    notice_stored,
     plot_of,
     residential_of,
     terms_of,
@@ -76,6 +86,7 @@ from apps.listings.selectors import (
 )
 
 OPEN_DRAFTS = "open_drafts"
+OPEN_THROTTLE = timedelta(hours=1)  # `last_opened_at` is written at most this often
 
 
 class FieldsInvalid(DomainError):
@@ -697,3 +708,161 @@ def set_image_order(actor: Actor, listing_id, base_revision, order, cover_id=Non
 
 def _position(link) -> int:
     return link.position
+
+
+# --- opening, deleting and retention of Drafts (Story 2.13) --------------------------------------
+
+
+def record_open(actor: Actor, listing_id, now: datetime | None = None) -> bool:
+    """Note that the owner opened or previewed their Draft: set `last_opened_at`, at most once an
+    hour (when it is missing or older than an hour), and never touch `revision`, `updated_at` or
+    the revision rows. Returns whether it wrote.
+    Not the owner's Draft, a Visitor or an actor without `view_drafts` is a quiet `False` (the
+    read that precedes this call has already answered with `not_found`)."""
+    if actor.kind is not ActorKind.USER or not can(actor, Capability.VIEW_DRAFTS):
+        return False
+    key = canonical_uuid(listing_id)
+    if key is None:
+        return False
+    now = now or timezone.now()
+    due = Q(last_opened_at__isnull=True) | Q(last_opened_at__lt=now - OPEN_THROTTLE)
+    written = (
+        PropertyListing.objects.filter(
+            due, id=key, owner_account_id=actor.account_id, status=ListingStatus.DRAFT.value
+        ).update(last_opened_at=now)
+        == 1
+    )
+    return written
+
+
+def _remove_draft(actor: Actor, row: PropertyListing, reason: str) -> None:
+    """Under the account and Listing locks: give every image back through `kernel.media` (usage
+    returned, files deleted after commit; a lost asset row is no obstacle), delete the Listing and
+    every row that belongs to it (the foreign keys cascade) and write the audit row (the Listing
+    id and the reason only, never content)."""
+    asset_ids = list(ListingImage.objects.filter(listing=row).values_list("asset_id", flat=True))
+    for asset_id in asset_ids:
+        if actor.kind is ActorKind.USER:
+            media.delete_asset(actor, asset_id, missing_ok=True)
+        else:
+            media.purge_owned_asset(actor, row.owner_account_id, asset_id)
+    listing_id = row.id
+    row.delete()
+    audit.record(actor, "listing.draft_deleted", "listing", listing_id, {"reason": reason})
+
+
+def delete_draft(actor: Actor, listing_id) -> None:
+    """Delete one of the owner's Drafts with its images (Story 2.13).
+
+    Refusals, in order: Visitor `unauthenticated`; not owned (another account, an administrator,
+    an unknown or malformed id, and a repeat) `not_found`; no `edit_drafts` capability (Suspended,
+    Deactivated) `forbidden`; a Listing that is not a `draft` `conflict`, nothing changed. In one
+    transaction that locks the account, then the Listing row (the order used everywhere), and
+    decides again from the locked rows: every image goes through `media.delete_asset` (usage given
+    back, files deleted after commit), then the Listing and every row of it (location, private
+    address, amenities, details, image links, revisions) and one `listing.draft_deleted` audit row
+    with the Listing id and the reason `owner`. An edit or upload racing the delete ends in
+    `not_found` or `conflict`, never an orphan."""
+    key = _owned_editable(actor, listing_id)
+    with transaction.atomic():
+        _, row = _lock_for_images(actor, key, check_status=False)
+        if row.status != ListingStatus.DRAFT.value:
+            raise DomainError("conflict")
+        _remove_draft(actor, row, "owner")
+
+
+def _require_system(actor: Actor) -> None:
+    if actor.kind is not ActorKind.SYSTEM:
+        raise DomainError("forbidden")
+
+
+def _locked_for_retention(key, owner_id):
+    """The owner's account and then the Listing row, locked (the usual order), as they are now.
+    None when the Listing is gone or no longer a Draft of that owner, or its owner is Suspended or
+    Deactivated."""
+    account = lock_account(owner_id)
+    row = PropertyListing.objects.select_for_update().filter(id=key).first()
+    if (
+        row is None
+        or row.owner_account_id != owner_id
+        or row.status != ListingStatus.DRAFT.value
+        or account.state in (AccountState.SUSPENDED, AccountState.DEACTIVATED)
+    ):
+        return None
+    return row
+
+
+def _owner_of(key) -> uuid.UUID | None:
+    return PropertyListing.objects.filter(id=key).values_list("owner_account_id", flat=True).first()
+
+
+def notice_idle_draft(actor: Actor, listing_id, now: datetime) -> bool:
+    """Retention (system actor only, `forbidden` otherwise): tell the owner a Draft with 180 days
+    of no activity will be deleted in 30 days. Decided again under the locks: it must still be a
+    Draft of a non-Suspended, non-Deactivated owner, without a notice, with activity at or before
+    `now - 180 days`.
+    Sets `expiry_notice_sent_at = now` and `delete_after = now + 30 days` and raises
+    `listing.draft_expiring` (the Listing id and the days left, nothing else) after commit as the
+    last step. Returns whether it noticed."""
+    _require_system(actor)
+    key = canonical_uuid(listing_id)
+    owner = _owner_of(key) if key else None
+    if owner is None:
+        return False
+    with transaction.atomic():
+        row = _locked_for_retention(key, owner)
+        if (
+            row is None
+            or row.expiry_notice_sent_at is not None
+            or activity_of(row) > now - timedelta(days=IDLE_DAYS)
+        ):
+            return False
+        row.expiry_notice_sent_at = now
+        row.delete_after = now + timedelta(days=GRACE_DAYS)
+        row.save(update_fields=["expiry_notice_sent_at", "delete_after"])
+        notifications.notify(owner, DRAFT_EXPIRING, {"listing_id": row.id, "days_left": GRACE_DAYS})
+    return True
+
+
+def expire_idle_draft(actor: Actor, listing_id, now: datetime) -> str:
+    """Retention (system actor only, `forbidden` otherwise): act on a Draft whose `delete_after`
+    has come. Decided again under the locks, in this order:
+
+    - gone, not a Draft, owner Suspended or Deactivated, no deletion date, or not yet due:
+      `skipped`;
+    - opened or edited since the notice (activity later than `expiry_notice_sent_at`): both
+      columns cleared, the Draft stays: `cleared`;
+    - no stored `listing.draft_expiring` notification for it (the notice may never have reached
+      the owner): the notice is issued again with the full 30 days (`delete_after = now + 30 days`),
+      nothing is deleted: `extended`;
+    - the deletion date is more than 2 days past (the owner was Suspended or the job did not run):
+      the owner gets a fresh 7 days, `delete_after = now + 7 days`, a new notice with
+      `days_left: 7`, nothing is deleted: `extended`;
+    - otherwise it is deleted exactly like an owner delete (images, rows, audit reason
+      `retention`): `deleted`."""
+    _require_system(actor)
+    key = canonical_uuid(listing_id)
+    owner = _owner_of(key) if key else None
+    if owner is None:
+        return "skipped"
+    with transaction.atomic():
+        row = _locked_for_retention(key, owner)
+        if row is None or row.delete_after is None or row.delete_after > now:
+            return "skipped"
+        if activity_of(row) > row.expiry_notice_sent_at:
+            row.expiry_notice_sent_at = None
+            row.delete_after = None
+            row.save(update_fields=["expiry_notice_sent_at", "delete_after"])
+            return "cleared"
+        if not notice_stored(row):
+            days = GRACE_DAYS
+        elif now - row.delete_after > timedelta(days=LATE_AFTER_DAYS):
+            days = REGRACE_DAYS
+        else:
+            _remove_draft(actor, row, "retention")
+            return "deleted"
+        row.expiry_notice_sent_at = now
+        row.delete_after = now + timedelta(days=days)
+        row.save(update_fields=["expiry_notice_sent_at", "delete_after"])
+        notifications.notify(owner, DRAFT_EXPIRING, {"listing_id": row.id, "days_left": days})
+        return "extended"

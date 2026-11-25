@@ -13,17 +13,19 @@ import re
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
+from django.db.models.functions import Greatest
 
 from apps.catalog import registry
+from apps.identity import selectors as identity
 from apps.identity.capabilities import Capability
 from apps.identity.policy import can
-from apps.kernel import media
+from apps.kernel import media, notifications
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.listings import policy
@@ -484,7 +486,7 @@ class PublicListingView:
 
 
 # Fields shown at the top of the projection, not repeated in `fields`.
-_PROJECTED_APART = (*IDENTITY_FIELDS, "title", "description")
+PROJECTED_APART = (*IDENTITY_FIELDS, "title", "description")
 
 
 def public_fields(values: Mapping[str, object], definition=None) -> dict[str, object]:
@@ -495,7 +497,7 @@ def public_fields(values: Mapping[str, object], definition=None) -> dict[str, ob
     definition = definition or registry.field
     shown = {}
     for name, value in values.items():
-        if name in _PROJECTED_APART:
+        if name in PROJECTED_APART:
             continue
         found = definition(name)
         if found is None:
@@ -546,6 +548,23 @@ def public_listing(viewer: Actor, listing_id) -> PublicListingView:
     return public_view_of(row)
 
 
+def preview_of(actor: Actor, listing_id) -> PublicListingView:
+    """What the public will see of the owner's own Listing (Story 2.13), built by the SAME
+    projection function as the public read (`public_view_of`: no second field list), minus the
+    `is_public` gate, because the viewer is the owner. Allowed for the owner's own Draft and
+    Published Listing (`policy.is_owner`: Active, Email-unverified and Suspended owners; not a
+    Deactivated one). Everything else (another account, an administrator, a Visitor, an unknown or
+    malformed id, a status the owner may not see) is `not_found`, so existence is never confirmed.
+    The private address is not read (`public_view_of` never joins it)."""
+    key = canonical_uuid(listing_id)
+    if key is None:
+        raise DomainError("not_found")
+    row = PropertyListing.objects.select_related(*PUBLIC_RELATED).filter(id=key).first()
+    if row is None or not policy.is_owner(actor, row):
+        raise DomainError("not_found")
+    return public_view_of(row)
+
+
 def image_for_serving(
     actor: Actor, listing_id, image_id, *, with_bytes: bool = True
 ) -> ServedImage:
@@ -585,3 +604,88 @@ def image_for_serving(
         raise DomainError("not_found")
     asset, data = stored
     return ServedImage(content_type=asset.content_type, data=data, size=len(data), public=public)
+
+
+# --- draft retention candidates (Story 2.13); `listings.retention` acts on them ------------------
+
+IDLE_DAYS = 180  # a Draft with no activity this long gets a notice
+GRACE_DAYS = 30  # then it is deleted this much later unless the owner opened or edited it
+RETENTION_BATCH = 200  # Drafts per keyset page
+RETENTION_MAX_PAGES = 50  # pages per job run (so at most 10,000 Drafts); the next run does the rest
+LATE_AFTER_DAYS = 2  # a deletion date this far past is not acted on (suspension or an outage)
+REGRACE_DAYS = 7  # the fresh grace period then given
+DRAFT_EXPIRING = "listing.draft_expiring"
+
+
+def _activity():
+    """The activity time of a Draft: the latest of its edit, open and creation times (SQL
+    GREATEST ignores a NULL `last_opened_at`)."""
+    return Greatest("updated_at", "last_opened_at", "created_at")
+
+
+def activity_of(row: PropertyListing) -> datetime:
+    """The same activity time for one row, as the services re-check it under the Listing lock."""
+    return max(t for t in (row.updated_at, row.last_opened_at, row.created_at) if t is not None)
+
+
+def idle_draft_ids(
+    now: datetime, after: uuid.UUID | None = None, limit: int | None = None
+) -> list[uuid.UUID]:
+    """One keyset page (by id, after `after`) of Drafts to notice: no activity for 180 days
+    (exactly 180 counts), no notice yet, owner neither Suspended nor Deactivated."""
+    rows = (
+        PropertyListing.objects.filter(
+            status=ListingStatus.DRAFT.value, expiry_notice_sent_at__isnull=True
+        )
+        .annotate(activity=_activity())
+        .filter(activity__lte=now - timedelta(days=IDLE_DAYS))
+        .exclude(owner_account_id__in=identity.suspended_or_deactivated_account_ids())
+        .order_by("id")
+    )
+    if after is not None:
+        rows = rows.filter(id__gt=after)
+    return list(rows.values_list("id", flat=True)[: limit or RETENTION_BATCH])
+
+
+def due_draft_ids(
+    now: datetime, after: uuid.UUID | None = None, limit: int | None = None
+) -> list[uuid.UUID]:
+    """One keyset page (by id, after `after`) of Drafts whose deletion date has come
+    (`delete_after <= now`), owner neither Suspended nor Deactivated. The service decides, under
+    the lock, whether each is deleted, cleared or given a fresh grace period."""
+    rows = (
+        PropertyListing.objects.filter(
+            status=ListingStatus.DRAFT.value, delete_after__isnull=False, delete_after__lte=now
+        )
+        .exclude(owner_account_id__in=identity.suspended_or_deactivated_account_ids())
+        .order_by("id")
+    )
+    if after is not None:
+        rows = rows.filter(id__gt=after)
+    return list(rows.values_list("id", flat=True)[: limit or RETENTION_BATCH])
+
+
+def deletable_now(ids, now: datetime) -> int:
+    """How many of these due Drafts the real run would delete (the dry run's count): activity not
+    later than the notice, deletion date not more than 2 days past, and the notice really stored."""
+    rows = PropertyListing.objects.filter(id__in=list(ids), expiry_notice_sent_at__isnull=False)
+    return sum(1 for row in rows if deletable(row, now))
+
+
+def deletable(row: PropertyListing, now: datetime) -> bool:
+    """The three conditions under which a due Draft is deleted rather than cleared or re-noticed
+    (the expiry service applies the same rules in its own order, with the reasons)."""
+    return (
+        row.delete_after is not None
+        and row.expiry_notice_sent_at is not None
+        and activity_of(row) <= row.expiry_notice_sent_at
+        and now - row.delete_after <= timedelta(days=LATE_AFTER_DAYS)
+        and notice_stored(row)
+    )
+
+
+def notice_stored(row: PropertyListing) -> bool:
+    """Whether a `listing.draft_expiring` notification for this Listing is on the owner's list."""
+    return notifications.has_with_payload(
+        row.owner_account_id, DRAFT_EXPIRING, "listing_id", str(row.id)
+    )

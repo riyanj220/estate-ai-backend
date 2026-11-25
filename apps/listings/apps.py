@@ -8,7 +8,8 @@ class ListingsConfig(AppConfig):
 
     def ready(self):
         from apps.catalog import registry
-        from apps.kernel import audit
+        from apps.kernel import audit, notifications, retention
+        from apps.listings import retention as draft_retention
 
         # Metadata holds the three enumerated registry values only: no free text, no address.
         audit.register_action(
@@ -19,3 +20,12 @@ class ListingsConfig(AppConfig):
                 "subtype": registry.all_subtypes(),
             },
         )
+        # The id and the reason only; never a title, address or other content.
+        audit.register_action("listing.draft_deleted", {"reason": ["owner", "retention"]})
+        # The Listing id and the days left; the frontend renders a fixed sentence from the kind.
+        notifications.register_kind(
+            "listing.draft_expiring",
+            {"listing_id": notifications.UUID_TEXT, "days_left": notifications.int_range(0, 365)},
+        )
+        retention.register("listings.draft_notice", draft_retention.draft_notice)
+        retention.register("listings.draft_expiry", draft_retention.draft_expiry)

@@ -4,6 +4,8 @@ edit one with a revision check (Story 2.2).
 Rules live in `listings`; enums come from the Field registry, never hand-copied.
 """
 
+import logging
+
 from django.core.exceptions import ImproperlyConfigured
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -24,6 +26,8 @@ from apps.presentation.api.bodies import ConflictWithCurrent, exact_fields, fiel
 from apps.presentation.api.passwords import NoStoreMixin
 from apps.presentation.api.permissions import RequireSignedIn
 from apps.presentation.api.serializers import ErrorBodySerializer
+
+logger = logging.getLogger("estate.listings")
 
 CREATE_FIELDS = ("purpose", "category", "subtype")
 UPDATE_BODY = ("base_revision", "fields")
@@ -186,6 +190,96 @@ class ListingSerializer(serializers.Serializer):
     )
 
 
+# The registry fields of class `public` other than those shown at the top of the projection: the
+# same rule `selectors.public_fields` applies, derived from the registry (never hand-listed).
+PUBLIC_FIELD_IDS = tuple(
+    name
+    for name in WIRE_FIELDS
+    if name not in selectors.PROJECTED_APART
+    and (found := registry.field(name)) is not None
+    and found.field_class == "public"
+)
+PublicFieldsSerializer = _field_serializer(
+    "PublicFieldsSerializer",
+    PUBLIC_FIELD_IDS,
+    False,
+    "The registry fields of class `public`, flat by registry id. Null means unknown.",
+)
+
+
+class PublicImageSerializer(serializers.Serializer):
+    """An image as the public sees it: no asset id, storage key, owner or stored size."""
+
+    id = serializers.UUIDField()
+    position = serializers.IntegerField(min_value=0)
+    is_cover = serializers.BooleanField()
+    content_type = serializers.ChoiceField(choices=CONTENT_TYPES)
+    width = serializers.IntegerField()
+    height = serializers.IntegerField()
+    url = serializers.CharField(
+        help_text=(
+            "Relative path of the media endpoint, `/api/v1/listings/{id}/images/{image_id}/file`."
+        )
+    )
+
+
+class PublicListingSerializer(serializers.Serializer):
+    """The public projection (`selectors.PublicListingView`), field by field. It has no owner,
+    status, revision, provenance, private-class field or phone."""
+
+    id = serializers.UUIDField()
+    purpose = serializers.ChoiceField(choices=PURPOSES)
+    category = serializers.ChoiceField(choices=CATEGORIES)
+    subtype = serializers.ChoiceField(choices=SUBTYPES)
+    title = serializers.CharField(allow_null=True)
+    description = serializers.CharField(allow_null=True)
+    fields = PublicFieldsSerializer()
+    media = PublicImageSerializer(many=True, help_text="The images in `position` order.")
+    registry_version = serializers.IntegerField(min_value=1)
+
+
+class ListingPreviewSerializer(PublicListingSerializer):
+    """What the public will see of the owner's own Listing, plus an `estimate` that is always
+    null until the valuation feature exists."""
+
+    estimate = serializers.DictField(
+        allow_null=True,
+        read_only=True,
+        help_text="Always null for now; reserved for the valuation estimate.",
+    )
+
+
+def public_image_data(view: selectors.PublicImageView) -> dict:
+    return PublicImageSerializer(
+        {
+            "id": view.id,
+            "position": view.position,
+            "is_cover": view.is_cover,
+            "content_type": view.content_type,
+            "width": view.width,
+            "height": view.height,
+            "url": view.url,
+        }
+    ).data
+
+
+def preview_data(view: selectors.PublicListingView) -> dict:
+    return ListingPreviewSerializer(
+        {
+            "id": view.id,
+            "purpose": view.purpose,
+            "category": view.category,
+            "subtype": view.subtype,
+            "title": view.title,
+            "description": view.description,
+            "fields": dict(view.fields),
+            "media": [public_image_data(item) for item in view.media],
+            "registry_version": view.registry_version,
+            "estimate": None,
+        }
+    ).data
+
+
 class DraftCreateSerializer(serializers.Serializer):
     purpose = serializers.ChoiceField(choices=PURPOSES, help_text="From the registry.")
     category = serializers.ChoiceField(choices=CATEGORIES, help_text="From the registry.")
@@ -264,6 +358,18 @@ def listing_data(view: selectors.ListingView) -> dict:
     ).data
 
 
+def _note_open(actor, listing_id) -> None:
+    """Record the open, but never let a failing bookkeeping write fail the read it follows (the
+    class is logged, never the id or the message)."""
+    try:
+        services.record_open(actor, listing_id)
+    except Exception as exc:
+        logger.error(
+            "listing_open_not_recorded",
+            extra={"event": "listing_open_not_recorded", "exception_class": type(exc).__name__},
+        )
+
+
 class DraftCreateView(NoStoreMixin, APIView):
     permission_classes = [RequireSignedIn]
 
@@ -311,7 +417,38 @@ class ListingDetailView(NoStoreMixin, APIView):
         responses={200: OpenApiResponse(ListingSerializer, description="The Listing")},
     )
     def get(self, request, listing_id):
-        return Response(listing_data(selectors.get_owned_listing(get_actor(request), listing_id)))
+        actor = get_actor(request)
+        view = selectors.get_owned_listing(actor, listing_id)
+        _note_open(actor, listing_id)  # opening a Draft counts as activity (at most hourly)
+        return Response(listing_data(view))
+
+    @extend_schema(
+        operation_id="delete_listing",
+        summary="Delete one of the signed-in account's own Drafts",
+        description=(
+            "Needs `X-CSRFToken`. Deletes the Draft and everything of it: its images (the stored "
+            "files go and the bytes are given back to the account's storage), its fields, private "
+            "address and revision history. This cannot be undone. `204` has no body. Only a "
+            "`draft` can be deleted here: any other status is `409 conflict` and nothing changes. "
+            "Another account's, an administrator's, an unknown, a malformed and an already deleted "
+            "id are all `404 not_found`; an account that may not edit (Suspended, Deactivated) is "
+            "`403 forbidden`. Never cached."
+        ),
+        responses={
+            204: OpenApiResponse(description="Deleted"),
+            401: OpenApiResponse(ErrorBodySerializer, description="`unauthenticated`: a Visitor"),
+            403: OpenApiResponse(
+                ErrorBodySerializer, description="`forbidden`: Suspended, or a missing CSRF token"
+            ),
+            404: OpenApiResponse(ErrorBodySerializer, description="`not_found`"),
+            409: OpenApiResponse(
+                ErrorBodySerializer, description="`conflict`: the Listing is not a Draft"
+            ),
+        },
+    )
+    def delete(self, request, listing_id):
+        services.delete_draft(get_actor(request), listing_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(
         operation_id="update_listing",
@@ -416,6 +553,32 @@ class ListingDetailView(NoStoreMixin, APIView):
         except services.StaleRevision as exc:
             raise ConflictWithCurrent(listing_data(exc.current)) from None
         return Response(listing_data(view))
+
+
+class ListingPreviewView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="preview_listing",
+        summary="Preview what the public will see of one of the signed-in account's own Listings",
+        description=(
+            "Owner only, for the account's own `draft` and `published` Listing. The body is the "
+            "public projection (the same fields a visitor would get, built by the same function): "
+            "never a private address, coordinates, a phone number, the revision, the provenance or "
+            "the status. `media` lists the images in the public shape; their `url` is the media "
+            "endpoint, which serves a Draft's image to its owner only. `estimate` is always "
+            "`null` until the valuation feature exists. Another account's, an administrator's, an "
+            "unknown and a malformed id are all `404 not_found`. A Visitor gets `401`. Opening the "
+            "preview counts as opening the Draft (it postpones the idle-Draft notice). Never "
+            "cached."
+        ),
+        responses={200: OpenApiResponse(ListingPreviewSerializer, description="The preview")},
+    )
+    def get(self, request, listing_id):
+        actor = get_actor(request)
+        view = selectors.preview_of(actor, listing_id)
+        _note_open(actor, listing_id)
+        return Response(preview_data(view))
 
 
 def _page_size(request) -> int:

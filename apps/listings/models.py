@@ -226,9 +226,26 @@ class PropertyListing(models.Model):
     provenance = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
+    # Draft retention (Story 2.13), written only by the owning services and never with `revision`
+    # or `updated_at`: when the owner last opened or previewed the Draft (at most hourly), and
+    # the notice that a Draft with no activity will be deleted (both set together, or neither).
+    last_opened_at = models.DateTimeField(null=True)
+    expiry_notice_sent_at = models.DateTimeField(null=True)
+    delete_after = models.DateTimeField(null=True)
 
     class Meta:
         indexes = [
+            # idle Draft candidates for the retention notice, and the Drafts due for deletion
+            models.Index(
+                fields=["updated_at"],
+                condition=models.Q(status="draft"),
+                name="listings_draft_idle_idx",
+            ),
+            models.Index(
+                fields=["delete_after"],
+                condition=models.Q(status="draft", delete_after__isnull=False),
+                name="listings_draft_expiry_idx",
+            ),
             # the unfiltered own list, and the status-filtered one (newest first, id tiebreak)
             models.Index(
                 fields=["owner_account_id", "-created_at", "-id"], name="listings_owner_list_idx"
@@ -263,6 +280,11 @@ class PropertyListing(models.Model):
             ),
             models.CheckConstraint(
                 condition=_taxonomy_pairs(), name="listings_subtype_in_category"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(expiry_notice_sent_at__isnull=True, delete_after__isnull=True)
+                | models.Q(expiry_notice_sent_at__isnull=False, delete_after__isnull=False),
+                name="listings_expiry_notice_paired",
             ),
             *text_constraints(),
         ]
