@@ -72,6 +72,12 @@ Fixes from review: (1) images count only live links (`selectors.live_image_count
 
 Accepted deferrals: the fingerprint covers only today's `quota_identity` fields; `QuotaPolicyMissing` stays a 500; no new field sentences or error codes in this round.
 
+Frontend half, as built (checks: lint, typecheck, build, api:check, prod checks, the 35-test publish spec, the Draft-page specs and `test:e2e:changed` 124 tests; the full suite runs in CI):
+
+- Review found and the implementer fixed: a `409 stale_revision` whose `current` is already published now shows the "published elsewhere" outcome; a `409 conflict` on a still-draft listing no longer claims it is published; a "Confirm this value" button resolves `confirm_required` (re-sends the saved value, the backend stores it confirmed); Retry and the 422 auto-retry read fresh state, fields are read-only while publishing; real 403s (`email_not_verified`, `publishing_unavailable`) no longer retry as CSRF failures; one summary at a time; success announced once.
+- Decisions: Publish stays clickable at 0 remaining (the server is authoritative); verify link goes to `/verify-email`; header-only 400s show a generic "try again".
+- Deferred: focus falls to the page body when the Publish section unmounts after success (the live region announces it; move focus to the status line in a later polish); the README does not yet list the newest stub modes and test ids; no-control unconfirmed fields have no test (no preset); stale allowance count is advisory.
+
 ## Verification
 
 **Backend (narrow while developing, full in CI):** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, then `scripts/test-changed.sh` and, before the merge, one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q`.
