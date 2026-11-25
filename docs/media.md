@@ -113,6 +113,13 @@ account; it counts uploads only).
   wrapper as the upload cap; refusal `400 validation_error` with `fields.order` `invalid`), an `order` longer than 10 is
   refused before anything else, and the `image_order` rate limit (120 per hour per account; `docs/rate-limits.md`).
 
+### Deleting a Draft (Story 2.13)
+
+`listings.services.delete_draft` (the owner) and the retention job `listings.draft_expiry` remove every image of the Draft
+through `kernel.media` (`delete_asset` for the owner, `purge_owned_asset` for the system actor): the asset row and the
+storage usage go in the Listing's transaction, the files after commit. A failing file delete is logged and never fails the
+request; the orphan purge finds the leftover file within 24 hours. A lost asset row is no obstacle.
+
 ## Serving images (Story 2.10)
 
 `GET /api/v1/listings/{listing_id}/images/{image_id}/file` (also `HEAD`) is THE media endpoint: the only place an image

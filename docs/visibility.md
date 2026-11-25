@@ -65,6 +65,13 @@ being dropped silently, and a field the registry marks `private` is omitted (end
 responses. `tests/listings/test_public_projection.py` walks the dataclass fields and serialised form, and proves the
 private-class guard can fail by feeding it a registry that marks a field private.
 
+## Preview by the owner (Story 2.13)
+
+`selectors.preview_of(actor, listing_id)` returns the same `PublicListingView`, built by the same `public_view_of`, for the
+owner's own Draft or Published Listing (`policy.is_owner`), without the `is_public` gate. It is the only place the owner
+sees the public shape of a non-public Listing; everyone else keeps `not_found`. `GET /api/v1/listings/{id}/preview` adds
+`estimate: null` and is `no-store`. See `docs/listings.md`.
+
 ## Media
 
 `image_for_serving` asks `can_view`. See `docs/media.md`: a public Listing's images go to anyone with `Cache-Control:

@@ -82,6 +82,15 @@ An item is exactly `{id, kind, payload, created_at, read}`: `read` is a boolean;
 `read_at` are never returned. Every answer, errors included, is `Cache-Control: no-store`. A cursor is opaque but
 encodes the last `seq` position.
 
+## Kinds raised by the listings app
+
+`listing.draft_expiring` (Story 2.13): payload `{listing_id: UUID_TEXT, days_left: int 0..365}`, raised after commit by the
+`listings.draft_notice` retention job to the owner only. `notifications.UUID_TEXT` is a schema type for an id: a
+`uuid.UUID` or its canonical lowercase text, stored as text (a `SHORT_TEXT` cannot carry an id: its digit limit exists to
+keep phone numbers out). A due Draft whose notification was never stored, or whose deletion date passed long ago, is noticed again (30 or 7
+days left) before anything is deleted (`docs/listings.md`). The payload never holds a title, address or other content; the frontend renders a fixed sentence
+from the kind and links to the Draft.
+
 ## Retention and removal
 
 The `kernel.notifications` retention job deletes notifications read more than 90 days ago (`read_at`) and any

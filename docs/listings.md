@@ -425,6 +425,8 @@ check is still refused.
 | `POST /api/v1/listings` | body `{purpose, category, subtype}`; `201` with the Listing; CSRF; no-store |
 | `GET /api/v1/listings/{id}` | owner only, `404` otherwise; no-store |
 | `PATCH /api/v1/listings/{id}` | body strictly `{base_revision, fields}`; `200` with the Listing; `409 stale_revision` (below); `400` field codes keyed by registry id; `404` for non-owners; `403` Suspended; CSRF; no-store |
+| `GET /api/v1/listings/{id}/preview` | owner only (own `draft` or `published`), `404` otherwise, `401` Visitor; the public projection plus `estimate: null`; no-store; counts as an open (below) |
+| `DELETE /api/v1/listings/{id}` | owner only; `204`; a non-draft is `409 conflict`; `404` for non-owners, unknown ids and repeats; `403` Suspended; CSRF; no-store (below) |
 | `GET /api/v1/me/listings` | own listings, `status` filter, `page_size`, `cursor`; `{next, previous, results}` (`previous` is always null); bad cursor or status is `validation_error`; no-store |
 | `GET /api/v1/registry` | public Field registry (`docs/registry.md`) |
 
@@ -532,3 +534,71 @@ Upload errors: `400 validation_error` with `fields.file` one of
 `non_field_errors: unknown_field` for any other part); `401`; `403` (capability or status; CSRF); `404`; `409`
 `too_many_images` or `storage_cap_exceeded`; `415` for a non-multipart body; `429` with `Retry-After`; `503 busy` with
 `Retry-After`. Details and the pipeline limits are in `docs/media.md`.
+
+## Preview, delete and idle Drafts (Story 2.13)
+
+### Preview
+
+`selectors.preview_of(actor, listing_id) -> PublicListingView` is what the public will see of the owner's own `draft` or
+`published` Listing. It calls the same projection function as the public read (`public_view_of`, so `public_fields` and the
+registry class rule are the only field list; the private address is not even read) and skips only the `is_public` gate,
+because the viewer is the owner (`policy.is_owner`: Active, Email-unverified and Suspended owners; not Deactivated). Another
+account, an administrator, a Visitor, an unknown or malformed id are all `not_found`. The route adds `estimate`, always
+`null` until the valuation feature exists, and is serialised by `ListingPreviewSerializer` (the public serializer built from
+the registry's public fields). Image `url`s are the one media route: it serves a Draft's image to its owner and a public
+Listing's to anyone (`docs/visibility.md`).
+
+### Opening a Draft
+
+`services.record_open(actor, listing_id, now=None)` sets `PropertyListing.last_opened_at` when the owner reads the Draft
+(`GET /api/v1/listings/{id}`) or previews it, at most once an hour (when it is missing or older than an hour). It is one
+`UPDATE`: it never changes `revision`, `updated_at` or the revision rows, and does nothing for a published Listing or for
+anyone but the owner. The three retention columns (`last_opened_at`, `expiry_notice_sent_at`, `delete_after`) are never on
+the wire.
+
+### Delete
+
+`services.delete_draft(actor, listing_id)`: refusals in order Visitor `unauthenticated`; not owned (another account, an
+administrator, unknown or malformed id, a repeat) `not_found`; no `edit_drafts` (Suspended, Deactivated) `forbidden`; not a
+`draft` `409 conflict` (a new catalogue code), nothing changed. In one transaction (lock the account, then the Listing row,
+the order used everywhere) every image goes through `media.delete_asset(..., missing_ok=True)` (usage given back, files
+deleted after commit, a failing file delete never fails the request, the orphan purge covers leftovers within 24 hours),
+then the Listing row, which cascades to the terms, area, details, location, private address, amenities, image links and
+revisions, and one audit row `listing.draft_deleted` (`target` the Listing, metadata `{"reason": "owner"}`, never content).
+An edit, an upload or an image removal racing the delete ends in `404` or `409`, never an orphan (tests run two threads).
+Deleting frees an open-Draft slot (the cap counts rows).
+
+### Retention of idle Drafts
+
+Two jobs on `run_retention` (`docs/runtime-and-retention.md`), registered from `ListingsConfig.ready`, code in
+`listings.retention`; each picks candidate ids with `selectors` (at most 200 per run) and acts on each one in its own
+savepoint through a system-actor service that decides again under the account and Listing locks. The activity time of a
+Draft is `max(updated_at, last_opened_at, created_at)`.
+
+- `listings.draft_notice(now, dry_run)`: a `draft` whose activity is **at or before** `now - 180 days`, with no notice yet
+  and an owner who is not Suspended gets `expiry_notice_sent_at = now`, `delete_after = now + 30 days` and the in-app
+  notification `listing.draft_expiring` (payload `{listing_id, days_left: 30}`, after commit, the owner only; the frontend
+  renders a fixed sentence). Returns how many it noticed.
+- `listings.draft_expiry(now, dry_run)`: a `draft` with `delete_after <= now` and an owner who is neither Suspended nor
+  Deactivated. Decided again under the locks, in this order: activity later than the notice (opened or edited since)
+  clears both columns and keeps the Draft (a later 180 idle days start again from that activity); no stored
+  `listing.draft_expiring` notification for the Listing (`notifications.has_with_payload`: the notice may never have
+  reached the owner) issues the notice again, `delete_after = now + 30 days`, nothing deleted; a deletion date more than
+  2 days in the past (the owner was Suspended, or the job did not run) gives a fresh week (`delete_after = now + 7 days`,
+  a new notice with `days_left: 7`), nothing deleted; otherwise it is deleted exactly like an owner delete (audit reason
+  `retention`, actor kind `system`). Returns how many it deleted (not those cleared or extended).
+- Suspended and Deactivated owners' Drafts are skipped by both jobs (selector and the locked re-check).
+- Candidates are read in keyset pages by id (200 per page, at most 50 pages per run), so a Listing that always fails or is
+  always skipped cannot starve the ones after it; anything left is picked up by the next run.
+- `GET /listings/{id}` and the preview write `last_opened_at` at most hourly; the write is best effort (a failure is
+  logged by exception class and never fails the read).
+- `GET`-side notification kinds are not enumerated in `openapi.yaml` (the in-app list carries `kind` and `payload` as
+  free JSON); the kind and payload of `listing.draft_expiring` are documented here and in `docs/notifications.md`.
+- Postgres only: `GREATEST` ignores a NULL `last_opened_at`, which other databases do not do. The idle partial index
+  covers `updated_at`; the `GREATEST` expression is not index-served (deferred, fine at MVP scale).
+- A dry run changes and notifies nothing and returns the would-be counts; a second run the same day does nothing;
+  published and every other non-draft Listing is never a candidate; one failing Listing is logged by exception class only
+  and does not stop the others (its savepoint rolls back, so it is retried on the next run).
+- Indexes: partial `listings_draft_idle_idx` (`updated_at`, drafts) and `listings_draft_expiry_idx` (`delete_after`, drafts
+  with a notice); the constraint `listings_expiry_notice_paired` keeps the two notice columns both set or both null.
+

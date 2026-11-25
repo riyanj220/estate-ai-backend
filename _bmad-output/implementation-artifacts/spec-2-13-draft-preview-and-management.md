@@ -64,6 +64,28 @@ context:
 
 ## Review Triage Log
 
+### Backend review (decisions, including departures from the spec text)
+
+- **Lost notice:** `expire_idle_draft` deletes only when a stored `listing.draft_expiring` notification for the Listing
+  exists (`kernel.notifications.has_with_payload`); otherwise it re-issues the notice, sets `delete_after = now + 30 days`
+  and deletes nothing that run. Departure: the spec deleted purely on dates.
+- **Re-grace:** a due Draft whose `delete_after` is more than 2 days past (owner Suspended meanwhile, or the job did not
+  run) is not deleted: `delete_after = now + 7 days`, notice re-issued with `days_left: 7`, counted as neither deleted
+  nor noticed. Departure from the spec's flat "30 days after the notice".
+- **Poison pills:** candidates are read in keyset pages by id (200 per page, at most 50 pages per run) across the run.
+- **Deactivated owners** are skipped like Suspended ones, in the selectors and the locked re-check. Departure: the spec
+  named Suspended only.
+- **Best-effort open:** `GET` detail and preview log and swallow a failing `record_open` (class only).
+- Removed the dead `expiry_notice_sent_at is None` branch (the paired check constraint makes it impossible); corrected
+  the `record_open` comment.
+- Added tests: paired-columns constraint, migration 0012 on existing rows, deterministic lock tests for delete and expiry,
+  exact preview values, serializer/projection drift, direct re-check cases, `record_open` for unverified and Suspended
+  owners, Deactivated retention, UUID_TEXT strict forms.
+- Delete route documents 401/403/404/409; docs updated (hourly open write, skipped states, re-grace rules, notification
+  kinds not enumerated in the contract).
+- **Deferred / noted:** the idle partial index does not serve the `GREATEST(...)` expression (fine at MVP scale);
+  `GREATEST` NULL handling is Postgres-only.
+
 ## Verification
 
 **Backend:** `env -u DJANGO_SETTINGS_MODULE uv run lint-imports; uv run ruff check .; uv run ruff format --check .; env -u DJANGO_SETTINGS_MODULE uv run pytest -q; uv run python manage.py makemigrations --check --dry-run; uv run python manage.py spectacular --validate --file openapi.yaml` (openapi regenerated deliberately).

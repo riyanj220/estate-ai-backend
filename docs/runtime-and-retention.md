@@ -86,6 +86,10 @@ ends; image decodes are further limited to two at a time; the orphan job walks t
 scale); and a reverse proxy should cap request bodies (the upload route's 6 MiB cap is enforced by the application too,
 see `docs/media.md`).
 
+Story 2.13 adds `listings.draft_notice` and `listings.draft_expiry` (see `docs/listings.md`): a notice after 180 days
+without activity and deletion 30 days later unless the Draft was opened or edited. They process at most 200 Drafts a run
+and isolate each Listing in its own savepoint.
+
 A job must return an int row count; anything else counts as a failed job. Runs must not overlap: schedule a single
 instance (there is no advisory lock yet). Purges delete in one statement for now, with no batching.
 
