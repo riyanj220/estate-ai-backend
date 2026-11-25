@@ -698,3 +698,21 @@ def notice_stored(row: PropertyListing) -> bool:
     return notifications.has_with_payload(
         row.owner_account_id, DRAFT_EXPIRING, "listing_id", str(row.id)
     )
+
+
+def titles_owned_by(owner_account_id) -> dict[str, tuple[uuid.UUID, str]]:
+    """title -> (Listing id, status) of every Listing of one owner that has a title. Sample-data
+    tooling only: it finds what a sample run already made."""
+    rows = PropertyListing.objects.filter(
+        owner_account_id=owner_account_id, title__isnull=False
+    ).values_list("title", "id", "status")
+    return {title: (listing_id, status) for title, listing_id, status in rows}
+
+
+def listing_ids_owned_by(owner_account_ids) -> list[uuid.UUID]:
+    """The ids of every Listing owned by any of the accounts, oldest first."""
+    return list(
+        PropertyListing.objects.filter(owner_account_id__in=list(owner_account_ids))
+        .order_by("created_at", "id")
+        .values_list("id", flat=True)
+    )

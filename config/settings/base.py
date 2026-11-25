@@ -3,7 +3,7 @@ import os
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.kernel.runtime import validate_limits
-from config.env import BASE_DIR, env, env_int
+from config.env import BASE_DIR, env, env_bool, env_int
 
 ROOT_URLCONF = "config.urls"
 ASGI_APPLICATION = "config.asgi.application"
@@ -47,6 +47,12 @@ RUNTIME_DB_USER = env("RUNTIME_USER", "runtime")
 
 # Tables the runtime role may only read and insert (the audit table, Story 1.10).
 RUNTIME_APPEND_ONLY_TABLES: list[str] = ["kernel_auditrecord", "listings_publicationevent"]
+
+
+# Story 2.16: `seed_sample_data` runs under the local and test settings only. A staging or other
+# settings module must opt in explicitly; the production settings pin this to False and the
+# command refuses them whatever this says.
+SEED_ALLOWED = env_bool("SEED_ALLOWED", False)
 
 
 def build_database(user: str, password: str) -> dict:

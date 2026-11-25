@@ -14,7 +14,7 @@ from apps.catalog import registry
 from apps.catalog import selectors as catalog
 from apps.identity.capabilities import Access, Capability, matrix_access
 from apps.identity.policy import can
-from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, lock_account
+from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, is_sample_account, lock_account
 from apps.identity.state import AccountState
 from apps.kernel import audit, media, notifications, ratelimit
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
@@ -727,11 +727,11 @@ def record_open(actor: Actor, listing_id, now: datetime | None = None) -> bool:
     return written
 
 
-def _remove_draft(actor: Actor, row: PropertyListing, reason: str) -> None:
+def _remove_rows(actor: Actor, row: PropertyListing) -> uuid.UUID:
     """Under the account and Listing locks: give every image back through `kernel.media` (usage
-    returned, files deleted after commit; a lost asset row is no obstacle), delete the Listing and
-    every row that belongs to it (the foreign keys cascade) and write the audit row (the Listing
-    id and the reason only, never content)."""
+    returned, files deleted after commit; a lost asset row is no obstacle) and delete the Listing
+    and every row that belongs to it (the foreign keys cascade). Returns the Listing id; the
+    caller writes the audit row (the id and a reason only, never content)."""
     asset_ids = list(ListingImage.objects.filter(listing=row).values_list("asset_id", flat=True))
     for asset_id in asset_ids:
         if actor.kind is ActorKind.USER:
@@ -740,6 +740,12 @@ def _remove_draft(actor: Actor, row: PropertyListing, reason: str) -> None:
             media.purge_owned_asset(actor, row.owner_account_id, asset_id)
     listing_id = row.id
     row.delete()
+    return listing_id
+
+
+def _remove_draft(actor: Actor, row: PropertyListing, reason: str) -> None:
+    """`_remove_rows` and the `listing.draft_deleted` audit row (reason `owner` or `retention`)."""
+    listing_id = _remove_rows(actor, row)
     audit.record(actor, "listing.draft_deleted", "listing", listing_id, {"reason": reason})
 
 
@@ -858,3 +864,23 @@ def expire_idle_draft(actor: Actor, listing_id, now: datetime) -> str:
         row.save(update_fields=["expiry_notice_sent_at", "delete_after"])
         notifications.notify(owner, DRAFT_EXPIRING, {"listing_id": row.id, "days_left": days})
         return "extended"
+
+
+def remove_sample_listing(actor: Actor, listing_id) -> bool:
+    """Sample data only (system actor, `forbidden` otherwise): delete a Listing of any status with
+    its images (usage given back, files deleted after commit) and every row of it, and write the
+    audit row `listing.sample_removed` (the id only). A Listing whose owner is not a sample
+    account, and an unknown id, are left alone and give False.
+    Locks the account, then the Listing."""
+    _require_system(actor)
+    key = canonical_uuid(listing_id)
+    owner = _owner_of(key) if key else None
+    if owner is None or not is_sample_account(owner):
+        return False
+    with transaction.atomic():
+        lock_account(owner)
+        row = PropertyListing.objects.select_for_update().filter(id=key).first()
+        if row is None or row.owner_account_id != owner:
+            return False
+        audit.record(actor, "listing.sample_removed", "listing", _remove_rows(actor, row), {})
+    return True

@@ -20,6 +20,7 @@ from .base import *  # noqa: F403
 from .base import MIGRATOR_DB_USER, RUNTIME_DB_USER, build_database
 
 DEBUG = False
+SEED_ALLOWED = False  # the sample-data command never runs here, whatever the environment says
 SECRET_KEY = require_secret("DJANGO_SECRET_KEY")
 
 ALLOWED_HOSTS = validate_hosts(

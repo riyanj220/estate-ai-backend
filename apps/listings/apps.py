@@ -23,6 +23,7 @@ class ListingsConfig(AppConfig):
         # The id and the reason only; never a title, address or other content.
         audit.register_action("listing.published", {})  # the Listing id is the audit target
         audit.register_action("listing.draft_deleted", {"reason": ["owner", "retention"]})
+        audit.register_action("listing.sample_removed", {})  # sample-data reset: the id only
         # The Listing id and the days left; the frontend renders a fixed sentence from the kind.
         notifications.register_kind(
             "listing.draft_expiring",

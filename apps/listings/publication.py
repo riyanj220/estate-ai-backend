@@ -19,11 +19,12 @@ from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-from django.db import transaction
+from django.db import DEFAULT_DB_ALIAS, transaction
 from django.utils import timezone
 
 from apps.catalog import registry
 from apps.catalog import selectors as catalog
+from apps.identity import selectors as identity
 from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, lock_account
 from apps.identity.state import AccountState
 from apps.kernel import audit, idempotency
@@ -52,6 +53,8 @@ from apps.listings.services import FieldsInvalid, StaleRevision
 SCOPE = "listings.publish"
 KEY_FIELD = "idempotency_key"  # the name a header problem is reported under
 KIND_INITIAL = "initial"
+KIND_SEED = "seed"  # the sample-data command only: uncounted, system actor only (Story 2.16)
+_KINDS = (KIND_INITIAL, KIND_SEED)
 _KEY = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 # The field ids that are fixed at creation: always present, never re-judged as input.
 _CREATION_FIELDS = frozenset({"purpose", "category", "subtype"})
@@ -222,6 +225,8 @@ def publish(
     base_revision,
     idempotency_key,
     now: datetime | None = None,
+    *,
+    kind: str = KIND_INITIAL,
 ) -> ListingView:
     """Publish one of the actor's own Drafts, immediately and at most once per key.
 
@@ -233,14 +238,39 @@ def publish(
     Draft), `email_not_verified` / `publishing_unavailable` / `forbidden` (account state),
     `FieldsInvalid` (every missing or invalid item at once), `QuotaExhausted`. A replay within
     24 hours returns the Listing as it is now, with no second charge, event or audit record.
+
+    `kind="seed"` is for the sample-data command: ONLY the system actor may pass it (any other
+    actor is `forbidden`, nothing written; no HTTP route passes it) and the system actor then
+    publishes the Draft of a sample account (`not_found` for any other owner). A seed event is
+    written with `counted=False`: it needs no allowance and uses none. Everything else
+    (idempotency, locks, revision, account state, complete validation, audit, event) is the same.
+    Any other `kind` is `validation_error`.
     """
     require_signed_in(actor)
+    if kind not in _KINDS:
+        raise DomainError("validation_error")
+    seed = kind == KIND_SEED
+    if seed and actor.kind is not ActorKind.SYSTEM:
+        raise DomainError("forbidden")
     key = canonical_uuid(listing_id)
-    owned = (
-        key is not None
-        and actor.kind is ActorKind.USER
-        and PropertyListing.objects.filter(id=key, owner_account_id=actor.account_id).exists()
-    )
+    if seed:
+        owner_id = (
+            PropertyListing.objects.filter(id=key)
+            .values_list("owner_account_id", flat=True)
+            .first()
+            if key is not None
+            else None
+        )
+        owned = owner_id is not None and identity.is_sample_account(owner_id)  # sample only
+        subject = Actor.user(owner_id, actor.request_id) if owned else actor
+    else:
+        owner_id = actor.account_id
+        subject = actor
+        owned = (
+            key is not None
+            and actor.kind is ActorKind.USER
+            and PropertyListing.objects.filter(id=key, owner_account_id=owner_id).exists()
+        )
     if not owned:
         raise DomainError("not_found")
     problems = _check_shape(base_revision, idempotency_key)
@@ -249,7 +279,7 @@ def publish(
     with transaction.atomic():
         claim = idempotency.claim(
             SCOPE,
-            actor.account_id,
+            owner_id,
             idempotency_key,
             idempotency.request_fingerprint({"listing_id": key, "base_revision": base_revision}),
             now if now is not None else timezone.now(),
@@ -257,8 +287,8 @@ def publish(
         if not claim.is_new:
             if claim.result_ref is None:  # a claim without a result: never redo the work
                 raise DomainError("conflict")
-            return _replay(actor, claim.result_ref)
-        account = lock_account(actor.account_id)
+            return _replay(subject, claim.result_ref)
+        account = lock_account(owner_id)
         now = now if now is not None else timezone.now()  # read after the lock wait (month edge)
         done = PublicationEvent.objects.filter(
             account_id=account.id, idempotency_key=idempotency_key
@@ -267,10 +297,10 @@ def publish(
             if done.listing_id != key:
                 raise DomainError("idempotency_key_reused")
             claim.complete(f"listing:{done.listing_id}")
-            return _replay(actor, f"listing:{done.listing_id}")
+            return _replay(subject, f"listing:{done.listing_id}")
         row = (
             PropertyListing.objects.select_for_update()
-            .filter(id=key, owner_account_id=actor.account_id)
+            .filter(id=key, owner_account_id=owner_id)
             .first()
         )
         if row is None:
@@ -284,14 +314,15 @@ def publish(
         problems = problems_of(row, view, live_image_count(row.id) > 0)
         if problems:
             raise FieldsInvalid(problems)
-        allowance = quota.allowance_for(account.id, account.type, now)
-        if allowance.remaining < 1:
-            raise QuotaExhausted(allowance)
+        if not seed:  # a seed event is uncounted: it needs no allowance and uses none
+            allowance = quota.allowance_for(account.id, account.type, now)
+            if allowance.remaining < 1:
+                raise QuotaExhausted(allowance)
         PublicationEvent.objects.create(
             account_id=account.id,
             listing_id=row.id,
-            kind=KIND_INITIAL,
-            counted=True,
+            kind=kind,
+            counted=not seed,
             identity_fingerprint=identity_fingerprint(view),
             idempotency_key=idempotency_key,
             created_at=now,
@@ -314,7 +345,7 @@ def publish(
             listing=row,
             revision=row.revision,
             origin=Origin.MANUAL.value,
-            actor_account_id=actor.account_id,
+            actor_account_id=owner_id,
             changes={"status": ListingStatus.PUBLISHED.value},
             created_at=now,
         )
@@ -323,3 +354,27 @@ def publish(
         published = view_of(row, with_private=True)
         emit(ListingPublished(listing_id=row.id, account_id=account.id))  # last: after commit
     return published
+
+
+def remove_seed_events(actor: Actor, account_ids, *, using: str | None = None) -> int:
+    """Delete the `seed` events of the given (sample) accounts: the one place an event is ever
+    removed. System actor only (`forbidden` otherwise); never touches another kind. The runtime
+    role may only insert and read events, so the sample-data command passes `using`, the
+    privileged connection alias (`sample_data.privileged_alias`). Returns the number removed."""
+    if actor.kind is not ActorKind.SYSTEM:
+        raise DomainError("forbidden")
+    ids = list(account_ids)
+    if not ids:
+        return 0
+    return (
+        PublicationEvent.objects.using(using or DEFAULT_DB_ALIAS)
+        .filter(account_id__in=ids, kind=KIND_SEED, counted=False)
+        .delete()[0]
+    )
+
+
+def count_seed_events(account_ids) -> int:
+    """How many `seed` events the given accounts have (a read, for the reset preview)."""
+    return PublicationEvent.objects.filter(
+        account_id__in=list(account_ids), kind=KIND_SEED, counted=False
+    ).count()
