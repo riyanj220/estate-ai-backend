@@ -7,6 +7,7 @@ Rules live in `listings`; enums come from the Field registry, never hand-copied.
 import logging
 
 from django.core.exceptions import ImproperlyConfigured
+from django.utils import timezone
 from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiResponse,
@@ -18,7 +19,7 @@ from rest_framework.utils.urls import replace_query_param
 from rest_framework.views import APIView
 
 from apps.catalog import registry
-from apps.listings import selectors, services
+from apps.listings import quota, selectors, services
 from apps.listings.fields import EDITABLE_FIELDS, WIRE_FIELDS
 from apps.listings.lifecycle import ListingStatus, Origin, Visibility
 from apps.presentation.api.actors import get_actor
@@ -632,4 +633,60 @@ class MyListingsView(NoStoreMixin, APIView):
                 "previous": None,
                 "results": [listing_data(v) for v in page.items],
             }
+        )
+
+
+class _OffsetDateTimeField(serializers.DateTimeField):
+    """An ISO 8601 string in the value's own offset (DRF would convert it to UTC)."""
+
+    def to_representation(self, value):
+        return value.isoformat()
+
+
+class PublicationAllowanceSerializer(serializers.Serializer):
+    limit = serializers.IntegerField(help_text="The monthly limit in force now.")
+    used = serializers.IntegerField(help_text="Counted publications this Karachi month.")
+    remaining = serializers.IntegerField(help_text="`max(limit - used, 0)`.")
+    period_start = _OffsetDateTimeField(help_text="Start of the month, +05:00.")
+    resets_at = _OffsetDateTimeField(help_text="Start of the next month, +05:00.")
+    timezone = serializers.ChoiceField(choices=[quota.TIMEZONE_NAME])
+
+
+def _now():
+    return timezone.now()
+
+
+class PublicationAllowanceView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="get_my_publication_allowance",
+        summary="The signed-in owner's publication allowance this month",
+        description=(
+            "Individual and Agency accounts (Active, Email-unverified or Suspended). The month "
+            "is the calendar month in Asia/Karachi; `period_start` and `resets_at` carry the "
+            "+05:00 offset. `used` counts only this account's counted publications and can "
+            "exceed `limit` after a later limit decrease, `remaining` never goes below 0. "
+            "A Visitor and a Deactivated account (which has no session) get `unauthenticated` "
+            "(401); an administrator gets `forbidden` (403). Never cached."
+        ),
+        responses={
+            200: OpenApiResponse(PublicationAllowanceSerializer, description="The allowance"),
+            401: OpenApiResponse(ErrorBodySerializer, description="`unauthenticated`"),
+            403: OpenApiResponse(ErrorBodySerializer, description="`forbidden`: administrator"),
+        },
+    )
+    def get(self, request):
+        view = quota.owner_allowance(get_actor(request), _now())
+        return Response(
+            PublicationAllowanceSerializer(
+                {
+                    "limit": view.limit,
+                    "used": view.used,
+                    "remaining": view.remaining,
+                    "period_start": view.period_start,
+                    "resets_at": view.resets_at,
+                    "timezone": quota.TIMEZONE_NAME,
+                }
+            ).data
         )
