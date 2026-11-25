@@ -574,3 +574,44 @@ def test_parallel_notify_loses_and_merges_nothing():
     seqs = list(Notification.objects.values_list("seq", flat=True))
     assert len(seqs) == 10 and len(set(seqs)) == 10
     assert Notification.objects.values("id").distinct().count() == 10
+
+
+# --- the id type (Story 2.13) ----------------------------------------------------------------
+
+
+def test_an_id_is_stored_as_canonical_text_and_nothing_else_is_an_id(
+    db, django_capture_on_commit_callbacks
+):
+    notifications.register_kind("probe.item", {"item_id": notifications.UUID_TEXT})
+    with django_capture_on_commit_callbacks(execute=True):
+        notifications.notify(A, "probe.item", {"item_id": B})
+        notifications.notify(A, "probe.item", {"item_id": str(B)})
+    assert [row.payload for row in Notification.objects.all()] == [{"item_id": str(B)}] * 2
+    for bad in (
+        "not-an-id",
+        "ABCDEF01-2345-4678-8ABC-DEF012345678",
+        "abcdef0123454678aabcdef012345678",
+        "{abcdef01-2345-4678-8abc-def012345678}",
+        "urn:uuid:abcdef01-2345-4678-8abc-def012345678",
+        " abcdef01-2345-4678-8abc-def012345678",
+        "jane@example.com",
+        "03001234567",
+        None,
+        7,
+        True,
+        {"id": str(B)},
+    ):
+        with pytest.raises(ValueError) as caught:
+            notifications.notify(A, "probe.item", {"item_id": bad})
+        assert "item_id" in str(caught.value) and str(bad) not in str(caught.value)
+
+
+def test_a_draft_expiring_notice_has_exactly_an_id_and_the_days(db):
+    schema = notifications.registered_kinds()["listing.draft_expiring"]
+    assert set(schema) == {"listing_id", "days_left"}
+    with pytest.raises(ValueError):
+        notifications.notify(
+            A, "listing.draft_expiring", {"listing_id": B, "days_left": 30, "title": "x"}
+        )
+    with pytest.raises(ValueError):
+        notifications.notify(A, "listing.draft_expiring", {"listing_id": B, "days_left": 1000})

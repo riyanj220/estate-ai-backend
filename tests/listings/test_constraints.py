@@ -371,16 +371,77 @@ def test_migration_0009_gives_existing_rows_restricted_false_and_adds_the_public
             row = before.objects.create(**{**GOOD, "owner_account_id": uuid.UUID(int=100 + n)})
             old_ids.append(row.pk)
         MigrationExecutor(conn).migrate([("listings", "0009_visibility")])
-        rows = list(PropertyListing.objects.filter(pk__in=old_ids))
+        # the model as of 0009 (later migrations add columns the live model already reads)
+        after = MigrationExecutor(conn).loader.project_state([("listings", "0009_visibility")]).apps
+        listing = after.get_model("listings", "PropertyListing")
+        rows = list(listing.objects.filter(pk__in=old_ids))
         assert len(rows) == 3
         assert [r.restricted for r in rows] == [False, False, False]
         assert {r.status for r in rows} == {"draft"}
-        PropertyListing.objects.create(**{**GOOD, "status": "published"})  # CHECK now allows it
+        listing.objects.create(**{**GOOD, "status": "published"})  # CHECK now allows it
         with conn.cursor() as cursor:
             cursor.execute(
                 "SELECT indexdef FROM pg_indexes WHERE indexname = 'listings_public_idx'"
             )
             (definition,) = cursor.fetchone()
         assert "status, restricted, owner_account_id" in definition
+    finally:
+        MigrationExecutor(conn).migrate(MigrationExecutor(conn).loader.graph.leaf_nodes())
+
+
+def test_the_expiry_notice_columns_are_both_set_or_both_null(db):
+    from django.utils import timezone
+
+    now = timezone.now()
+    both = listing(expiry_notice_sent_at=now, delete_after=now)  # paired: fine
+    none = listing()
+    for half in ({"expiry_notice_sent_at": now}, {"delete_after": now}):
+        with pytest.raises(IntegrityError), transaction.atomic():
+            listing(**half)
+        with pytest.raises(IntegrityError), transaction.atomic():
+            PropertyListing.objects.filter(id=none.id).update(**half)
+    with pytest.raises(IntegrityError), transaction.atomic():
+        PropertyListing.objects.filter(id=both.id).update(delete_after=None)
+    assert PropertyListing.objects.get(id=none.id).delete_after is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_migration_0012_keeps_existing_rows_and_adds_the_nullable_retention_columns():
+    from django.db import connections
+    from django.db.migrations.executor import MigrationExecutor
+
+    conn = connections["default"]
+    try:
+        MigrationExecutor(conn).migrate([("listings", "0011_amenities")])
+        old = MigrationExecutor(conn).loader.project_state([("listings", "0011_amenities")]).apps
+        before = old.get_model("listings", "PropertyListing")
+        assert not hasattr(before, "last_opened_at")
+        ids = [
+            before.objects.create(**{**GOOD, "owner_account_id": uuid.UUID(int=300 + n)}).pk
+            for n in range(3)
+        ]
+        MigrationExecutor(conn).migrate([("listings", "0012_draft_retention")])
+        new = (
+            MigrationExecutor(conn)
+            .loader.project_state([("listings", "0012_draft_retention")])
+            .apps.get_model("listings", "PropertyListing")
+        )
+        rows = list(new.objects.filter(pk__in=ids))
+        assert len(rows) == 3
+        for row in rows:
+            assert (row.last_opened_at, row.expiry_notice_sent_at, row.delete_after) == (
+                None,
+                None,
+                None,
+            )
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT indexname FROM pg_indexes WHERE indexname IN "
+                "('listings_draft_idle_idx', 'listings_draft_expiry_idx') ORDER BY 1"
+            )
+            assert [r[0] for r in cursor.fetchall()] == [
+                "listings_draft_expiry_idx",
+                "listings_draft_idle_idx",
+            ]
     finally:
         MigrationExecutor(conn).migrate(MigrationExecutor(conn).loader.graph.leaf_nodes())
