@@ -177,7 +177,8 @@ def test_account_inserts_from_registration_can_only_be_individual_or_agency():
     tree = _services_tree()
     owners = _enclosing_functions(tree)
     callers = {owners[id(c)] for c in _calls(tree, "_insert_account")}
-    assert callers == {"create_account", "_register"}
+    # `create_sample_account` only takes individual or agency (it refuses any other type)
+    assert callers == {"create_account", "create_sample_account", "_register"}
     registers = {}
     for call in _calls(tree, "_register"):
         registers[owners[id(call)]] = ast.unparse(call.args[3])

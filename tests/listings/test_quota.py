@@ -344,6 +344,23 @@ def _writes_to_publication_events(tree) -> bool:
     """Any `PublicationEvent...<write>(...)` call or `PublicationEvent(...)` construction."""
     import ast
 
+    def mentions(node) -> bool:
+        return any(
+            (isinstance(n, ast.Name) and n.id == "PublicationEvent")
+            or (isinstance(n, ast.Attribute) and n.attr == "PublicationEvent")
+            for n in ast.walk(node)
+        )
+
+    # names bound to something built from the model (`rows = PublicationEvent.objects...`)
+    tainted = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign | ast.AnnAssign)
+        and node.value is not None
+        and mentions(node.value)
+        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name)
+    }
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -353,7 +370,7 @@ def _writes_to_publication_events(tree) -> bool:
         if isinstance(func, ast.Attribute) and func.attr in WRITES:
             names = {n.id for n in ast.walk(func.value) if isinstance(n, ast.Name)}
             attrs = {n.attr for n in ast.walk(func.value) if isinstance(n, ast.Attribute)}
-            if "PublicationEvent" in names | attrs:
+            if "PublicationEvent" in names | attrs or names & tainted:
                 return True
     return False
 
@@ -367,9 +384,15 @@ def test_the_write_detector_sees_every_write_form():
         "PublicationEvent.objects.filter(a=1).delete()",
         "PublicationEvent(a=1).save()",
         "models.PublicationEvent.objects.bulk_create([])",
+        "rows = PublicationEvent.objects.using('x')\nrows.filter(a=1).delete()",
+        "rows = models.PublicationEvent.objects.all()\nrows.update(a=1)",
+        "rows: object = PublicationEvent.objects\nrows.create(a=1)",
     ):
         assert _writes_to_publication_events(ast.parse(code)), code
     assert not _writes_to_publication_events(ast.parse("PublicationEvent.objects.filter(a=1)"))
+    assert not _writes_to_publication_events(
+        ast.parse("rows = PublicationEvent.objects.all()\nrows.filter(a=1).count()")
+    )
 
 
 def test_only_the_publish_service_writes_publication_events():
