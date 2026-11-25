@@ -905,8 +905,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_under_the_current_version
     }
     assert PropertyListing.objects.get().registry_version == 4
     saved = update(account, view, {"possession_status": "file_only"})
-    assert saved.registry_version == registry.registry_version() == 8
-    assert PropertyListing.objects.get().registry_version == 8
+    assert saved.registry_version == registry.registry_version() == 9
+    assert PropertyListing.objects.get().registry_version == 9
 
 
 def drop_constraint(table, name):

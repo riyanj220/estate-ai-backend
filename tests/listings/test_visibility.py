@@ -231,11 +231,12 @@ def drop_status_check():
 
 
 @pytest.mark.parametrize("viewer", VIEWERS)
-def test_a_status_outside_draft_and_published_is_refused_to_everyone_the_owner_included(viewer):
-    """The owner branch is explicit: a later status grants nothing until its story adds it."""
+def test_a_status_the_code_does_not_know_is_refused_to_everyone_the_owner_included(viewer):
+    """The owner branch is explicit: a later status grants nothing until its story adds it
+    (every status of Story 2.17 is listed; one that is not stays invisible, the owner included)."""
     owner, view, image = build("draft", False, "active")
     drop_status_check()
-    PropertyListing.objects.filter(id=view.id).update(status="archived")
+    PropertyListing.objects.filter(id=view.id).update(status="pending_review")
     actor = viewer_actor(viewer, owner)
     row = PropertyListing.objects.get(pk=view.id)
     assert policy.is_public(row) is False and policy.can_view(actor, row) is False

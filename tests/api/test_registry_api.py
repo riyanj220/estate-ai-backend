@@ -41,7 +41,7 @@ def test_served_publicly_with_the_defined_shape():
     assert response.status_code == 200
     body = response.json()
     assert list(body) == ["version", "taxonomy", "fields"]
-    assert body["version"] == 8
+    assert body["version"] == 9
     assert body["taxonomy"] == {
         "categories": [
             {"id": "house", "subtypes": ["house"]},
@@ -72,6 +72,11 @@ def test_served_publicly_with_the_defined_shape():
         assert field["class"] == "public" and field["quota_identity"] is True
         assert field["searchable"] is False and field["requirement"] == "required_for_publication"
         assert field["applicability"] == {"purposes": [], "categories": [], "subtypes": []}
+    flagged = {f["id"] for f in body["fields"] if f["quota_identity"]}
+    assert flagged == {
+        *("purpose", "category", "subtype"),
+        *("city", "locality", "area_value", "area_unit", "marla_basis"),
+    }
     assert body["fields"][0]["allowed_values"] == ["sale", "rent"]
     assert body["fields"][2]["allowed_values"] == [
         "house",
@@ -119,7 +124,7 @@ def test_cache_headers_and_strong_etag():
     response = Client().get(URL)
     assert response.headers["Cache-Control"] == "public, max-age=300"
     tag = response.headers["ETag"]
-    assert tag == f'"8-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
+    assert tag == f'"9-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
         "W/"
     )
 
@@ -291,7 +296,7 @@ def test_the_plot_and_commercial_fields_are_served_in_registry_order_with_their_
 
 def test_the_etag_names_version_eight_and_the_new_shape():
     tag = Client().get(URL).headers["ETag"]
-    assert tag == f'"8-{registry.content_hash()}-7"'
+    assert tag == f'"9-{registry.content_hash()}-7"'
 
 
 def test_the_date_type_and_the_terms_are_served_in_the_existing_keys():

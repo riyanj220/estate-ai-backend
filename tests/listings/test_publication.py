@@ -773,7 +773,7 @@ def test_a_failing_subscriber_does_not_undo_the_publication(monkeypatch):
 # --- the fingerprint ------------------------------------------------------------------------
 
 
-GOLDEN = "43ec9ae900a2798d90dce734bc8b30361fc83e054e84e6c1dafc1616c5a5b3f7"
+GOLDEN = "81c4240f92b2e7b507e5570d92eb2cc8dd59f455f6c0f029c26009bab1bc38dd"
 
 
 def fp(**fields):
@@ -782,7 +782,8 @@ def fp(**fields):
 
 def test_the_fingerprint_matches_a_golden_vector():
     expected = hashlib.sha256(
-        b'{"category":"house","purpose":"sale","subtype":"house"}'
+        b'{"area_unit":null,"area_value":null,"category":"house","city":null,"locality":null,'
+        b'"marla_basis":null,"purpose":"sale","subtype":"house"}'
     ).hexdigest()
     assert fp(purpose="sale", category="house", subtype="house") == expected == GOLDEN
 
@@ -795,6 +796,33 @@ def test_a_single_identity_difference_changes_the_fingerprint():
     assert fp(category="plot", subtype="residential_plot", purpose="sale") == base  # key order
 
 
+IDENTITY_BASE = {
+    "purpose": "sale",
+    "category": "plot",
+    "subtype": "residential_plot",
+    "city": "11111111-1111-4111-8111-111111111111",
+    "locality": "22222222-2222-4222-8222-222222222222",
+    "area_value": "10.0000",
+    "area_unit": "marla",
+    "marla_basis": "225",
+}
+
+
+@pytest.mark.parametrize(
+    ("name", "other"),
+    [
+        ("city", "33333333-3333-4333-8333-333333333333"),
+        ("locality", "44444444-4444-4444-8444-444444444444"),
+        ("area_value", "11.0000"),
+        ("area_unit", "kanal"),
+        ("marla_basis", "250"),
+    ],
+)
+def test_changing_each_new_identity_field_changes_the_fingerprint(name, other):
+    assert fp(**IDENTITY_BASE) != fp(**{**IDENTITY_BASE, name: other})
+    assert fp(**IDENTITY_BASE) == fp(**IDENTITY_BASE)  # and the base is stable
+
+
 def test_the_fingerprint_is_stable_and_covers_the_identity_fields_only():
     account = make_account()
     view = ready_draft(account)
@@ -802,10 +830,16 @@ def test_the_fingerprint_is_stable_and_covers_the_identity_fields_only():
     assert len(one) == 64 and int(one, 16) >= 0
     services.apply_updates(user(account), view.id, view.revision, {"title": "Another family house"})
     assert publication.identity_fingerprint(fresh(account, view)) == one  # not an identity field
+    # Story 2.17: the same flag is the identity locked while Published (and 2.18's quota identity)
     assert {f.id for f in registry.fields() if f.quota_identity} == {
         "purpose",
         "category",
         "subtype",
+        "city",
+        "locality",
+        "area_value",
+        "area_unit",
+        "marla_basis",
     }
 
 

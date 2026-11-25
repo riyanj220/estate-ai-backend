@@ -780,8 +780,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_under_the_current_version
     assert codes(account, view, {"bedrooms": 51}) == {"bedrooms": "invalid_range"}
     assert PropertyListing.objects.get().registry_version == 3
     saved = update(account, view, {"bedrooms": 4})
-    assert saved.registry_version == registry.registry_version() == 8
-    assert PropertyListing.objects.get().registry_version == 8
+    assert saved.registry_version == registry.registry_version() == 9
+    assert PropertyListing.objects.get().registry_version == 9
 
 
 def test_a_changed_registry_bound_is_judged_on_the_next_save(monkeypatch):

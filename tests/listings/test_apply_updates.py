@@ -302,7 +302,8 @@ def test_an_agency_draft_is_edited_from_any_session_of_the_agency():
 
 
 def test_only_editable_statuses_may_change(monkeypatch):
-    assert lifecycle.EDITABLE_STATUSES == frozenset({"draft"})
+    # Story 2.17: sold, rented and removed (and any restricted Listing) are view only
+    assert lifecycle.EDITABLE_STATUSES == frozenset({"draft", "published", "archived"})
     account, view = draft()
     PropertyListing.objects.update(registry_version=1)
     monkeypatch.setattr(lifecycle, "EDITABLE_STATUSES", frozenset())
@@ -517,8 +518,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_and_advanced():
     assert codes(account, view, {"title": "short"}) == {"title": "too_short"}
     assert PropertyListing.objects.get().registry_version == 1  # a failed edit changes nothing
     saved = update(account, view, {"title": TITLE})
-    assert saved.registry_version == registry.registry_version() == 8
-    assert PropertyListing.objects.get().registry_version == 8
+    assert saved.registry_version == registry.registry_version() == 9
+    assert PropertyListing.objects.get().registry_version == 9
 
 
 def test_a_registry_change_does_not_alter_a_listing_nobody_edits():
@@ -759,26 +760,30 @@ def test_an_outer_rollback_after_a_successful_edit_leaves_no_event(
 
 @pytest.fixture
 def published(monkeypatch):
-    """A Listing row whose status is published (the lifecycle enum only has draft for now)."""
-    import enum
-
-    class Status(enum.StrEnum):
-        DRAFT = "draft"
-        PUBLISHED = "published"
-
-    monkeypatch.setattr(selectors, "ListingStatus", Status)
+    """A Listing row whose status is published (set directly; an edit of a Published Listing
+    must stay complete, which `tests/listings/test_lifecycle.py` covers)."""
     account, view = draft()
-    with connection.cursor() as cursor:  # rolled back with the test's transaction
-        cursor.execute("ALTER TABLE listings_propertylisting DROP CONSTRAINT listings_status_valid")
     PropertyListing.objects.update(status="published", registry_version=1)
     return account, view
 
 
-def test_a_refused_edit_leaves_a_published_listing_unaltered(published):
-    account, view = published
+@pytest.mark.parametrize("state", ["sold", "rented", "removed"])
+def test_a_refused_edit_leaves_a_view_only_listing_unaltered(state):
+    account, view = draft()
+    PropertyListing.objects.update(status=state, registry_version=1)
     with pytest.raises(DomainError) as caught:
         update(account, view, {"title": TITLE})
     assert caught.value.code == "forbidden"
+    row = PropertyListing.objects.get()
+    assert (row.status, row.registry_version, row.revision, row.title) == (state, 1, 1, None)
+    assert counts() == (1, 1)
+
+
+def test_an_incomplete_published_listing_refuses_an_edit_that_leaves_it_incomplete(published):
+    account, view = published
+    with pytest.raises(services.FieldsInvalid) as caught:
+        update(account, view, {"title": TITLE})
+    assert "asking_price" in caught.value.fields and "images" in caught.value.fields
     row = PropertyListing.objects.get()
     assert (row.status, row.registry_version, row.revision, row.title) == ("published", 1, 1, None)
     assert counts() == (1, 1)

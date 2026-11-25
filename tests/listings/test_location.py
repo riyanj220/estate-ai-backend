@@ -96,7 +96,7 @@ def pair(places, city="karachi", locality="k1"):
 
 
 def test_the_registry_defines_the_location_fields_at_the_end_with_the_right_classes():
-    assert registry.registry_version() == 8
+    assert registry.registry_version() == 9
     ids = [f.id for f in registry.fields()]
     assert tuple(ids[-len(LOCATION_IDS) - 1 : -1]) == LOCATION_IDS  # amenities come last
     for name in LOCATION_IDS:

@@ -68,7 +68,13 @@ def admin_client():
 
 @pytest.mark.parametrize(
     ("status", "restricted", "owner_state"),
-    list(itertools.product(("draft", "published"), (False, True), OWNER_STATES)),
+    list(
+        itertools.product(
+            ("draft", "published", "archived", "sold", "rented", "removed"),
+            (False, True),
+            OWNER_STATES,
+        )
+    ),
 )
 def test_the_http_matrix(status, restricted, owner_state):
     owner, listing, image = owner_with_image()
@@ -223,7 +229,7 @@ def test_an_unknown_status_serves_nothing_even_to_the_owner():
     owner, listing, image = owner_with_image()
     with connection.cursor() as cursor:  # undone with the test's transaction
         cursor.execute("ALTER TABLE listings_propertylisting DROP CONSTRAINT listings_status_valid")
-    set_listing_visibility(listing["id"], "archived")
+    set_listing_visibility(listing["id"], "pending_review")
     for client in (owner, Client()):
         assert_not_found(client.get(image["url"]))
         assert client.head(image["url"]).status_code == 404

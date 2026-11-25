@@ -48,6 +48,8 @@ WIRE_KEYS = {
     "fields",
     "provenance",
     "media",
+    "restricted",
+    "restriction_reason",
 }
 NEW_FIELDS = {
     "title": None,
@@ -115,7 +117,7 @@ def test_create_returns_the_wire_shape(kind):
     body = response.json()
     assert set(body) == WIRE_KEYS
     assert body["status"] == "draft" and body["visibility"] == "private"
-    assert (body["revision"], body["registry_version"]) == (1, 8)
+    assert (body["revision"], body["registry_version"]) == (1, 9)
     assert body["fields"] == {**BODY, **NEW_FIELDS} and body["provenance"] == {}
     assert body["media"] == [] and body["fields"]["amenities"] is None
     uuid.UUID(body["id"])
@@ -323,7 +325,7 @@ def test_my_listings_status_filter_and_page_size_fallback():
 def test_bad_status_and_bad_cursor_are_validation_errors():
     client = signed_in()
     post(client, CREATE)
-    bad_status = client.get(MINE, {"status": "archived"})
+    bad_status = client.get(MINE, {"status": "pending"})
     assert (bad_status.status_code, code(bad_status)) == (400, "validation_error")
     assert list(bad_status.json()["error"]["fields"]) == ["status"]
     for cursor in ("garbage", "e30", "a" * 400):
@@ -364,6 +366,8 @@ def test_listing_resource_is_exactly_the_wire_shape():
         "fields",
         "provenance",
         "media",
+        "restricted",
+        "restriction_reason",
     ]
     assert list(body["fields"]) == [
         "purpose",
@@ -1096,7 +1100,7 @@ def test_house_details_over_http_use_native_json_types_and_stay_null_when_unknow
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["revision"] == 2 and body["registry_version"] == 8
+    assert body["revision"] == 2 and body["registry_version"] == 9
     assert body["fields"]["bedrooms"] == 4 and type(body["fields"]["bedrooms"]) is int
     assert body["fields"]["basement"] is False
     assert body["fields"]["covered_area_sqft"] == "2400.0000"
@@ -1248,7 +1252,7 @@ def test_plot_details_over_http_use_native_types_and_decimal_strings():
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["revision"] == 2 and body["registry_version"] == 8
+    assert body["revision"] == 2 and body["registry_version"] == 9
     assert body["fields"]["plot_width"] == "35.00" and body["fields"]["plot_depth"] == "70.50"
     assert body["fields"]["road_width_ft"] == "40.00"
     assert body["fields"]["corner_plot"] is True and body["fields"]["water"] is False
@@ -1493,7 +1497,7 @@ def test_rent_terms_over_http_use_native_types_and_a_plain_date():
     response = edit(client, created, RENT_TERMS_SAVE)
     assert response.status_code == 200
     body = response.json()
-    assert body["revision"] == 2 and body["registry_version"] == 8
+    assert body["revision"] == 2 and body["registry_version"] == 9
     wire = body["fields"]
     assert wire["availability_date"] == "2027-03-01"  # a date, never a timestamp
     assert wire["security_deposit"] == "50000.00" and wire["advance_rent"] == "25000.50"

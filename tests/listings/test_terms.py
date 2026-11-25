@@ -768,8 +768,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_under_the_current_version
     }
     assert PropertyListing.objects.get().registry_version == 5
     saved = update(account, view, {"availability_date": "2027-03-01"})
-    assert saved.registry_version == registry.registry_version() == 8
-    assert PropertyListing.objects.get().registry_version == 8
+    assert saved.registry_version == registry.registry_version() == 9
+    assert PropertyListing.objects.get().registry_version == 9
 
 
 # --- stored values outside today's rules --------------------------------------------------------

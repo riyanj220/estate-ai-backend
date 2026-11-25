@@ -41,7 +41,7 @@ def test_the_good_row_is_accepted(db):
         {"category": "castle"},
         {"category": "apartment", "subtype": "shop"},
         {"category": "plot", "subtype": "house"},
-        {"status": "archived"},
+        {"status": "pending"},
         {"revision": 0},
         {"registry_version": 0},
     ],
