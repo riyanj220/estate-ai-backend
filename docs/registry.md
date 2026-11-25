@@ -265,7 +265,7 @@ clients label them "Seller-declared", and there is no distance and no verificati
   `ListingResidential`, `ListingPlot` and `ListingCommercial` and the terms columns of `ListingTerms` (integer, date window, decimal and money bounds, enum sets, the floor rule): changing those
   registry bounds or values needs a migration.
 - **Private fields are listed.** Private-class fields appear in the public registry response by design: it is field
-  metadata for owner forms, never values. `quota_identity` is allowed on private fields; `searchable`, `sortable`, `ai_extractable` and
+  metadata for owner forms, never values. `quota_identity` (purpose, category, subtype, city, locality, area_value, area_unit and marla_basis since version 9) is the identity fingerprinted at publication and locked while a Listing is Published (Story 2.17), and is allowed on private fields; `searchable`, `sortable`, `ai_extractable` and
   `valuation_input` are refused (since version 7).
 - **ETag.** The tag is `"<version>-<content hash>-<RESPONSE_SHAPE_VERSION>"`; bump `RESPONSE_SHAPE_VERSION` in
   `apps/presentation/api/registry.py` when the serializer changes without a registry change.

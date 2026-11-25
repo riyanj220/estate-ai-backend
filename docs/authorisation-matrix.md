@@ -41,12 +41,14 @@ whose permission is not explicit.
 | `/api/v1/listings/<str:listing_id>/images/<str:image_id>/file` | GET, HEAD | public | `apps.presentation.api.listing_images.ListingImageFileView` |
 | `/api/v1/listings/<str:listing_id>/preview` | GET | signed_in | `apps.presentation.api.listings.ListingPreviewView` |
 | `/api/v1/listings/<str:listing_id>/publish` | POST | signed_in | `apps.presentation.api.listings.ListingPublishView` |
+| `/api/v1/listings/<str:listing_id>/status` | POST | signed_in | `apps.presentation.api.listings.ListingStatusView` |
 | `/api/v1/me` | GET | signed_in | `apps.presentation.api.sessions.MeView` |
 | `/api/v1/me/agency-profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.AgencyProfileDetailView` |
 | `/api/v1/me/agency-profile/image` | DELETE, PUT | signed_in | `apps.presentation.api.profile_images.AgencyProfileImageView` |
 | `/api/v1/me/agency-profile/image/file` | GET, HEAD | public | `apps.presentation.api.profile_images.AgencyProfileImageFileView` |
 | `/api/v1/me/email-change` | POST | signed_in | `apps.presentation.api.profile.EmailChangeRequestView` |
 | `/api/v1/me/listings` | GET | signed_in | `apps.presentation.api.listings.MyListingsView` |
+| `/api/v1/me/listings/counts` | GET | signed_in | `apps.presentation.api.listings.MyListingCountsView` |
 | `/api/v1/me/password` | POST | signed_in | `apps.presentation.api.passwords.ChangePasswordView` |
 | `/api/v1/me/profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.ProfileDetailView` |
 | `/api/v1/me/profile/image` | DELETE, PUT | signed_in | `apps.presentation.api.profile_images.ProfileImageView` |

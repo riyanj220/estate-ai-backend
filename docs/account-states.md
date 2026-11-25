@@ -43,6 +43,21 @@ audit record of the reactivation remains (moderation history lives in audit and,
 | `request_support` | yes | yes | yes | no |
 | `request_deactivation` | yes | yes | yes | no |
 
+### Listing lifecycle by state (Story 2.17)
+
+No new capability: `listings.status.change_status` reads the matrix (`edit_drafts` for sold and rented, `view_drafts` for
+archive), so the table above is unchanged.
+
+| Action on an own Listing | email_unverified | active | suspended | deactivated |
+|---|---|---|---|---|
+| read any status, list, counts, preview | yes | yes | yes | no |
+| archive (published, sold, rented) | yes | yes | yes | no |
+| mark sold or rented (published) | yes | yes | no (`403`) | no |
+| edit a Published or Archived Listing, change its images | yes | yes | no (`403`) | no |
+
+A restricted Listing may only be archived by its owner; a removed one cannot be changed; sold and rented are view only
+(`docs/listings.md`, "Lifecycle after publication").
+
 `identity.policy.can(actor, capability)` (import it with `from apps.identity.policy import can`):
 
 - Visitor: `browse` only. System actor: everything.

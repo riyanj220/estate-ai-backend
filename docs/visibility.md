@@ -28,8 +28,11 @@ epic) sets `restricted`; until then tests and fixtures write it through the mode
 - `listings.policy.can_view(viewer, listing) -> bool` (= `is_public or is_owner`): public Listings are visible to every
   viewer; any other Listing only to its owning account (a signed-in, non-administrator account actor holding
   `view_drafts`: Suspended and Email-unverified owners yes, Deactivated no). The owner branch is explicit over the known
-  statuses (`policy.OWNER_VISIBLE_STATUSES`: draft, published): a status added later (archived, removed, ...) is
-  invisible to everyone, the owner included, until its story adds it there deliberately. A Visitor, another account and an administrator get `False` for a
+  statuses (`policy.OWNER_VISIBLE_STATUSES`: since Story 2.17 all six, draft, published, archived, sold, rented and
+  removed): a status added later is invisible to everyone, the owner included, until its story adds it there
+  deliberately. Archived, sold, rented, removed and draft Listings are never public (`public_q()` is unchanged:
+  published, not restricted, Active owner); the owner reads them, restricted and removed ones with their
+  `restriction_reason`, which no public shape carries. A Visitor, another account and an administrator get `False` for a
   non-public Listing.
 
 Both are built from `policy.public_q()` (the one predicate; the Active-owner part is the subquery

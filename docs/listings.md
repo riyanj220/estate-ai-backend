@@ -6,7 +6,7 @@ description and price, Story 2.3 the area and its unit, Story 2.4 the House and 
 ## Model (`listings.models`, written only by `listings.services`)
 
 - `PropertyListing`: `id` (UUID), `owner_account_id` (a plain indexed UUID column, no foreign key into `identity`),
-  `status` (`draft` or `published`; the code-defined enum `listings.lifecycle.ListingStatus` grows later; only `listings.publication.publish` sets `published` (Story 2.15); visibility fixtures may still write it through the model), `restricted` (boolean, default false; set by moderation in a later epic, fixtures only until then), `revision` (starts at 1),
+  `status` (`draft`, `published`, `archived`, `sold`, `rented` or `removed`; the code-defined enum `listings.lifecycle.ListingStatus`, with a CHECK; only `listings.publication.publish` sets `published` (Story 2.15), only `listings.status.change_status` sets `archived`, `sold` and `rented` (Story 2.17), nobody sets `removed` yet (moderation does later); visibility fixtures may still write any of them through the model), `restricted` (boolean, default false; set by moderation in a later epic, fixtures only until then), `restriction_reason` (nullable text of at most 200 characters, the reason for a restricted or removed Listing: written only by moderation later and by test fixtures now; owner resource only, never in a public shape), `revision` (starts at 1),
   `registry_version`, the registry fields `purpose`, `category`, `subtype` as columns with CHECK constraints generated
   from the taxonomy (including that the Subtype belongs to the Category), `title` and `description` (nullable, empty is
   `null`, length CHECKs from the registry), `provenance` (JSON, registry field id to `{"origin", "confirmed"}`, set
@@ -108,8 +108,10 @@ Then, in ONE transaction that locks only the listing row (`select_for_update`):
 1. **The stale check precedes every value validation.** A stored `revision` different from `base_revision` raises `StaleRevision` (a
    `DomainError` with code `stale_revision` that carries the current `ListingView` as `.current`); nothing is written and
    no value was validated yet. A client that is behind always learns about the conflict before anything else.
-2. The status gate: a status outside `lifecycle.EDITABLE_STATUSES` is `forbidden`. The set is code-defined and holds only
-   `draft` today; Story 2.15 (editing a Published Listing) widens it deliberately.
+2. The status gate (Story 2.17): a status outside `lifecycle.EDITABLE_STATUSES` (`draft`, `published`, `archived`; sold,
+   rented and removed are view only) and a restricted Listing (`restricted` true, any status) are `forbidden`. While the
+   Listing is **Published** two more rules apply (see "Lifecycle" below): the identity fields are `not_editable`, and the
+   result must still pass the publication completeness rules (`400 validation_error`, nothing written).
 3. Every update is validated against the CURRENT registry (`listings.validation.evaluate`, all failures at once as
    `FieldsInvalid`): value rules per registry type, whether the field applies to this Listing (`not_applicable`) and the
    rules on the resulting state (below). A `null` clears a field.
@@ -401,6 +403,83 @@ value, without a model-inputs event because the value did not change); a manual 
 the field already manual and confirmed stays a no-op. Whether the Assistant may overwrite a manual confirmed value is
 decided in Epic 5: the service currently allows it and stores `confirmed: false`. The wire `provenance` maps field id to `{origin, confirmed}` for fields that are set.
 
+## Lifecycle after publication (Story 2.17)
+
+Statuses: `draft`, `published`, `archived`, `sold`, `rented`, `removed`. `services.apply_updates` and the image services
+edit a Draft, a Published and an Archived Listing; `sold`, `rented`, `removed` and any restricted Listing are view only
+(`403 forbidden`, nothing written). The owner sees their own Listing in every status (`policy.OWNER_VISIBLE_STATUSES`),
+removed and restricted ones included; the public sees only Published, not restricted, Active-owner Listings (unchanged).
+
+**Transitions** (`listings.status.change_status(actor, listing_id, base_revision, target)`, the only writer of
+`archived`, `sold` and `rented`; guard: `tests/architecture/test_publication_single_writer.py`):
+
+| From | May move to |
+| --- | --- |
+| `published` | `archived`, `sold`, `rented` |
+| `sold`, `rented` | `archived` |
+| `draft`, `archived` | nothing (`409 conflict`); a Draft is deleted or published, an Archived Listing is republished by Story 2.18 |
+| `removed` | nothing (`403 forbidden`: moderation owns it) |
+
+Every other move (the same status, to `published`, to `removed`, to `draft`) is `409 conflict` (a target outside
+archived, sold, rented is `400 validation_error` under `status`) and writes nothing. One transaction, account lock then
+Listing lock: `base_revision` against `revision` (`409 stale_revision` + `current`, checked first), the account-state and
+restriction refusals, the table, then status + `revision + 1`, a `ListingRevision` (`changes: {"status": <new>}`),
+audit `listing.status_changed` (`from`, `to`; the Listing id is the target), and the domain event `listing.status_changed`
+(`ListingStatusChanged`: listing id, account id, new status) as the last statement, after commit. No quota, no
+`PublicationEvent`, no idempotency key: a repeat is a clean `409 conflict`. There is no way back to `published` here
+(republication is Story 2.18).
+
+**Who may do what** (`docs/account-states.md`): Active and Email-unverified owners archive, mark sold and mark rented
+and edit; a Suspended owner may only archive (sold and rented are `403 forbidden`; edits and image changes are
+`forbidden` as before) and may still read everything and the counts; a Deactivated account has no session. A
+**restricted** Listing may still be archived by its owner (withdrawing is never refused; the restriction stays in force)
+but not marked sold or rented and not edited; a **removed** one cannot be changed at all (`403 forbidden`). This is
+decided from the locked rows after the stale check.
+
+**Editing a Published Listing** consumes no quota and writes no `PublicationEvent`; it bumps the revision with a revision
+row as any edit does and emits `listing.model_inputs_changed` when a `valuation_input` field changed. Two extra rules:
+
+- **Identity fields are locked while Published.** The set is the registry flag `quota_identity` (read from the registry,
+  never listed in code): `purpose`, `category`, `subtype` (never editable at all), `city`, `locality`, `area_value`,
+  `area_unit` and `marla_basis`. An update that would change the stored value of one (including clearing it, or the
+  implicit clearing of the locality by a city change) is `not_editable` on that field, reported together with the other
+  failing fields. Sending the stored value again is accepted and changes nothing. They are editable on a Draft and on an
+  Archived Listing (identity changes are re-checked, and counted, at republication, Story 2.18). `price_basis` stays
+  editable.
+- **A Published Listing stays complete.** After the edit is applied inside the transaction, the result is judged with the
+  same function as publication (`listings.completeness.problems_of`, shared with `publication`, no copy), but the edit is
+  only answerable for what it touches: a problem is reported when (a) this edit changed that field, (b) a
+  `required_for_publication` item is missing, or (c) the Listing has no live image (`images_required`). A stored value
+  this edit did not change (a city or locality deactivated since, a rule tightened on another field, an unconfirmed
+  AI value) never blocks it, so a title or price edit of such a Listing still works. Problems are `400 validation_error`,
+  all at once, keyed like publication; the transaction is rolled back, revision unchanged. An edit that changes nothing
+  returns the current view and is not re-judged. An edit of an Archived Listing is validated field by field like a Draft edit (completeness is
+  enforced again at republication).
+- **Images**: upload, remove, reorder and cover change are allowed for Published and Archived Listings (same cap and
+  cover rules). A Published Listing keeps at least one LIVE image (a link whose asset row exists): `remove_image` decides
+  it before deleting anything and `set_image_order` after ghost links are repaired (that repair rolls back too); both are
+  `400 validation_error` with `images: images_required`, nothing changed. Racing removals are serialised by the Listing
+  lock: exactly one wins. A Published Listing whose only links are ghosts can still take a real upload.
+- **Sold is for a sale, rented for a rental.** `sold` needs purpose `sale` and `rented` purpose `rent` (the registry has
+  exactly those two purposes), else `409 conflict`, nothing written. Archive has no purpose rule.
+
+**Reads.** `selectors.list_owned` accepts every status (`status` filter, cursor bound to it) and
+`selectors.owner_counts(actor)` returns `{draft, published, archived, sold, rented, removed}` (every key, zero when none;
+the caller's own Listings only; same guard as the list). The owner resource gained `restricted` (boolean) and
+`restriction_reason` (text or null). `preview_of` works for the owner's Listing in every status (same projection as the
+public one, no `restriction_reason`). Interactions: only Drafts count toward the 20 open Drafts, are retention
+candidates and can be deleted (`409 conflict` otherwise); publication of a non-Draft is `409 conflict`; the sample-data
+reset removes Listings in any status.
+
+A `publish` replay (same key, same body) returns the owner's CURRENT view of the Listing, so after an archive or sale it
+shows that status: clients must read `status`, not assume `published`. Nothing is published again.
+
+Deferred (see the spec's triage log): owner hard-delete of archived, sold and rented Listings; a restricted Draft keeps
+its delete but cannot be edited.
+
+New code or sentence: none (every refusal reuses `forbidden`, `conflict`, `stale_revision`, `validation_error`,
+`not_found` and the field sentences `not_editable`, `images_required`, `required`, `invalid_choice`).
+
 ## Reads
 
 `selectors.get_owned_listing(actor, id)`: the owner only (`view_drafts`, so a Suspended owner may read); another
@@ -428,6 +507,8 @@ check is still refused.
 | `GET /api/v1/listings/{id}/preview` | owner only (own `draft` or `published`), `404` otherwise, `401` Visitor; the public projection plus `estimate: null`; no-store; counts as an open (below) |
 | `DELETE /api/v1/listings/{id}` | owner only; `204`; a non-draft is `409 conflict`; `404` for non-owners, unknown ids and repeats; `403` Suspended; CSRF; no-store (below) |
 | `POST /api/v1/listings/{id}/publish` | body strictly `{base_revision}`, header `Idempotency-Key` (required); `200` with the owner Listing (`status: published`); `400`, `401`, `403`, `404`, `409`, `422` (see "Publication" below); owner only; CSRF; no-store |
+| `POST /api/v1/listings/{id}/status` | body strictly `{base_revision, status}` (`status`: `archived`, `sold` or `rented`); `200` owner Listing; `400`, `401`, `403`, `404`, `409` (`stale_revision` with `current`, or `conflict`); owner only; CSRF; no-store (Story 2.17) |
+| `GET /api/v1/me/listings/counts` | `{draft, published, archived, sold, rented, removed}` for the caller; no-store; same guards as the list (Story 2.17) |
 | `GET /api/v1/me/listings` | own listings, `status` filter, `page_size`, `cursor`; `{next, previous, results}` (`previous` is always null); bad cursor or status is `validation_error`; no-store |
 | `GET /api/v1/me/publication-allowance` | owner allowance `{limit, used, remaining, period_start, resets_at, timezone}` (below); `401` Visitor and Deactivated (no session), `403` administrator; no-store |
 | `GET /api/v1/registry` | public Field registry (`docs/registry.md`) |
@@ -679,8 +760,14 @@ publishing."), keyed by that field; the owner confirms by saving the value. Opti
 `A-Za-z0-9._:-`) and `base_revision` problems are `400` under `idempotency_key` and `base_revision`.
 
 Fingerprint: `publication.identity_fingerprint(view)` is the SHA-256 hex of the canonical JSON (sorted keys, no
-whitespace, ASCII, decimals normalised, text in NFC) of the registry fields flagged `quota_identity` (today purpose,
-category and subtype). It is stored on the event and never leaves the service.
+whitespace, ASCII, decimals normalised, text in NFC) of the registry fields flagged `quota_identity` (since Story 2.17, registry version 9: purpose,
+category, subtype, city, locality, area_value, area_unit and marla_basis; the same flag locks them while Published). It is
+stored on the event and never leaves the service. Version 9 changes the fingerprint, so migration
+`0015_identity_fingerprint_v9` recomputes `identity_fingerprint` of every event (`initial`, `seed`, later kinds) whose
+Listing still exists, from the stored Listing with the canonicalisation frozen inside the migration (no live imports),
+without consuming quota or writing events; it is idempotent and its reverse is a no-op. Events of deleted Listings keep
+their value. The widening of the identity set also widens `confirm_required` (an AI-written, unconfirmed value of
+city, locality, area value, area unit or marla basis blocks publication until the owner confirms it): this is intended.
 
 Error codes added: `quota_exhausted` (409), `email_not_verified` (403), `publishing_unavailable` (403). Field
 sentences added: `images_required`, `confirm_required`.

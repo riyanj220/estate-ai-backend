@@ -67,6 +67,20 @@ context:
 
 ## Review Triage Log
 
+### Backend review batch (coordinator decisions)
+
+Accepted as built: 403 for a removed Listing; preview for every owner-visible status; `quota_identity` as the single identity flag; no new capability; targets `published` and `removed` are `400 validation_error` (the body rule wins over the table's `409` wording).
+
+Implemented:
+1. Migration `0015_identity_fingerprint_v9` recomputes event fingerprints with a frozen canonicalisation (tested through `MigrationExecutor` and directly); the `confirm_required` widening to city, locality, area and marla is intended.
+2. A Published edit answers only for fields it changed, missing required items and the live-image rule (deactivated place, tightened rule and ghost-only listing no longer dead-end); a no-op PATCH is not re-judged.
+3. The identity lock never replaces a more specific code; resend tests for all five fields; a city-only change is `not_editable` on the city alone.
+4. `sold` only for sale, `rented` only for rent (`409 conflict` otherwise).
+5. Last live image: `remove_image` decides before deleting, `set_image_order` after ghost repair; race test (one winner, MediaAsset and StorageUsage consistent).
+6. Tests: real-bytes image route matrix for all statuses, read-back of every edit kind, commit-hook event assertions, no-quota ledger, stronger AST guard cases (`removed` named only by the enum and policy, `_WRITABLE` mutations, other-module writes), Suspended HTTP corners, restricted reorder and cover, per-field fingerprint pins, registry flag assertion.
+
+Deferred (no code): owner hard-delete of archived, sold and rented Listings (a dead end until a later story); restricted Draft behaviour (accepted: restricted blocks edits, delete still works); a publish replay returns the owner's current view (documented); Greatest and ordering; `RESPONSE_SHAPE_VERSION` stays 7 (the owner resource additions are additive and not part of the registry shape).
+
 ## Verification
 
 **Backend (narrow while developing, full in CI):** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, then `scripts/test-changed.sh` and, before the merge, one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q`.
