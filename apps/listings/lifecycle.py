@@ -1,11 +1,11 @@
-"""Code-defined Listing enums. Later stories extend them (Stories 2.15, 2.17)."""
+"""Code-defined Listing enums. Later stories extend them (Story 2.17)."""
 
 from enum import StrEnum
 
 
 class ListingStatus(StrEnum):
     DRAFT = "draft"
-    PUBLISHED = "published"  # set by the publication story (2.15); fixtures only until then
+    PUBLISHED = "published"  # set only by `listings.publication.publish` (AD-7)
 
 
 class Visibility(StrEnum):

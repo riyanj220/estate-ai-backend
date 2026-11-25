@@ -1,0 +1,325 @@
+"""Publishing a Draft (AD-7, Story 2.15). The ONLY code that sets `ListingStatus.PUBLISHED` and
+the only writer of `PublicationEvent` (an architecture guard enforces both).
+
+`publish` runs in one transaction, in this order: claim the idempotency key; lock the account and
+then the Listing row; compare `base_revision`; require a Draft; check the account state; validate
+the Listing; check the monthly allowance; write the counted `initial` event with the identity
+fingerprint; set the status and bump the revision; write the audit record; complete the claim;
+emit `listing.published` (last, after commit). Any refusal or error rolls everything back, the
+claim included, so nothing is consumed and the same key may be retried. No AI call, upload, mail
+or notification happens here.
+"""
+
+import hashlib
+import json
+import re
+import unicodedata
+import uuid
+from collections.abc import Mapping
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+
+from django.db import transaction
+from django.utils import timezone
+
+from apps.catalog import registry
+from apps.catalog import selectors as catalog
+from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, lock_account
+from apps.identity.state import AccountState
+from apps.kernel import audit, idempotency
+from apps.kernel.actor import Actor, ActorKind, require_signed_in
+from apps.kernel.errors import DomainError
+from apps.kernel.events import emit
+from apps.listings import quota, validation
+from apps.listings.events import ListingPublished
+from apps.listings.fields import EDITABLE_FIELDS
+from apps.listings.lifecycle import ListingStatus, Origin
+from apps.listings.models import (
+    QUOTA_ACCOUNT_TYPES,
+    ListingRevision,
+    PropertyListing,
+    PublicationEvent,
+)
+from apps.listings.selectors import (
+    ListingView,
+    canonical_uuid,
+    get_owned_listing,
+    live_image_count,
+    view_of,
+)
+from apps.listings.services import FieldsInvalid, StaleRevision
+
+SCOPE = "listings.publish"
+KEY_FIELD = "idempotency_key"  # the name a header problem is reported under
+KIND_INITIAL = "initial"
+_KEY = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+# The field ids that are fixed at creation: always present, never re-judged as input.
+_CREATION_FIELDS = frozenset({"purpose", "category", "subtype"})
+
+
+class QuotaExhausted(DomainError):
+    """The monthly allowance is used up. Carries the caller's own numbers; nothing was written."""
+
+    def __init__(self, allowance: quota.Allowance) -> None:
+        super().__init__("quota_exhausted")
+        self.limit = allowance.limit
+        self.used = allowance.used
+        self.resets_at = allowance.resets_at
+
+
+def _number(value) -> str:
+    """A finite number as one canonical text: no exponent, no trailing zeros, `-0` is `0`."""
+    number = value if isinstance(value, Decimal) else Decimal(str(value))
+    if not number.is_finite():
+        raise ValueError("NaN and Infinity cannot be fingerprinted")
+    if number == 0:
+        return "0"
+    return format(number.normalize(), "f")
+
+
+def _canonical(definition, value):
+    """A stored value in one deterministic JSON shape: numbers (and money and decimal text) as
+    canonical decimal text, text in NFC without surrounding whitespace, lists as ordered arrays
+    of canonical items, mappings with text keys. NaN and Infinity are refused."""
+    if value is None or isinstance(value, bool):
+        return value
+    numeric = definition is not None and definition.type in ("money", "decimal")
+    if isinstance(value, int | float | Decimal) and (numeric or not isinstance(value, int)):
+        return _number(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, list | tuple):
+        return [_canonical(None, item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(k): _canonical(None, v) for k, v in value.items()}
+    text = unicodedata.normalize("NFC", str(value)).strip()
+    if definition is not None and definition.type in ("money", "decimal"):
+        try:
+            return _number(Decimal(text))
+        except InvalidOperation:
+            return text
+    return text
+
+
+def identity_fingerprint(view: ListingView) -> str:
+    """SHA-256 hex over the canonical JSON of the registry fields flagged `quota_identity`.
+
+    The ONE place the fingerprint is computed. It is stored on the publication event and never
+    leaves the service (no response, log or audit record carries it)."""
+    parts = {
+        definition.id: _canonical(definition, view.fields.get(definition.id))
+        for definition in registry.fields()
+        if definition.quota_identity
+    }
+    text = json.dumps(
+        parts, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+    )
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _resolve(kind: str, key: uuid.UUID) -> uuid.UUID | None:
+    """The catalog's answer for a stored city or locality: None when it is unknown or inactive."""
+    if kind == "city":
+        city = catalog.get_city(key)
+        return city.id if city else None
+    locality = catalog.get_locality(key)
+    return locality.city_id if locality else None
+
+
+def problems_of(row: PropertyListing, view: ListingView, has_images: bool) -> dict[str, str]:
+    """Every reason this Draft cannot be published, as a code per field (all at once).
+
+    The required items come from the registry (`requirement: required_for_publication` plus
+    applicability), so a registry change cannot drift from this rule. Every stored value that is
+    present, required or optional, is judged again with the current per-field and cross-field
+    rules (`validation.evaluate`), so stale invalid data blocks with a field-level error. Missing
+    optional data never blocks."""
+    errors: dict[str, str] = {}
+    for definition in registry.fields():
+        if definition.requirement != "required_for_publication" or definition.derived:
+            continue
+        if not definition.applies_to(row.purpose, row.category, row.subtype):
+            continue
+        value = view.fields.get(definition.id)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            errors[definition.id] = "required"
+    present = {
+        name: dict(view.fields[name])
+        if isinstance(view.fields[name], Mapping)
+        else view.fields[name]
+        for name in EDITABLE_FIELDS
+        if name not in _CREATION_FIELDS and view.fields.get(name) is not None
+    }
+    codes = catalog.amenity_codes() if "amenities" in present else None
+    _, invalid = validation.evaluate(
+        row.purpose,
+        row.category,
+        row.subtype,
+        {"amenities": present.get("amenities")},  # a stored entry stays valid if its code retired
+        present,
+        _resolve,
+        codes,
+    )
+    for name, code in invalid.items():
+        if name != validation.NON_FIELD:  # a cross-field rule may name the partner field
+            errors.setdefault(name, code)
+    if not has_images:
+        errors["images"] = "images_required"
+    stored = row.provenance if isinstance(row.provenance, dict) else {}
+    for name, entry in stored.items():
+        definition = registry.field(name) if isinstance(name, str) else None
+        if (
+            definition is not None
+            and (definition.quota_identity or definition.field_class == "private")
+            and definition.applies_to(row.purpose, row.category, row.subtype)
+            and view.fields.get(name) is not None  # an empty field has nothing to confirm
+            and isinstance(entry, dict)
+            and entry.get("origin") == Origin.AI.value
+            and entry.get("confirmed") is not True
+        ):
+            errors.setdefault(name, "confirm_required")
+    return errors
+
+
+def _check_shape(base_revision, idempotency_key) -> dict[str, str]:
+    errors: dict[str, str] = {}
+    if base_revision is None:
+        errors["base_revision"] = "required"
+    elif isinstance(base_revision, bool) or not isinstance(base_revision, int) or base_revision < 1:
+        errors["base_revision"] = "invalid"
+    if idempotency_key is None:
+        errors[KEY_FIELD] = "required"
+    elif not isinstance(idempotency_key, str) or not _KEY.fullmatch(idempotency_key):
+        errors[KEY_FIELD] = "invalid"
+    return errors
+
+
+def _require_state(account) -> None:
+    """Only an Active owner publishes. The refusal reasons are static and carry no account data."""
+    if account.type == ADMIN_ACCOUNT_TYPE or account.type not in QUOTA_ACCOUNT_TYPES:
+        raise DomainError("not_found")
+    if account.state is AccountState.ACTIVE:
+        return
+    if account.state is AccountState.EMAIL_UNVERIFIED:
+        raise DomainError("email_not_verified")
+    if account.state is AccountState.SUSPENDED:
+        raise DomainError("publishing_unavailable")
+    raise DomainError("forbidden")  # Deactivated: no session exists over HTTP
+
+
+def _replay(actor: Actor, result_ref: str) -> ListingView:
+    """The owner's Listing as it is now, for a key that already published it. A reference that is
+    malformed, or a Listing that is gone or not the caller's, is `not_found`."""
+    kind, _, listing_id = result_ref.partition(":")
+    if kind != "listing":
+        raise DomainError("not_found")
+    return get_owned_listing(actor, listing_id)
+
+
+def publish(
+    actor: Actor,
+    listing_id,
+    base_revision,
+    idempotency_key,
+    now: datetime | None = None,
+) -> ListingView:
+    """Publish one of the actor's own Drafts, immediately and at most once per key.
+
+    Refusals before the transaction: Visitor `unauthenticated`; a listing id that is not a
+    canonical UUID of a Listing owned by the actor's account `not_found` (another owner, an
+    administrator, a system actor and an unknown id are indistinguishable); a bad
+    `base_revision` or key `FieldsInvalid` (`idempotency_key` is the field name of the header).
+    Inside: `idempotency_key_reused` (same key, other request), `StaleRevision`, `conflict` (not a
+    Draft), `email_not_verified` / `publishing_unavailable` / `forbidden` (account state),
+    `FieldsInvalid` (every missing or invalid item at once), `QuotaExhausted`. A replay within
+    24 hours returns the Listing as it is now, with no second charge, event or audit record.
+    """
+    require_signed_in(actor)
+    key = canonical_uuid(listing_id)
+    owned = (
+        key is not None
+        and actor.kind is ActorKind.USER
+        and PropertyListing.objects.filter(id=key, owner_account_id=actor.account_id).exists()
+    )
+    if not owned:
+        raise DomainError("not_found")
+    problems = _check_shape(base_revision, idempotency_key)
+    if problems:
+        raise FieldsInvalid(problems)
+    with transaction.atomic():
+        claim = idempotency.claim(
+            SCOPE,
+            actor.account_id,
+            idempotency_key,
+            idempotency.request_fingerprint({"listing_id": key, "base_revision": base_revision}),
+            now if now is not None else timezone.now(),
+        )
+        if not claim.is_new:
+            if claim.result_ref is None:  # a claim without a result: never redo the work
+                raise DomainError("conflict")
+            return _replay(actor, claim.result_ref)
+        account = lock_account(actor.account_id)
+        now = now if now is not None else timezone.now()  # read after the lock wait (month edge)
+        done = PublicationEvent.objects.filter(
+            account_id=account.id, idempotency_key=idempotency_key
+        ).first()
+        if done is not None:  # the claim expired or was purged, but this key already published
+            if done.listing_id != key:
+                raise DomainError("idempotency_key_reused")
+            claim.complete(f"listing:{done.listing_id}")
+            return _replay(actor, f"listing:{done.listing_id}")
+        row = (
+            PropertyListing.objects.select_for_update()
+            .filter(id=key, owner_account_id=actor.account_id)
+            .first()
+        )
+        if row is None:
+            raise DomainError("not_found")
+        if row.revision != base_revision:
+            raise StaleRevision(view_of(row, with_private=True))
+        if row.status != ListingStatus.DRAFT.value:
+            raise DomainError("conflict")
+        _require_state(account)
+        view = view_of(row, with_private=True)
+        problems = problems_of(row, view, live_image_count(row.id) > 0)
+        if problems:
+            raise FieldsInvalid(problems)
+        allowance = quota.allowance_for(account.id, account.type, now)
+        if allowance.remaining < 1:
+            raise QuotaExhausted(allowance)
+        PublicationEvent.objects.create(
+            account_id=account.id,
+            listing_id=row.id,
+            kind=KIND_INITIAL,
+            counted=True,
+            identity_fingerprint=identity_fingerprint(view),
+            idempotency_key=idempotency_key,
+            created_at=now,
+        )
+        row.status = ListingStatus.PUBLISHED.value
+        row.revision += 1
+        row.updated_at = now
+        row.delete_after = None  # no longer a Draft that can expire
+        row.expiry_notice_sent_at = None
+        row.save(
+            update_fields=[
+                "status",
+                "revision",
+                "updated_at",
+                "delete_after",
+                "expiry_notice_sent_at",
+            ]
+        )
+        ListingRevision.objects.create(
+            listing=row,
+            revision=row.revision,
+            origin=Origin.MANUAL.value,
+            actor_account_id=actor.account_id,
+            changes={"status": ListingStatus.PUBLISHED.value},
+            created_at=now,
+        )
+        audit.record(actor, "listing.published", "listing", row.id, {})
+        claim.complete(f"listing:{row.id}")
+        published = view_of(row, with_private=True)
+        emit(ListingPublished(listing_id=row.id, account_id=account.id))  # last: after commit
+    return published

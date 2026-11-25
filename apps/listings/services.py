@@ -77,6 +77,7 @@ from apps.listings.selectors import (
     commercial_of,
     field_text,
     image_url,
+    live_image_count,
     location_of,
     notice_stored,
     plot_of,
@@ -520,15 +521,6 @@ def _bump(row: PropertyListing, actor: Actor, count: int, **flags: bool) -> None
     )
 
 
-def _live_image_count(listing_id) -> int:
-    """Images of the Listing whose asset row exists (a link without one is a ghost: nothing can
-    be shown, served or counted for it)."""
-    assets = list(
-        ListingImage.objects.filter(listing_id=listing_id).values_list("asset_id", flat=True)
-    )
-    return len(media.assets_by_id(assets))
-
-
 def _normalise_images(row: PropertyListing) -> bool:
     """Under the Listing lock: delete ghost links (no asset row), renumber the positions
     contiguously 0..n-1 and make sure exactly one image is the cover while any remain. Returns
@@ -572,7 +564,7 @@ def upload_image(actor: Actor, listing_id, data: bytes) -> ImageView:
     listing = PropertyListing.objects.filter(id=key).values("status").first()
     if listing is None or listing["status"] not in lifecycle.EDITABLE_STATUSES:
         raise DomainError("forbidden")
-    if _live_image_count(key) >= MAX_IMAGES:  # ghosts (lost asset rows) are not counted
+    if live_image_count(key) >= MAX_IMAGES:  # ghosts (lost asset rows) are not counted
         raise DomainError("too_many_images")
     processed = media.process_upload(actor, data)
     asset = None

@@ -12,3 +12,12 @@ class ListingModelInputsChanged(DomainEvent):
 
     name = "listing.model_inputs_changed"
     listing_id: uuid.UUID
+
+
+@dataclass(frozen=True)
+class ListingPublished(DomainEvent):
+    """A Draft became Published (after commit). Ids only; nothing subscribes yet."""
+
+    name = "listing.published"
+    listing_id: uuid.UUID
+    account_id: uuid.UUID

@@ -317,6 +317,15 @@ def view_of(
     )
 
 
+def live_image_count(listing_id) -> int:
+    """Images of the Listing whose asset row exists (a link without one is a ghost: nothing can
+    be shown, served or counted for it). The one rule of the image cap and of publication."""
+    assets = list(
+        ListingImage.objects.filter(listing_id=listing_id).values_list("asset_id", flat=True)
+    )
+    return len(media.assets_by_id(assets))
+
+
 def media_by_listing(listing_ids) -> dict[uuid.UUID, tuple[ImageView, ...]]:
     """The images of each Listing in `position` order, in two queries. An image whose asset row
     is lost is left out (nothing can be shown or served for it)."""
