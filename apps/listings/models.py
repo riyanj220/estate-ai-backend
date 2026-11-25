@@ -218,6 +218,9 @@ class PropertyListing(models.Model):
     # Set by moderation (a later epic); fixtures only until then. A restricted Listing is never
     # public, whatever its status (`listings.policy`).
     restricted = models.BooleanField(default=False)
+    # Why a restricted or removed Listing is so: short plain text, set only by moderation (a later
+    # story; test fixtures until then). Shown to the owner only, never in a public shape.
+    restriction_reason = models.CharField(max_length=200, null=True)
     revision = models.PositiveIntegerField(default=1)
     registry_version = models.PositiveIntegerField()
     purpose = models.CharField(max_length=32)

@@ -37,9 +37,18 @@ def is_public(listing: PropertyListing) -> bool:
 
 
 # The statuses an owner may see their own Listing in. Explicit on purpose: a status added later
-# (archived, removed, ...) is invisible to everyone, the owner included, until its story adds it
-# here deliberately.
-OWNER_VISIBLE_STATUSES = frozenset({ListingStatus.DRAFT.value, ListingStatus.PUBLISHED.value})
+# is invisible to everyone, the owner included, until its story adds it here deliberately. Since
+# Story 2.17 that is every status, restricted and removed ones included (read only for the owner).
+OWNER_VISIBLE_STATUSES = frozenset(
+    {
+        ListingStatus.DRAFT.value,
+        ListingStatus.PUBLISHED.value,
+        ListingStatus.ARCHIVED.value,
+        ListingStatus.SOLD.value,
+        ListingStatus.RENTED.value,
+        ListingStatus.REMOVED.value,
+    }
+)
 
 
 def is_owner(viewer: Actor, listing: PropertyListing) -> bool:

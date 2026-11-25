@@ -1,7 +1,7 @@
 # The Field registry (AD-4). Every change needs a version bump and a new lock:
 #   uv run python scripts/registry_lock.py
 # Format and rules: docs/registry.md
-version: 8
+version: 9
 
 taxonomy:
   purposes: [sale, rent]
@@ -96,6 +96,7 @@ fields:
     sortable: true
     ai_extractable: true
     valuation_input: true
+    quota_identity: true
   - id: area_unit
     type: enum
     requirement: required_for_publication
@@ -105,6 +106,7 @@ fields:
     searchable: true
     ai_extractable: true
     valuation_input: true
+    quota_identity: true
   - id: marla_basis
     type: enum
     requirement: optional
@@ -114,6 +116,7 @@ fields:
     class: public
     ai_extractable: true
     valuation_input: true
+    quota_identity: true
   - id: area_sqft
     type: decimal
     derived: true
@@ -691,6 +694,7 @@ fields:
     applicability: {purposes: [], categories: [], subtypes: []}
     class: public
     searchable: true
+    quota_identity: true
   - id: locality
     type: reference
     reference: locality
@@ -700,6 +704,7 @@ fields:
     applicability: {purposes: [], categories: [], subtypes: []}
     class: public
     searchable: true
+    quota_identity: true
   - id: society
     type: text
     section: location
