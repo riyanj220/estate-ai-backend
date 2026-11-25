@@ -81,6 +81,12 @@ Implemented:
 
 Deferred (no code): owner hard-delete of archived, sold and rented Listings (a dead end until a later story); restricted Draft behaviour (accepted: restricted blocks edits, delete still works); a publish replay returns the owner's current view (documented); Greatest and ordering; `RESPONSE_SHAPE_VERSION` stays 7 (the owner resource additions are additive and not part of the registry shape).
 
+Frontend half, as built (checks: lint, typecheck, build, api:check, prod checks, the 73-test lifecycle spec, the Draft-page and My-listings specs, `test:e2e:changed` 484 tests and a re-run of the older listing specs; one load-sensitive test passed alone; the full suite runs in CI):
+
+- Review found and the implementer fixed: unsaved typed edits lost when a stale save reveals a sold/rented/removed/restricted listing (now explained, never silent); a per-status tab title and no "Draft" flash; archive copy no longer promises republishing and says it cannot be undone yet; a 409 on a status action that already reached the target counts as success; publish/delete conflict paths keep typed values; a failed tab switch keeps the tabs; stale Load more cancelled on tab switch; Back to My listings keeps the tab; locked identity fields are readOnly/aria-readonly (still focusable); a restricted Draft hides Publish/Delete; stub matches the backend check order and flags all eight identity fields.
+- Decisions: tab title from a client effect; counts and the first list request are sequential (the counts name the default tab); status actions are blocked while the form has unsaved changes.
+- Deferred: counts staleness between tab lists (advisory); a restricted Draft stays view-only (backend decision); no un-archive until Story 2.18.
+
 ## Verification
 
 **Backend (narrow while developing, full in CI):** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, then `scripts/test-changed.sh` and, before the merge, one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q`.
