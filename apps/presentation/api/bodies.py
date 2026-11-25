@@ -47,3 +47,12 @@ class ConflictWithCurrent(DomainError):
     def __init__(self, current: dict) -> None:
         super().__init__("stale_revision")
         self.extra = {"current": current}
+
+
+class ConflictWithDetails(DomainError):
+    """A conflict whose body also carries a small `details` object of the caller's own numbers
+    (for example the publication allowance); never values the caller sent."""
+
+    def __init__(self, code: str, details: dict) -> None:
+        super().__init__(code)
+        self.extra = {"details": details}

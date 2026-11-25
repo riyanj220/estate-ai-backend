@@ -18,13 +18,14 @@ ERROR_DESCRIPTIONS = {
     403: "Forbidden",
     404: "Not found",
     409: "Conflict",
+    422: "Unprocessable: the idempotency key was used for a different request",
     429: "Too many requests",
     500: "Server error",
     503: "Busy: retry shortly",
 }
 # Declared by an operation with `extend_schema(responses={409: OpenApiResponse(description=...)})`;
 # the envelope content (and the `Retry-After` of a 503) is filled in here.
-DECLARED_ERROR_STATUSES = (409, 503)
+DECLARED_ERROR_STATUSES = (409, 422, 503)
 
 
 def _error_components() -> dict:

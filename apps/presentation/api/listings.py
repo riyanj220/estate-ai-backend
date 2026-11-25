@@ -19,11 +19,16 @@ from rest_framework.utils.urls import replace_query_param
 from rest_framework.views import APIView
 
 from apps.catalog import registry
-from apps.listings import quota, selectors, services
+from apps.listings import publication, quota, selectors, services
 from apps.listings.fields import EDITABLE_FIELDS, WIRE_FIELDS
 from apps.listings.lifecycle import ListingStatus, Origin, Visibility
 from apps.presentation.api.actors import get_actor
-from apps.presentation.api.bodies import ConflictWithCurrent, exact_fields, field_errors
+from apps.presentation.api.bodies import (
+    ConflictWithCurrent,
+    ConflictWithDetails,
+    exact_fields,
+    field_errors,
+)
 from apps.presentation.api.passwords import NoStoreMixin
 from apps.presentation.api.permissions import RequireSignedIn
 from apps.presentation.api.serializers import ErrorBodySerializer
@@ -321,6 +326,38 @@ class ListingConflictSerializer(serializers.Serializer):
 
     error = ErrorBodySerializer()
     current = ListingSerializer(help_text="The current Listing, to reload and reapply the edit.")
+
+
+class _OffsetDateTimeField(serializers.DateTimeField):
+    """An ISO 8601 string in the value's own offset (DRF would convert it to UTC)."""
+
+    def to_representation(self, value):
+        return value.isoformat()
+
+
+class PublishBodySerializer(serializers.Serializer):
+    base_revision = serializers.IntegerField(
+        min_value=1, help_text="The `revision` of the Draft the client last read."
+    )
+
+    def to_internal_value(self, data):
+        # Only `base_revision` is accepted; its type is judged by the service with the header.
+        return {"base_revision": exact_fields(data, ("base_revision",)).get("base_revision")}
+
+
+class QuotaDetailsSerializer(serializers.Serializer):
+    limit = serializers.IntegerField(help_text="The caller's monthly limit.")
+    used = serializers.IntegerField(help_text="The caller's counted publications this month.")
+    resets_at = _OffsetDateTimeField(help_text="Start of the next Karachi month, +05:00.")
+
+
+class PublishConflictSerializer(serializers.Serializer):
+    """`409`: the error envelope plus, for `stale_revision`, the Listing as it is now under
+    `current` and, for `quota_exhausted`, the caller's own numbers under `details`."""
+
+    error = ErrorBodySerializer()
+    current = ListingSerializer(required=False, help_text="With `stale_revision` only.")
+    details = QuotaDetailsSerializer(required=False, help_text="With `quota_exhausted` only.")
 
 
 class ListingPageSerializer(serializers.Serializer):
@@ -636,13 +673,6 @@ class MyListingsView(NoStoreMixin, APIView):
         )
 
 
-class _OffsetDateTimeField(serializers.DateTimeField):
-    """An ISO 8601 string in the value's own offset (DRF would convert it to UTC)."""
-
-    def to_representation(self, value):
-        return value.isoformat()
-
-
 class PublicationAllowanceSerializer(serializers.Serializer):
     limit = serializers.IntegerField(help_text="The monthly limit in force now.")
     used = serializers.IntegerField(help_text="Counted publications this Karachi month.")
@@ -690,3 +720,67 @@ class PublicationAllowanceView(NoStoreMixin, APIView):
                 }
             ).data
         )
+
+
+class ListingPublishView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="publish_listing",
+        summary="Publish one of the signed-in account's own Drafts",
+        description=(
+            "Needs `X-CSRFToken` and an `Idempotency-Key` header (1 to 128 characters from "
+            "`A-Za-z0-9._:-`; a missing or malformed one is `400 validation_error` under "
+            "`fields.idempotency_key`). Body: `{base_revision}` and nothing else. Publishing is "
+            "immediate (no approval) and all-or-nothing: it uses one of the owner's monthly "
+            "publications and makes the Listing public if its owner is Active. The same key with "
+            "the same body within 24 hours returns the Listing as it is now with no second "
+            "publication; the same key with another body is `422 idempotency_key_reused`. "
+            "Refusals, in order: another account's, an administrator's, an unknown and a "
+            "malformed id are `404 not_found`; a Visitor is `401`; a `base_revision` that is not "
+            "the current `revision` is `409 stale_revision` with the Listing under `current`; a "
+            "Listing that is not a `draft` is `409 conflict`; an Email-unverified account is "
+            "`403 email_not_verified` and a Suspended one `403 publishing_unavailable`; every "
+            "missing or invalid required item is `400 validation_error`, all at once, keyed by "
+            "registry field id (`required` and the field's own codes), `images` "
+            "(`images_required`: at least one image) and a field of class `private` or of the "
+            "quota identity that the Assistant filled in and the owner has not confirmed "
+            "(`confirm_required`); a used-up allowance is `409 quota_exhausted` with the "
+            "caller's own `limit`, `used` and `resets_at` under `details`. A refused attempt "
+            "consumes nothing. Never cached."
+        ),
+        parameters=[
+            OpenApiParameter(
+                "Idempotency-Key", str, location=OpenApiParameter.HEADER, required=True
+            )
+        ],
+        request=PublishBodySerializer,
+        responses={
+            200: OpenApiResponse(ListingSerializer, description="The published Listing"),
+            409: OpenApiResponse(
+                PublishConflictSerializer,
+                description="`stale_revision`, `conflict` or `quota_exhausted`",
+            ),
+            422: OpenApiResponse(description="`idempotency_key_reused`"),
+        },
+    )
+    def post(self, request, listing_id):
+        serializer = PublishBodySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            view = publication.publish(
+                get_actor(request),
+                listing_id,
+                serializer.validated_data["base_revision"],
+                request.headers.get("Idempotency-Key"),
+            )
+        except services.FieldsInvalid as exc:
+            raise field_errors(exc.fields) from None
+        except services.StaleRevision as exc:
+            raise ConflictWithCurrent(listing_data(exc.current)) from None
+        except publication.QuotaExhausted as exc:
+            raise ConflictWithDetails(
+                exc.code,
+                {"limit": exc.limit, "used": exc.used, "resets_at": exc.resets_at.isoformat()},
+            ) from None
+        return Response(listing_data(view))

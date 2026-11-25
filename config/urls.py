@@ -12,6 +12,7 @@ from apps.presentation.api.listings import (
     DraftCreateView,
     ListingDetailView,
     ListingPreviewView,
+    ListingPublishView,
     MyListingsView,
     PublicationAllowanceView,
 )
@@ -142,6 +143,11 @@ urlpatterns = [
         "api/v1/listings/<str:listing_id>/preview",
         ListingPreviewView.as_view(),
         name="listing-preview",
+    ),
+    path(
+        "api/v1/listings/<str:listing_id>/publish",
+        ListingPublishView.as_view(),
+        name="listing-publish",
     ),
     path(
         "api/v1/listings/<str:listing_id>/images",
