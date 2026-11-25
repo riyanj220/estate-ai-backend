@@ -190,8 +190,82 @@ def set_account_state(account_id, state):
 
 
 def set_listing_visibility(listing_id, status="published", restricted=False):
-    """Put a Listing in a status and restricted state directly through the model. Nothing in the
-    product sets `published` or `restricted` yet (Story 2.15 and moderation do), so fixtures do."""
+    """Put a Listing in a status and restricted state directly through the model, for visibility
+    tests that need a state without going through publication (`restricted` is set by moderation,
+    a later epic; `listings.publication.publish` is the product's only way to `published`)."""
     from apps.listings.models import PropertyListing
 
     PropertyListing.objects.filter(id=listing_id).update(status=status, restricted=restricted)
+
+
+# Story 2.15: a Draft that can be published, built through the real write path.
+TITLE = "Family house near the park"
+COMPLETE = {
+    "title": TITLE,
+    "asking_price": "1500000",
+    "price_basis": "total",
+    "area_value": "10",
+    "area_unit": "marla",
+    "marla_basis": "225",
+    "bedrooms": 3,
+    "bathrooms": 2,
+}
+RENT_COMPLETE = {**COMPLETE, "price_basis": "rental_period", "rental_period": "month"}
+STREET = "Mango Lane"
+
+
+def places():
+    """A city with a locality, and another city (get_or_create: the seed may hold Karachi)."""
+    from apps.catalog.models import City, Locality
+
+    karachi, _ = City.objects.get_or_create(name="Karachi")
+    lahore, _ = City.objects.get_or_create(name="Lahore")
+    area, _ = Locality.objects.get_or_create(city=karachi, name="Testville North", kind="area")
+    other, _ = Locality.objects.get_or_create(city=lahore, name="Lahoreville Block", kind="area")
+    return {"karachi": karachi, "lahore": lahore, "area": area, "other": other}
+
+
+def add_images(listing_id, count=1, ghosts=0):
+    """`count` live images (a stored asset row each, no file) and `ghosts` links whose asset row
+    is gone. Written straight to the tables: the upload pipeline has its own tests."""
+    from apps.kernel.models import MediaAsset
+    from apps.listings.models import ListingImage, PropertyListing
+
+    owner = PropertyListing.objects.get(id=listing_id).owner_account_id
+    first = ListingImage.objects.filter(listing_id=listing_id).count()
+    for position in range(first, first + count + ghosts):
+        asset_id = uuid.uuid4()
+        if position < first + count:
+            MediaAsset.objects.create(
+                id=asset_id,
+                owner_account_id=owner,
+                storage_key=uuid.uuid4().hex,
+                content_type="image/jpeg",
+                bytes=1000,
+                width=400,
+                height=300,
+                created_at=timezone.now(),
+                attached_at=timezone.now(),
+            )
+        ListingImage.objects.create(
+            listing_id=listing_id, asset_id=asset_id, position=position, is_cover=position == 0
+        )
+
+
+def ready_draft(account, values=HOUSE, extra=None, images=1):
+    """A Draft with every required item and `images` images, written through `apply_updates`."""
+    from apps.listings import selectors, services
+
+    view = services.create_draft(user(account), *values)
+    rent = values[0] == "rent"
+    data = dict(RENT_COMPLETE if rent else COMPLETE)
+    if values[1] not in ("house", "apartment"):
+        data.pop("bedrooms")
+        data.pop("bathrooms")
+    place = places()
+    data["city"] = str(place["karachi"].id)
+    data["locality"] = str(place["area"].id)
+    data.update(extra or {})
+    services.apply_updates(user(account), view.id, 1, data)
+    add_images(view.id, images)
+    return selectors.get_owned_listing(user(account), view.id)

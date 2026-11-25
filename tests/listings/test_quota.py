@@ -372,18 +372,18 @@ def test_the_write_detector_sees_every_write_form():
     assert not _writes_to_publication_events(ast.parse("PublicationEvent.objects.filter(a=1)"))
 
 
-def test_no_application_code_writes_publication_events_yet():
+def test_only_the_publish_service_writes_publication_events():
     import ast
     import pathlib
 
     root = pathlib.Path(quota.__file__).resolve().parents[1]  # apps/
     offenders = [
-        str(path.relative_to(root))
+        path.relative_to(root).as_posix()
         for path in root.rglob("*.py")
         if "migrations" not in path.parts
         and _writes_to_publication_events(ast.parse(path.read_text()))
     ]
-    assert offenders == []  # Story 2.15's publish service is the first writer
+    assert offenders == ["listings/publication.py"]  # Story 2.15's publish service, exactly
 
 
 # owner check

@@ -16,6 +16,7 @@ ALLOWED = {
     "apps/listings/policy.py",
     "apps/listings/selectors.py",
     "apps/listings/lifecycle.py",  # defines the status and its owner-facing label
+    "apps/listings/publication.py",  # the one writer of the published status (AD-7)
     "apps/listings/models.py",  # defines the `restricted` column
 }
 GUARDED_NAMES = {"PUBLISHED", "restricted"}
