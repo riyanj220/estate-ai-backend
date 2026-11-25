@@ -26,6 +26,7 @@ CATALOGUE: dict[str, ErrorCode] = _catalogue(
     ErrorCode("method_not_allowed", 405, "This method is not allowed for this resource."),
     ErrorCode("not_acceptable", 406, "The requested response format is not available."),
     ErrorCode("stale_revision", 409, "The resource changed since it was loaded."),
+    ErrorCode("conflict", 409, "This action cannot be done in the current state."),
     ErrorCode("storage_cap_exceeded", 409, "Your storage limit is reached. Remove an image first."),
     ErrorCode("too_many_images", 409, "A listing can have at most 10 images."),
     ErrorCode("link_used", 409, "This link has already been used or replaced by a newer one."),

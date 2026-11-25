@@ -44,6 +44,7 @@ _ENUM_VALUE = re.compile(r"^[a-z0-9_.-]{1,40}$")
 _URL_HINTS = ("@", "://", "www.")
 
 SHORT_TEXT = "short_text"  # schema type: at most 120 characters of PUBLIC-class text
+UUID_TEXT = "uuid"  # schema type: an id (a `uuid.UUID` or its canonical text), stored as text
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,7 @@ def _normalise(schema: Mapping[str, Any]) -> dict[str, Any]:
     for key, kind in schema.items():
         if not isinstance(key, str) or not _KEY.fullmatch(key):
             raise ValueError("payload keys must be lowercase snake_case")
-        if kind is bool or kind == SHORT_TEXT or isinstance(kind, IntRange):
+        if kind is bool or kind == SHORT_TEXT or kind == UUID_TEXT or isinstance(kind, IntRange):
             out[key] = kind
         elif isinstance(kind, Collection) and not isinstance(kind, str | bytes) and kind:
             try:
@@ -85,7 +86,9 @@ def _normalise(schema: Mapping[str, Any]) -> dict[str, Any]:
                 raise ValueError("enumeration values must not hold long digit runs")
             out[key] = values
         else:
-            raise ValueError("a payload type must be bool, int_range, SHORT_TEXT or an enumeration")
+            raise ValueError(
+                "a payload type must be bool, int_range, SHORT_TEXT, UUID_TEXT or an enumeration"
+            )
     return out
 
 
@@ -117,6 +120,13 @@ def _check_value(key: str, spec: Any, value: Any) -> Any:
             raise ValueError(f"payload {key!r} must be an int")
         if not spec.low <= value <= spec.high:
             raise ValueError(f"payload {key!r} is out of range")
+        return value
+    if spec == UUID_TEXT:
+        # An id is opaque: it is no contact detail, and its digits are not a phone number.
+        if isinstance(value, uuid.UUID):
+            return str(value)
+        if not isinstance(value, str) or _parse_id(value) is None:
+            raise ValueError(f"payload {key!r} must be an id")
         return value
     if spec == SHORT_TEXT:
         if (
@@ -220,6 +230,17 @@ def list_for(actor: Actor, state: str = "all") -> QuerySet[Notification]:
     if state == "unread":
         rows = rows.filter(read_at__isnull=True)
     return rows.order_by("-seq")
+
+
+def has_with_payload(account_id: uuid.UUID, kind: str, key: str, value: str) -> bool:
+    """Whether a stored notification of `kind` for `account_id` has `payload[key] == value`
+    (for a service that must know a notice really reached the account's list). No actor: the
+    caller is a system job and gets a boolean, never the row."""
+    if not isinstance(account_id, uuid.UUID):
+        raise ValueError("account_id must be a UUID")
+    return Notification.objects.filter(
+        account_id=account_id, kind=kind, **{f"payload__{key}": value}
+    ).exists()
 
 
 def count_unread(actor: Actor) -> int:

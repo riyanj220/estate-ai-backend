@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from django.db import connection
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.catalog import selectors as catalog
@@ -116,6 +117,14 @@ def active_owner_account_ids():
         suspended_at__isnull=True,
         deactivated_at__isnull=True,
         account_type__in=(AccountType.INDIVIDUAL, AccountType.AGENCY),
+    ).values("id")
+
+
+def suspended_or_deactivated_account_ids():
+    """A lazy queryset of the ids of every Suspended or Deactivated account, for `listings`
+    retention to leave their Drafts alone."""
+    return Account.objects.filter(
+        Q(suspended_at__isnull=False) | Q(deactivated_at__isnull=False)
     ).values("id")
 
 
