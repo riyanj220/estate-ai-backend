@@ -195,6 +195,10 @@ Registration queues a single-use, 24-hour verification link (after commit, throu
 
 Administrators exist only through `python manage.py provision_admin <create|disable|remove|reset-password> --email <address>`; the password is read from a hidden prompt or `--password-stdin`, never an argument, and every action is audited (`admin.provisioned`, `admin.disabled`, `admin.removed`, `admin.password_reset`). No default credential exists anywhere. They sign in at `POST /api/v1/admin-session` (strong 12-character password policy, own failure throttle `admin_sign_in`, 30 minutes idle and 8 hours absolute sessions, `admin.signed_in` and `admin.sign_in_failed` audit records) and the protected base is `/api/v1/admin/*` (`GET /api/v1/admin/me` today). A forgotten administrator password is recovered only with the command. See `docs/administrators.md`.
 
+## Sample data
+
+`python manage.py seed_sample_data [--reset] [--reseed] [--password-stdin] [--listings N]` creates 5 sample accounts (on the reserved `sample.estate-ai.invalid` domain) and published Listings with images for local development, safely repeatable, removable with `--reset`, and refused under the production settings. No default password exists: it is read from the prompt or `--password-stdin`, or generated and printed once. See `docs/sample-data.md`.
+
 ## Mail
 
 Features send email only through `apps.kernel.mail.send(MailMessage(...))` inside their transaction; it is delivered after commit, off the request thread, never retried, and links come from `email_link` (`FRONTEND_BASE_URL`). Local mail goes to Mailpit only. See `docs/mail.md`.

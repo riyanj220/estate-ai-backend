@@ -617,9 +617,10 @@ that migration and, later, Story 2.20's service.
 
 `listings.PublicationEvent` is the history `listings.publication.publish` writes (Story 2.15; kinds `initial`, `republish_counted`,
 `republish_free`, `restore`, `seed`; `counted` only for the first two, by CHECK; no foreign keys, so history outlives a
-Listing; idempotency key unique per account). Never updated or deleted by application code: the runtime role has
+Listing; idempotency key unique per account). Never updated or deleted by application code, with ONE exception: `publication.remove_seed_events`
+(kind `seed` only, system actor, privileged connection; the sample-data reset). The runtime role has
 INSERT and SELECT only (`RUNTIME_APPEND_ONLY_TABLES`). Only `listings/publication.py` writes it (an AST guard in
-`tests/listings/test_quota.py` lists the writers; tests may insert directly).
+`tests/listings/test_quota.py` lists the writers, and follows a name bound to the model, so a split `rows = PublicationEvent.objects...; rows.filter().delete()` is flagged too; tests may insert directly).
 
 `listings.quota`: `quota_limit_at(account_type, at)` resolves the limit at the time of an attempt (never stored on an
 event; `QuotaPolicyMissing` if no row covers `at`). `allowance_for(account_id, account_type, now)` returns a frozen
@@ -687,3 +688,22 @@ sentences added: `images_required`, `confirm_required`.
 A `listing.draft_expiring` notice already delivered is not withdrawn when the Draft is published. It links to the Draft
 page and only says the Draft will be deleted if it is not opened, so a published Listing is never deleted by it (the
 retention job only considers Drafts, and publication clears `delete_after`).
+
+### The `seed` kind (Story 2.16)
+
+`publish(..., kind="seed")` is keyword-only (default `initial`; any other value is `validation_error`). ONLY the system
+actor may pass `seed` (any other actor, a user included, is `403 forbidden` with nothing written; a Visitor is
+`unauthenticated`); the HTTP view never passes `kind`, so no route can produce one (`tests/listings/test_sample_data.py`
+checks the call sites and an injected body field). The system actor publishes the Draft of a SAMPLE account (an address on
+`sample.estate-ai.invalid`); any other owner is `not_found`. The event is written with `kind=seed`, `counted=False`:
+no allowance is needed (an account with a used-up month can still be seeded) and none is used. Everything else is as
+above: the idempotency claim (scoped to the owner), account then Listing locks, `base_revision`, the account-state
+refusals, complete validation, the audit record and `listing.published` after commit.
+
+`publication.remove_seed_events(actor, account_ids, using=...)` is the one place an event is deleted: system actor only,
+`kind=seed` and `counted=False` rows of the given accounts only. The runtime role may only INSERT and SELECT events, so
+the sample-data command passes the privileged connection alias (`sample_data.privileged_alias()`: `migrator` where the
+settings define it, i.e. local development, otherwise `default`, which is the schema owner under the test settings).
+Decision: seed events ARE removed on `--reset` (rather than left as harmless history) so a reset leaves no trace of the
+accounts that went away and a reseed never meets an old key; a seed idempotency key is `seed-<index>` per owner and a
+reseed creates new accounts, so keys cannot clash either way. See `docs/sample-data.md`.

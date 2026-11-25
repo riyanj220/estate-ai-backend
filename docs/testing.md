@@ -40,3 +40,7 @@ grants the runtime role per database, so nothing needs setting up per worker. Th
   (workers refuse to start when they collect different test ids). Use `uuid.UUID(int=n)`.
 - Do not rely on state outside the test's own database transaction or `tmp_path`/`media_root`; each worker is a
   separate process with its own database, so process-global state is isolated per worker.
+
+## Sample data in tests
+
+`apps/listings/sample_data.py` (`seed`, `reset`, `reseed`, `row_for`) is callable without the CLI; `tests/listings/test_sample_data.py` shows the setup (`seed_cap()` and `seed_media_policies()`). A 12-Listing run takes about 3 seconds and 60 about 13, so use `seed(5)` unless a test needs the spread across categories. See `docs/sample-data.md`.

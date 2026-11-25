@@ -58,6 +58,17 @@ context:
 
 ## Review Triage Log
 
+### Backend triage (review batch 1)
+
+1. Reserved domain: one definition (`apps/identity/sample_domain.py`); Python and SQL matchers share the lowercase suffix rule on ASCII addresses (a divergence on a dotted capital I was found and closed); `check_email` refuses the domain and any subdomain everywhere (registration, email change, reset/verification requests, `create_account`, `provision_admin`), except the system sample service (`allow_sample=True`). Lookalikes are tested. An uppercase spelling of the exact domain is the same domain, so it counts as sample.
+2. `remove_seed_events` is one `PublicationEvent.objects.using(...).filter(...).delete()` chain; the quota-guard detector now follows names bound to the model (self-tests added); docstring and `docs/listings.md` name the single exception.
+3. Guard: settings module (env fallback tested) plus loopback database host or `SEED_ALLOWED`; `--reset` and `--reseed` print the counts and always need `--yes`.
+4. Password printed at once after the accounts exist; failure hint "run with --reseed to start over"; notice line when a given password is ignored for existing accounts.
+5. `remove_sample_account` refuses (rolls back) while media remains; `kernel.media.forget_usage` removes the empty usage row; reset test asserts zero rows.
+6. HTTP test sends a valid publish with a `Kind` header: `initial`, counted. Deviation: an extra body field `kind` is refused with 400 by the strict body serializer (nothing written) rather than ignored. The call-site guard is alias, `**` and `getattr` aware with self-tests. A missing locality fails loudly (`SeedRefused`).
+7. Test passwords reuse `tests/listings/support.PASSWORD`; no `.gitleaksignore` entries.
+8. Removing a sample Listing writes `listing.sample_removed`; the `listing.draft_deleted` reasons are unchanged.
+
 ## Verification
 
 **Backend (narrow while developing, full in CI):** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, then `scripts/test-changed.sh` and, before the merge, one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q`.
