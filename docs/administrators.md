@@ -107,6 +107,10 @@ The same file proves that every registration route refuses a hostile `account_ty
 presentation module references the provisioning services, and that `create_account` refuses type `admin` for any
 non-system actor.
 
+The publication limit routes (`/api/v1/admin/quota-policy`, `/api/v1/admin/quota-usage`) are described in
+`docs/listings.md`. The usage list shows masked emails only (`j***@example.com`); reading a full address stays a
+reasoned private read (`docs/audit.md`).
+
 `GET /api/v1/admin/me` returns `{"id", "account_type": "admin", "state"}` and nothing private (`Cache-Control: no-store`).
 
 ### For Story 1.23

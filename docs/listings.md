@@ -699,7 +699,7 @@ cover the type, a non-negative limit and `effective_to > effective_from`; a Post
 extension and seeds individual 2 and agency 10 from 2000-01-01 UTC (idempotent: a type that has any row is left alone).
 `btree_gist` is a trusted extension, so the migrator (database owner) can create it; `docker/postgres/create_roles.sh`
 also creates it in the database and `template1` (like `vector`), so test databases have it. Policies are written only by
-that migration and, later, Story 2.20's service.
+that migration and `listings.quota_admin` (Story 2.20, below).
 
 `listings.PublicationEvent` is the history `listings.publication.publish` writes (Story 2.15; kinds `initial`, `republish_counted`,
 `republish_free`, `restore`, `seed`; `counted` only for the first two, by CHECK; no foreign keys, so history outlives a
@@ -724,11 +724,32 @@ Notes for the next stories:
 - `publish` reads the allowance (and inserts the event) inside one transaction that first calls
   `identity.selectors.lock_account(account_id)`, so two simultaneous publishes cannot both see the last slot. The
   allowance read itself is two queries (limit, then count) and takes no lock.
-- The exclusion constraint is not deferrable. Story 2.20 closes the current row (`effective_to`) and inserts the new
-  one in the same transaction, in that order.
+- The exclusion constraint is not deferrable: a limit change closes the current row (`effective_to`) and inserts the
+  new one in the same transaction, in that order.
 - All instants are timezone-aware; `quota_limit_at`, `month_bounds` and `allowance_for` raise `ValueError` for a naive
   datetime. `ZoneInfo("Asia/Karachi")` needs tz data: `tzdata` is a runtime dependency on every platform.
 - `QuotaPolicyMissing` is an internal error: over HTTP it is the generic `500 server_error` envelope without detail.
+
+### Administrator management (Story 2.20, FR-60)
+
+`listings.quota_admin`; every function requires an administrator (Visitor `unauthenticated`, other accounts
+`not_found`).
+
+- `set_quota_limit(actor, account_type, monthly_limit, now=None)`: a whole number from 0 to 1000 (`fields.monthly_limit`:
+  `required`, `invalid`, `min_value`, `max_value`); an unknown account type is `not_found`. Under one advisory lock per
+  account type it closes the open row at `now` and inserts the new one from `now`, so only later attempts see it. The
+  current limit again writes nothing. A `now` not after the open row's start is `conflict`. Audit
+  `quota.policy_changed` (target `quota_policy`, the new row; `account_type`, `old_limit`, `new_limit`).
+- `GET /api/v1/admin/quota-policy`: `{"items": [{"account_type", "monthly_limit", "effective_from"}]}`.
+- `PUT /api/v1/admin/quota-policy/{account_type}` with `{"monthly_limit": n}` and `X-CSRFToken`: the current row.
+- `GET /api/v1/admin/quota-usage`: `{"period_start", "resets_at", "next", "previous": null, "results": [{"account_id",
+  "email", "account_type", "used", "limit"}]}`. Accounts with a counted publication this Karachi month, newest usage
+  first, keyset cursor bound to the month. An account that publishes between two pages moves to the front. `email` is
+  masked (`identity.selectors.mask_email`, through `masked_contacts`): the first character of the local part, `***` and
+  `@domain` (`j***@example.com`; a one-character local part is `***@example.com`). The full address is never returned,
+  so the list is not a reasoned private read (`docs/audit.md`).
+
+All three are `Cache-Control: no-store`. Datetimes carry `+05:00`.
 
 ## Publication (Story 2.15, AD-7)
 

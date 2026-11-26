@@ -49,6 +49,8 @@ context:
 
 ## Review Triage Log
 
+- Backend: the spec's usage `email` conflicted with the reasoned-private-read rule (`docs/audit.md`). Decided: return a masked address (`j***@domain`; one-character local part `***@domain`), never the full one.
+
 ## Verification
 
 Backend: ruff, format, lint-imports, makemigrations --check, spectacular, narrow tests and one `pytest -n 3` full run. Frontend: lint, typecheck, build, api:check, check:prod-admin, new specs, `npm run test:e2e:changed`; full suite in CI.
