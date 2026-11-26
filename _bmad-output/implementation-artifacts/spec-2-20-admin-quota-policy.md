@@ -49,6 +49,8 @@ context:
 
 ## Review Triage Log
 
+Frontend (simple screen, no reviewer): publication limits page with confirmation and masked usage table; lint, typecheck, build, api:check, check:prod-admin and `test:e2e:changed` 183 tests; full suite in CI. Submitting the current value sends nothing.
+
 - Backend: the spec's usage `email` conflicted with the reasoned-private-read rule (`docs/audit.md`). Decided: return a masked address (`j***@domain`; one-character local part `***@domain`), never the full one.
 
 ## Verification
