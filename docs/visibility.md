@@ -89,8 +89,8 @@ everyone else gets the identical `404`. An administrator may fetch images of a p
 `selectors.search_public(actor, spec, sort, cursor, limit)` and `selectors.public_detail(viewer, id)` start from
 `public_listings()` and build each row with the same `public_view_of`. `spec` is a `catalog.filters.ListingFilter`
 (see Filters below).
-They add the date of the first publication (Asia/Karachi) and the names of the city and locality. A list uses a fixed
-number of queries whatever its size.
+They add the date of the first publication (Asia/Karachi, `first_published_at`, which republishing does not move) and
+the names of the city and locality. A list uses a fixed number of queries whatever its size (`docs/performance.md`).
 
 | Route | Answer |
 | --- | --- |

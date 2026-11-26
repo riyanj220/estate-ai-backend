@@ -12,6 +12,7 @@ All commands need the compose database running and `.env` present, and are run w
 | Whole suite, parallel | `uv run pytest -n 3` (or `-n auto`) |
 | One app | `uv run pytest tests/listings` (apps/`<app>` maps to tests/`<app>`; HTTP views live in `tests/api`) |
 | Guards only (about a minute) | `uv run pytest -m guard` |
+| Performance budgets (about a minute) | `uv run pytest -m perf -s` (see `docs/performance.md`) |
 | What changed against `main` | `scripts/test-changed.sh` (optionally `scripts/test-changed.sh <base-ref>`) |
 
 ## The `guard` marker
@@ -20,6 +21,12 @@ All commands need the compose database running and `.env` present, and are run w
 (`tests/privacy`) and the OpenAPI freshness check (`tests/api/test_openapi.py`). They protect cross-cutting contracts,
 so run them whenever you touch more than one app, a route, a serializer or a service signature. Mark a new guard test
 file with `pytestmark = pytest.mark.guard`.
+
+## The `perf` marker
+
+Timing tests on the large fixture are deselected by default and run serially with `uv run pytest -m perf -s`. A `-m`
+expression of your own replaces that default, so add `and not perf` to it unless you mean to run them.
+`docs/performance.md` has the budgets, the fixture and the measured numbers.
 
 ## Privacy gates (Story 3.2)
 
