@@ -98,8 +98,8 @@ development_status:
   epic-3-retrospective: optional
 
   epic-4: in-progress
-  4-1-synthetic-dataset-generator-and-model-training: in-progress
-  4-2-model-registration-feature-test-and-forecast-parameters: in-progress
+  4-1-synthetic-dataset-generator-and-model-training: review
+  4-2-model-registration-feature-test-and-forecast-parameters: review
   4-3-request-an-ai-price-estimate-and-supportability: backlog
   4-4-baseline-price-in-the-listing-form-limitation-note-and-about: backlog
   4-5-estimate-on-publish-and-on-edit: backlog

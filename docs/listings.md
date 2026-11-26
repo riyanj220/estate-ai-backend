@@ -193,6 +193,8 @@ field, when the registry and the map disagree.
   (search and valuation) by reading `area_sqft is null`; this story only guarantees the value is null, never a guess.
 - `area_value`, `area_unit` and `marla_basis` are `valuation_input` fields: a change to any of them (including a basis
   cleared by a unit change) emits `listing.model_inputs_changed` after commit. `area_sqft` is not (it is computed from them).
+- Since registry version 11 (Story 4.2) `subtype` and `locality` are `valuation_input` too, so a locality change emits
+  the same event.
 
 ### House and Apartment details (Story 2.4)
 
@@ -354,7 +356,7 @@ purpose, category and Subtype, in `section: location`.
   for everyone else, administrators and Visitors included). `PublicListingView.fields` never carries a private-class
   field, and `selectors.public_view_of` does not even read the private table. Private values never appear in logs, error
   bodies, validation messages, audit or revision rows (a revision records `true` for set and `null` for cleared),
-  events (`listing.model_inputs_changed` carries only the Listing id; none of these fields is a model input), OpenAPI
+  events (`listing.model_inputs_changed` carries only the Listing id; none of the private fields is a model input), OpenAPI
   examples or any URL. `tests/listings/test_location.py` has canary tests for each.
 
 ### Amenities and seller-declared nearby facilities (Story 2.8)

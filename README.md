@@ -13,6 +13,7 @@ python3 scripts/bootstrap_env.py        # writes the ignored .env with random se
 docker compose up -d --wait             # PostgreSQL + pgvector and Mailpit, 127.0.0.1 only
 uv sync --frozen
 uv run python manage.py migrate --database=migrator
+uv run python manage.py register_valuation_model   # the committed model, see docs/valuation.md
 scripts/dev_server.sh                   # Daphne on DJANGO_BIND_HOST:DJANGO_PORT (127.0.0.1:8000)
 curl -s 127.0.0.1:8000/api/v1/health    # {"status":"ok"}
 ```

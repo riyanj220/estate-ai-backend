@@ -250,6 +250,10 @@ data and the limits (at most 40 entries, the two states) live in `listings.valid
 absent from the map is UNANSWERED, never `none`. Entries of catalogue kind `nearby` are the seller's own declaration:
 clients label them "Seller-declared", and there is no distance and no verification anywhere. See `docs/listings.md`.
 
+Version 11 (Story 4.2) flags `subtype` and `locality` as `valuation_input`: the model prices by both, and AD-12 lets
+features come from flagged fields only. A change to either now emits `listing.model_inputs_changed`. See
+`docs/valuation.md`.
+
 ## Rules and caveats added in review
 
 - **Id lengths.** Every purpose, category and subtype id must be at most 32 characters (the Listing columns are

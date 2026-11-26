@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     "apps.catalog",
     "apps.identity",
     "apps.listings",
+    "apps.valuation",
 ]
 
 MIDDLEWARE = [
