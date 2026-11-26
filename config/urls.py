@@ -11,6 +11,11 @@ from apps.presentation.adminapi.quota import (
     QuotaPolicyView,
     QuotaUsageView,
 )
+from apps.presentation.api.favourites import (
+    FavouriteDetailView,
+    FavouriteIdsView,
+    FavouritesView,
+)
 from apps.presentation.api.handlers import bad_request, forbidden, not_found, server_error
 from apps.presentation.api.health import health
 from apps.presentation.api.listing_images import (
@@ -222,6 +227,13 @@ urlpatterns = [
         "api/v1/public/listings/<str:listing_id>",
         PublicListingDetailView.as_view(),
         name="public-listing",
+    ),
+    path("api/v1/me/favourites", FavouritesView.as_view(), name="me-favourites"),
+    path("api/v1/me/favourites/ids", FavouriteIdsView.as_view(), name="me-favourites-ids"),
+    path(
+        "api/v1/me/favourites/<str:listing_id>",
+        FavouriteDetailView.as_view(),
+        name="me-favourite",
     ),
     path("api/v1/me/listings", MyListingsView.as_view(), name="me-listings"),
     path("api/v1/me/listings/counts", MyListingCountsView.as_view(), name="me-listings-counts"),

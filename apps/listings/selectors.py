@@ -71,6 +71,7 @@ from apps.listings.models import (
     ListingResidential,
     ListingTerms,
     PropertyListing,
+    SavedListing,
 )
 from apps.listings.quota import KARACHI
 
@@ -838,6 +839,78 @@ def public_detail(viewer: Actor, listing_id) -> PublicEntry:
     if row is None:
         raise DomainError("not_found")
     return _entries([row])[0]
+
+
+# --- favourites (Story 3.7) -----------------------------------------------------------------------
+
+# Who keeps favourites, expressed with the capabilities that cover exactly those account states:
+# `view_drafts` is Active, Email-unverified and Suspended Individuals and Agencies (view and
+# remove); `edit_drafts` the first two (save). Administrators and Deactivated accounts hold neither.
+FAVOURITES_VIEW = Capability.VIEW_DRAFTS
+FAVOURITES_SAVE = Capability.EDIT_DRAFTS
+
+
+@dataclass(frozen=True)
+class FavouriteItem:
+    listing_id: uuid.UUID
+    saved_at: datetime
+    entry: PublicEntry | None  # None: the Listing is no longer public, so no details at all
+
+
+@dataclass(frozen=True)
+class FavouritePage:
+    items: tuple[FavouriteItem, ...]
+    next_cursor: str | None
+
+
+def require_favourites(actor: Actor, capability: Capability = FAVOURITES_VIEW) -> None:
+    """A Visitor is `unauthenticated`; an account that may not do this is `forbidden`."""
+    require_signed_in(actor)
+    if actor.kind is not ActorKind.USER or not can(actor, capability):
+        raise DomainError("forbidden")
+
+
+def favourite_ids(actor: Actor) -> list[uuid.UUID]:
+    """The Listing ids the caller has saved (at most the cap), for the Save buttons."""
+    require_favourites(actor)
+    return list(
+        SavedListing.objects.filter(account_id=actor.account_id)
+        .order_by("-created_at", "-listing_id")
+        .values_list("listing_id", flat=True)
+    )
+
+
+def list_favourites(
+    actor: Actor, cursor: str | None = None, limit: int = DEFAULT_LIMIT
+) -> FavouritePage:
+    """The caller's own favourites, latest saved first, keyset-paginated. Details come only from
+    `public_listings()`, with a fixed number of queries whatever the page size; a saved Listing
+    that is not public now has `entry` None. A bad cursor raises `InvalidCursor`."""
+    require_favourites(actor)
+    rows = SavedListing.objects.filter(account_id=actor.account_id)
+    if cursor is not None:
+        saved_at, listing_id = decode_cursor(cursor, "favourites")
+        rows = rows.filter(
+            Q(created_at__lt=saved_at) | Q(created_at=saved_at, listing_id__lt=listing_id)
+        )
+    size = max(1, min(int(limit), MAX_LIMIT))
+    page = list(
+        rows.order_by("-created_at", "-listing_id").values_list("listing_id", "created_at")[
+            : size + 1
+        ]
+    )
+    more = len(page) > size
+    page = page[:size]
+    visible = list(_published().filter(id__in=[listing_id for listing_id, _ in page]))
+    entries = {entry.listing.id: entry for entry in _entries(visible)}
+    next_cursor = encode_cursor(page[-1][1], page[-1][0], "favourites") if more else None
+    return FavouritePage(
+        tuple(
+            FavouriteItem(listing_id, saved_at, entries.get(listing_id))
+            for listing_id, saved_at in page
+        ),
+        next_cursor,
+    )
 
 
 def preview_of(actor: Actor, listing_id) -> PublicListingView:

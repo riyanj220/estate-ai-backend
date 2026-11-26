@@ -669,3 +669,25 @@ class PublicationEvent(models.Model):
                 name="listings_pubevent_idempotency_unique",
             ),
         ]
+
+
+class SavedListing(models.Model):
+    """A favourite (Story 3.7): one account saved one Listing. Written only by
+    `listings.services`. It holds no copy of the Listing: what the list shows is decided when it
+    is read, so a Listing that stops being public shows no details. Removing a row never touches
+    the Listing; deleting a Listing (a Draft or sample data) takes its rows with it."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account_id = models.UUIDField()  # plain column: no key into identity
+    listing = models.ForeignKey(PropertyListing, on_delete=models.CASCADE, related_name="saves")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["account_id", "listing"], name="listings_saved_unique")
+        ]
+        indexes = [
+            models.Index(
+                fields=["account_id", "-created_at", "-listing"], name="listings_saved_list_idx"
+            )
+        ]

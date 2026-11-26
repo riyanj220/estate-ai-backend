@@ -61,9 +61,11 @@ from apps.listings.models import (
     ListingRevision,
     ListingTerms,
     PropertyListing,
+    SavedListing,
 )
 from apps.listings.selectors import (
     DRAFT_EXPIRING,
+    FAVOURITES_SAVE,
     GRACE_DAYS,
     IDLE_DAYS,
     LATE_AFTER_DAYS,
@@ -83,12 +85,15 @@ from apps.listings.selectors import (
     location_of,
     notice_stored,
     plot_of,
+    public_listings,
+    require_favourites,
     residential_of,
     terms_of,
     view_of,
 )
 
 OPEN_DRAFTS = "open_drafts"
+FAVOURITES = "favourites"  # the cap policy of NFR-10
 OPEN_THROTTLE = timedelta(hours=1)  # `last_opened_at` is written at most this often
 
 
@@ -855,6 +860,57 @@ def delete_draft(actor: Actor, listing_id) -> None:
         if row.status != ListingStatus.DRAFT.value:
             raise DomainError("conflict")
         _remove_draft(actor, row, "owner")
+
+
+def _favourite_limit() -> int:
+    policy = ratelimit.limit_for(FAVOURITES)
+    if policy.window_seconds is not None:
+        raise ImproperlyConfigured(f"Scope {FAVOURITES} must be a cap (no window)")
+    return policy.limit
+
+
+def save_favourite(actor: Actor, listing_id) -> None:
+    """Save a public Listing to the caller's favourites (Story 3.7). Saving one already saved
+    does nothing, whatever the Listing's visibility now.
+
+    Refusals, in order: Visitor `unauthenticated`; an administrator, a Suspended or Deactivated
+    account `forbidden`; a Listing that is not publicly visible, an unknown and a malformed id
+    `not_found`; 500 favourites (the `favourites` cap policy) `throttled`, without
+    `Retry-After`: a cap clears when one is removed."""
+    require_favourites(actor, FAVOURITES_SAVE)
+    key = canonical_uuid(listing_id)
+    if key is None:
+        raise DomainError("not_found")
+    with transaction.atomic():
+        account = lock_account(actor.account_id)  # serialises this account's saves (the cap)
+        if (
+            account.type == ADMIN_ACCOUNT_TYPE
+            or matrix_access(account.state, FAVOURITES_SAVE) is not Access.ALLOWED
+        ):
+            raise DomainError("forbidden")
+        saved = SavedListing.objects.filter(account_id=actor.account_id)
+        if saved.filter(listing_id=key).exists():
+            return
+        if not public_listings().filter(id=key).exists():
+            raise DomainError("not_found")
+        if saved.count() >= _favourite_limit():
+            raise DomainError("throttled")
+        SavedListing.objects.create(account_id=actor.account_id, listing_id=key)
+
+
+def remove_favourite(actor: Actor, listing_id) -> None:
+    """Remove one of the caller's own favourites; the Listing is not touched. A Listing the
+    caller has not saved (another account's favourite included), an unknown and a malformed id
+    are `not_found`. Visitor `unauthenticated`; administrator or Deactivated `forbidden`."""
+    require_favourites(actor)
+    key = canonical_uuid(listing_id)
+    removed = 0
+    if key is not None:
+        removed, _ = SavedListing.objects.filter(
+            account_id=actor.account_id, listing_id=key
+        ).delete()
+    if not removed:
+        raise DomainError("not_found")
 
 
 def _require_system(actor: Actor) -> None:
