@@ -8,8 +8,8 @@ Django's auth, sessions and admin apps stay uninstalled; passwords are stored as
 
 UUID `id`, `email` (trimmed, as entered; unique ignoring case through a `Lower("email")` constraint), `password` (hash only),
 `account_type` (`individual`, `agency`, `admin`), `email_verified_at`, `suspended_at`, `suspension_reason`,
-`deactivated_at`, `created_at`, `updated_at`. A check constraint ties the reason to the suspension: it is set exactly when
-`suspended_at` is set (1 to 300 characters).
+`reactivation_reason`, `deactivated_at`, `created_at`, `updated_at`. A check constraint ties the reason to the suspension: it
+is set exactly when `suspended_at` is set (at most 500 characters).
 
 ## States are derived, never stored
 
@@ -23,8 +23,25 @@ Three separate conditions give one of four states; the first match wins:
 | otherwise | `active` |
 
 `identity.state.derive_state` is the pure function. Reactivating a suspended account clears only the suspension, so it
-returns to `active` if the email is verified, otherwise to `email_unverified`. A deactivated account is never reactivated. The suspension reason is deliberately cleared on reactivation; only the
-audit record of the reactivation remains (moderation history lives in audit and, later, Reports).
+returns to `active` if the email is verified, otherwise to `email_unverified`. A deactivated account is never reactivated. The suspension reason is deliberately cleared on reactivation; the reactivation
+reason stays on the row (`reactivation_reason`, cleared by the next suspension, in no response). Moderation history lives
+in audit and, later, Reports.
+
+## Suspension (Story 2.21)
+
+Suspension changes the account row only. No Listing status changes and no session ends: the state is read on every request,
+so the matrix restricts an open session at once and the person can still sign in, read and archive.
+
+- Cannot (`403`): publish and republish (`publishing_unavailable`); correct, create, edit or delete a Draft, edit a Listing
+  or its images, mark sold or rented (`forbidden`).
+- Can: view own Listings and Drafts, archive, and change the profile and its picture or logo (see below).
+- Its Listings, Listing images and Agency logo leave public view (`docs/visibility.md`; images may stay cached for up to
+  60 seconds) and return on reactivation to `active`. An `email_unverified` result stays private.
+- "Cannot send Messages" is already a `no` in the matrix; there is no messaging yet, so the messaging epic must read
+  `send_messages` (and add its test).
+- The account itself sees why: `suspension_reason` in the sign-in and `GET /api/v1/me` summary, null unless Suspended. No
+  public shape or other user's response carries it.
+- The account gets an `account.suspended` or `account.reactivated` notification (empty payload).
 
 ## Capability matrix (PRD FR-74)
 
@@ -93,15 +110,15 @@ A later story activates a capability by removing it from that one set, in its ow
 |---|---|---|---|
 | `create_account(actor, email, password, account_type)` | system | `account.created` | duplicate email (any case) is a generic `validation_error` |
 | `mark_email_verified(actor, account_id)` | system | `account.email_verified` | idempotent; a second call writes nothing |
-| `suspend(actor, account_id, reason)` | administrator | `account.suspended` | reason 1 to 300 characters, no `@`, no run of seven or more digits; already suspended is `validation_error` |
-| `reactivate(actor, account_id)` | administrator | `account.reactivated` | not suspended is `validation_error` |
+| `suspend_account(actor, account_id, reason)` | administrator | `account.suspended` | reason 5 to 500 characters after trimming, one line, no contact details; Suspended or Deactivated is `conflict` |
+| `reactivate_account(actor, account_id, reason)` | administrator | `account.reactivated` | same reason rule; not Suspended is `conflict` |
 | `deactivate(actor, account_id)` | administrator | `account.deactivated` | emits `account.session_ended` (reason `deactivated`) after commit |
 
-`suspend`, `reactivate` and `deactivate` refuse (`validation_error`, nothing written) when the target is the actor's own
-account or any `admin` account; administrator accounts are managed only by the `provision_admin` platform command (Story 1.22, `docs/administrators.md`). Visitors get
-`unauthenticated`, other callers `not_found`; an unknown account id, and any change to a deactivated
-account, is `not_found`. Audit metadata holds only the account type on creation. Email, password hash and the suspension
-reason (kept on the row; digit characters of any script are counted, seven or more are refused) never reach audit metadata or logs.
+`suspend_account` and `reactivate_account` answer `not_found` for an `admin` account (as for an unknown id); `deactivate`
+refuses (`validation_error`) the actor's own account or any `admin` account. Nothing is written. Administrator accounts are managed only by the `provision_admin` platform command (Story 1.22, `docs/administrators.md`). Visitors get
+`unauthenticated`, other callers `not_found`; an unknown account id is `not_found`, as is `deactivate` or
+verification on a deactivated account. Audit metadata holds only the account type on creation. Email, password hash and the suspension
+reasons (kept on the row; digit characters of any script are counted, seven or more are refused) never reach audit metadata or logs.
 
 ## Primitives and reads (`identity.selectors`)
 

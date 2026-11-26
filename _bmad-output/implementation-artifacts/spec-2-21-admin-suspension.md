@@ -56,6 +56,8 @@ context:
 
 ## Review Triage Log
 
+Backend (one reviewer): no medium-or-higher findings. Accepted (low, pre-existing): a field edit already in flight can commit just after a suspension (`apply_updates` locks only the listing). Reason limits: change reason 5..500, lookup reason 10..300.
+
 ## Verification
 
 Backend: ruff, format, lint-imports, makemigrations --check, spectacular, narrow tests and one `pytest -n 3` full run. Frontend: lint, typecheck, build, api:check, check:prod-admin, new specs, `npm run test:e2e:changed`; full suite in CI.

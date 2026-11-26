@@ -111,6 +111,21 @@ The publication limit routes (`/api/v1/admin/quota-policy`, `/api/v1/admin/quota
 `docs/listings.md`. The usage list shows masked emails only (`j***@example.com`); reading a full address stays a
 reasoned private read (`docs/audit.md`).
 
+### Accounts (Story 2.21)
+
+Individual and Agency accounts only; an unknown or administrator target is `404 not_found`. All are POST with
+`X-CSRFToken`, administrator session, `Cache-Control: no-store`.
+
+| Route | Body | Answer |
+| --- | --- | --- |
+| `/api/v1/admin/accounts/lookup` | `{email, reason}` | `{id, email, account_type, display_name, state, email_verified, suspension_reason, suspended_at}`. A reasoned private read (reason 10 to 300 characters, audited `privacy.viewed`, `docs/audit.md`). |
+| `/api/v1/admin/accounts/{id}/suspend` | `{reason}` | `{id, account_type, state, suspension_reason, suspended_at}`; `409 conflict` when Suspended or Deactivated. |
+| `/api/v1/admin/accounts/{id}/reactivate` | `{reason}` | The same shape; `409 conflict` when not Suspended. |
+
+The change reasons are 5 to 500 characters (field codes `required`, `invalid`, `too_short`, `too_long`,
+`contains_contact_details`). The suspension reason is shown to the account holder, so write it for them. Effects:
+`docs/account-states.md`.
+
 `GET /api/v1/admin/me` returns `{"id", "account_type": "admin", "state"}` and nothing private (`Cache-Control: no-store`).
 
 ### For Story 1.23

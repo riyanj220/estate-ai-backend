@@ -62,8 +62,9 @@ notifications.notify(owner_id, "listing.approved", {"reason": "quality", ...})
 
 Shipped kinds (registered by `identity`, empty payloads): `account.password_changed` (a password change or a
 password reset completed) and `account.email_changed` (an email change was confirmed). Both are raised in the
-service after the audit record and so exist only if the change commits. The old-address mail notices stay. Later
-features register their own kinds.
+service after the audit record and so exist only if the change commits. The old-address mail notices stay. Story 2.21 adds
+`account.suspended` and `account.reactivated` (empty payloads: the reason is read from the session summary, never carried
+here). Later features register their own kinds.
 
 ## Reading and clearing
 
