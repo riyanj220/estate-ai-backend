@@ -51,7 +51,9 @@ def fingerprint(values: dict) -> str:
 
 
 def recompute(apps, schema_editor):
-    recompute_fingerprints(apps, OLD_IDENTITY, IDENTITY, _canonical)
+    # the migrating connection: the runtime role may not update this table
+    db = schema_editor.connection.alias if schema_editor else "default"
+    recompute_fingerprints(apps, OLD_IDENTITY, IDENTITY, _canonical, using=db)
 
 
 class Migration(migrations.Migration):

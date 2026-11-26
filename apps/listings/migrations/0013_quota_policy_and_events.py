@@ -25,11 +25,11 @@ SEED_FROM = datetime(2000, 1, 1, tzinfo=UTC)
 def seed_policies(apps, schema_editor):
     """Idempotent: an account type that already has any policy row is left alone."""
     Policy = apps.get_model("listings", "ListingQuotaPolicy")
+    # the migrating connection (`migrate --database=migrator`): the new table is only visible there
+    rows = Policy.objects.using(schema_editor.connection.alias if schema_editor else "default")
     for account_type, limit in SEED:
-        if not Policy.objects.filter(account_type=account_type).exists():
-            Policy.objects.create(
-                account_type=account_type, monthly_limit=limit, effective_from=SEED_FROM
-            )
+        if not rows.filter(account_type=account_type).exists():
+            rows.create(account_type=account_type, monthly_limit=limit, effective_from=SEED_FROM)
 
 
 class Migration(migrations.Migration):

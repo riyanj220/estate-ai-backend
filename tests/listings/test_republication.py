@@ -1305,8 +1305,8 @@ def grown_recompute():
             return value
         return module._canonical(name, value)
 
-    def load(apps, ids):
-        values = load_listing_values(apps, ids)
+    def load(apps, ids, using):
+        values = load_listing_values(apps, ids, using)
         for row in (
             apps.get_model("listings", "ListingResidential")
             .objects.filter(listing_id__in=values)

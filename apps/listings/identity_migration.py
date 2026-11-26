@@ -33,25 +33,29 @@ def fingerprint(identity: Iterable[str], values: Mapping, canonical: Canonical) 
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def load_listing_values(apps, listing_ids) -> dict:
+def load_listing_values(apps, listing_ids, using: str = "default") -> dict:
     """Purpose, category, subtype, city, locality and the three area columns of each Listing
     (registry version 9). A migration whose identity set needs other columns passes its own
-    loader (same shape: Listing id to a dict of field name to stored value)."""
+    loader (same signature: apps, ids, database alias; Listing id to a dict of field values)."""
     Listing = apps.get_model("listings", "PropertyListing")
     Area = apps.get_model("listings", "ListingArea")
     Location = apps.get_model("listings", "ListingLocation")
     values = {
         row["id"]: dict(row)
-        for row in Listing.objects.filter(id__in=listing_ids).values(
-            "id", "purpose", "category", "subtype"
-        )
+        for row in Listing.objects.using(using)
+        .filter(id__in=listing_ids)
+        .values("id", "purpose", "category", "subtype")
     }
-    for row in Area.objects.filter(listing_id__in=values).values(
-        "listing_id", "area_value", "area_unit", "marla_basis"
+    for row in (
+        Area.objects.using(using)
+        .filter(listing_id__in=values)
+        .values("listing_id", "area_value", "area_unit", "marla_basis")
     ):
         values[row["listing_id"]].update(row)
-    for row in Location.objects.filter(listing_id__in=values).values(
-        "listing_id", "city", "locality"
+    for row in (
+        Location.objects.using(using)
+        .filter(listing_id__in=values)
+        .values("listing_id", "city", "locality")
     ):
         values[row["listing_id"]].update(row)
     return values
@@ -63,27 +67,29 @@ def recompute_fingerprints(
     new_identity: Iterable[str],
     canonical: Canonical,
     load: Callable = load_listing_values,
+    using: str = "default",
 ) -> dict[str, int]:
     """Recompute stored fingerprints for a change of identity set (see the module docstring).
     Returns how many events were `recomputed`, `nulled` (drifted) and `kept` (already new)."""
     old_identity, new_identity = tuple(old_identity), tuple(new_identity)
     Event = apps.get_model("listings", "PublicationEvent")
     counts = {"recomputed": 0, "nulled": 0, "kept": 0}
-    ids = set(Event.objects.values_list("listing_id", flat=True))
+    events = Event.objects.using(using)  # a migration passes the migrating connection
+    ids = set(events.values_list("listing_id", flat=True))
     if not ids:
         return counts
-    values = load(apps, ids)
+    values = load(apps, ids, using)
     for listing_id, data in values.items():
         old = fingerprint(old_identity, data, canonical)
         new = fingerprint(new_identity, data, canonical)
-        for event in Event.objects.filter(listing_id=listing_id):
+        for event in events.filter(listing_id=listing_id):
             stored = event.identity_fingerprint
             if stored == new:
                 counts["kept"] += 1
             elif stored == old:
-                Event.objects.filter(pk=event.pk).update(identity_fingerprint=new)
+                events.filter(pk=event.pk).update(identity_fingerprint=new)
                 counts["recomputed"] += 1
             elif stored is not None:
-                Event.objects.filter(pk=event.pk).update(identity_fingerprint=None)
+                events.filter(pk=event.pk).update(identity_fingerprint=None)
                 counts["nulled"] += 1
     return counts
