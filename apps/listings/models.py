@@ -578,8 +578,8 @@ class ListingQuotaPolicy(models.Model):
     """The monthly publication allowance of an account type, effective-dated (AD-7).
 
     Rows of one account type never overlap (an exclusion constraint). A limit is always resolved
-    at the time of the attempt, never stored on an event. Written by the seed migration and,
-    later, Story 2.20's service only."""
+    at the time of the attempt, never stored on an event. Written by the seed migration and
+    `listings.quota_admin` only."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     account_type = models.CharField(max_length=16)

@@ -121,6 +121,33 @@ def active_owner_account_ids():
     ).values("id")
 
 
+def owner_account_ids():
+    """A lazy queryset of the ids of every Individual or Agency account, in any state."""
+    return Account.objects.filter(
+        account_type__in=(AccountType.INDIVIDUAL, AccountType.AGENCY)
+    ).values("id")
+
+
+def mask_email(email: str) -> str:
+    """`j***@example.com`: the first character of the local part and the domain. A one-character
+    local part shows nothing (`***@example.com`)."""
+    local, _, domain = email.rpartition("@")
+    return f"{local[0] if len(local) > 1 else ''}***@{domain}"
+
+
+@dataclass(frozen=True)
+class MaskedContact:
+    type: str
+    masked_email: str
+
+
+def masked_contacts(account_ids) -> dict[uuid.UUID, MaskedContact]:
+    """The type and masked email of each of these accounts, by id; unknown ids are absent. The
+    full address never leaves identity here, so this is not a private read (`docs/audit.md`)."""
+    rows = Account.objects.filter(id__in=account_ids).values_list("id", "account_type", "email")
+    return {key: MaskedContact(kind, mask_email(email)) for key, kind, email in rows}
+
+
 def suspended_or_deactivated_account_ids():
     """A lazy queryset of the ids of every Suspended or Deactivated account, for `listings`
     retention to leave their Drafts alone."""

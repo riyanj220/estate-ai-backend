@@ -1,6 +1,11 @@
 from django.urls import path
 
 from apps.presentation.adminapi.me import AdminMeView
+from apps.presentation.adminapi.quota import (
+    QuotaPolicyDetailView,
+    QuotaPolicyView,
+    QuotaUsageView,
+)
 from apps.presentation.api.handlers import bad_request, forbidden, not_found, server_error
 from apps.presentation.api.health import health
 from apps.presentation.api.listing_images import (
@@ -89,6 +94,13 @@ urlpatterns = [
     path("api/v1/session", SessionView.as_view(), name="session"),
     path("api/v1/admin-session", AdminSessionView.as_view(), name="admin-session"),
     path("api/v1/admin/me", AdminMeView.as_view(), name="admin-me"),
+    path("api/v1/admin/quota-policy", QuotaPolicyView.as_view(), name="admin-quota-policy"),
+    path(
+        "api/v1/admin/quota-policy/<str:account_type>",
+        QuotaPolicyDetailView.as_view(),
+        name="admin-quota-policy-type",
+    ),
+    path("api/v1/admin/quota-usage", QuotaUsageView.as_view(), name="admin-quota-usage"),
     path("api/v1/me", MeView.as_view(), name="me"),
     path("api/v1/me/password", ChangePasswordView.as_view(), name="me-password"),
     path("api/v1/me/profile", ProfileDetailView.as_view(), name="me-profile"),

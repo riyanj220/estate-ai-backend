@@ -167,6 +167,7 @@ SPECTACULAR_SETTINGS = {
     "COMPONENT_SPLIT_REQUEST": True,
     "ENUM_NAME_OVERRIDES": {
         "RegistrationAcceptedStatusEnum": ["check_your_email"],
+        "OwnerAccountTypeEnum": ["individual", "agency"],
         "EmailVerifiedStatusEnum": ["verified"],
         "FieldClassEnum": ["public", "private"],
         "LocalityKindEnum": ["area", "society"],

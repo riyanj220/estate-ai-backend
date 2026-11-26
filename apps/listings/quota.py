@@ -3,7 +3,7 @@
 Read-only. `quota_limit_at` resolves the effective-dated policy at the time of an attempt;
 `allowance_for` counts the account's counted `PublicationEvent`s in the Karachi calendar month.
 Nothing here writes: events are written by Story 2.15's publish service, policies by the seed
-migration and Story 2.20.
+migration and `listings.quota_admin` (Story 2.20).
 """
 
 import uuid

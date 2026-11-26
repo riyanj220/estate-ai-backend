@@ -11,6 +11,7 @@ class ListingsConfig(AppConfig):
         from apps.kernel import audit, notifications, retention
         from apps.listings import lifecycle
         from apps.listings import retention as draft_retention
+        from apps.listings.models import QUOTA_ACCOUNT_TYPES
 
         # Metadata holds the three enumerated registry values only: no free text, no address.
         audit.register_action(
@@ -39,6 +40,11 @@ class ListingsConfig(AppConfig):
         )
         audit.register_action("listing.draft_deleted", {"reason": ["owner", "retention"]})
         audit.register_action("listing.sample_removed", {})  # sample-data reset: the id only
+        # An administrator's limit change; the target is the new policy row.
+        audit.register_action(
+            "quota.policy_changed",
+            {"account_type": QUOTA_ACCOUNT_TYPES, "old_limit": int, "new_limit": int},
+        )
         # The Listing id and the days left; the frontend renders a fixed sentence from the kind.
         notifications.register_kind(
             "listing.draft_expiring",
