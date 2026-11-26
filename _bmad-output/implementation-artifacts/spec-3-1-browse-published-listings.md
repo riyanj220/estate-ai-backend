@@ -50,6 +50,8 @@ context:
 
 ## Review Triage Log
 
+Backend (one reviewer): no medium-or-higher defects. Deferred to Story 3.4: the newest sort uses a correlated subquery on PublicationEvent without a (account_id, listing_id, created_at) index. Newest = first publication, so republishing does not bump a Listing.
+
 ## Verification
 
 Backend: ruff, format, lint-imports, makemigrations --check, spectacular, narrow tests and one `pytest -n 3` full run. Frontend: lint, typecheck, build, api:check, new specs, `npm run test:e2e:changed`; full suite in CI.

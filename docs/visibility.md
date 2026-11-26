@@ -1,7 +1,7 @@
 # Visibility policy and the public projection (Story 2.12)
 
 One answer to "may this viewer see this Listing" (AD-5), and one public shape that can never carry the private address or
-phone. Backend only: there is no public listing route yet (discovery and detail come in later stories).
+phone. The public browse and detail routes (Story 3.1, below) are built only from it.
 
 ## The rule
 
@@ -84,6 +84,27 @@ public, max-age=60` and no cookie or `Vary: Cookie`; any other image goes only t
 everyone else gets the identical `404`. An administrator may fetch images of a public Listing like any Visitor, but gets
 404 for a non-public one. `HEAD` decides exactly like `GET`.
 
+## Public discovery (Story 3.1)
+
+`selectors.search_public(actor, spec, sort, cursor, limit)` and `selectors.public_detail(viewer, id)` start from
+`public_listings()` and build each row with the same `public_view_of`. `spec` (`SearchSpec`) is empty until Story 3.3.
+They add the date of the first publication (Asia/Karachi) and the names of the city and locality. A list uses a fixed
+number of queries whatever its size.
+
+| Route | Answer |
+| --- | --- |
+| `GET /api/v1/public/listings?sort=newest&limit=20&cursor=` | `{results: [card], next}` |
+| `GET /api/v1/public/listings/{id}` | the public projection plus `city`, `locality`, `published_on` |
+
+A card is `id`, `purpose`, `category`, `subtype`, `title`, `fields` (price, area, bedrooms, bathrooms), `city`,
+`locality` (`{id, name}` or null), `cover_url`, `published_on`. Neither route authenticates anyone: the answer is the
+same for every caller. A `200` is `Cache-Control: public, max-age=60` with no cookie; every error is `no-store`. A
+Listing that is not public, an unknown and a malformed id are the same `404`. A bad `limit` (1 to 50), `cursor` or
+`sort` is `400`.
+
+`newest` orders by the FIRST publication event, then id, so archiving and republishing cannot move a Listing back to
+the top. The routes have no application rate limit.
+
 ## How later stories must use it
 
 - A list, search, count, favourite, chat or detail for anyone other than the owner starts from `public_listings()` or
@@ -96,9 +117,9 @@ everyone else gets the identical `404`. An administrator may fetch images of a p
 ## Caching and takedown delay
 
 A public image is sent with `Cache-Control: public, max-age=60`, so after moderation restricts a Listing, or its owner is
-suspended, a browser or shared cache may keep serving its images for **up to 60 seconds**. The server itself refuses
-them on the very next request. There is no code to purge caches; this delay is accepted and applies to images only
-(`public_listing` and the lists always read the current rows).
+suspended, a browser or shared cache may keep serving its images for **up to 60 seconds** (the same holds for the public browse and detail answers). The server itself refuses
+them on the very next request. There is no code to purge caches; this delay is accepted (the server itself
+always reads the current rows).
 
 ## OpenAPI
 

@@ -389,8 +389,8 @@ purpose, category and Subtype, in `section: location`.
   `amenities` is deliberately flagged `valuation_input`.
 - Deactivated stored code: re-sending a stored entry unchanged is accepted; changing its state is `invalid`; to drop
   the answer the owner omits the code from the map.
-- `selectors.public_view_of` reads the map with one query per Listing. That N+1 is deferred until a public list exists
-  (the owner's own list already batches it with `amenities_by_listing`).
+- The owner's own list and the public list (`selectors.search_public`, `docs/visibility.md`) read the maps of a whole
+  page in one query (`amenities_by_listing`).
 - The top-level `amenities` list that the Listing resource carried as an empty placeholder since Story 2.1 is gone: the
   map lives in `fields.amenities`.
 
