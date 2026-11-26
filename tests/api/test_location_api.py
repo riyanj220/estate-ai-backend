@@ -75,7 +75,7 @@ def places(db):
 def test_the_registry_lists_the_location_fields_with_type_reference_and_class():
     body = Client().get("/api/v1/registry").json()
     served = {f["id"]: f for f in body["fields"]}
-    assert body["version"] == 10
+    assert body["version"] == 11
     assert (served["city"]["type"], served["city"]["reference"]) == ("reference", "city")
     assert (served["locality"]["type"], served["locality"]["reference"]) == (
         "reference",
@@ -115,7 +115,7 @@ def test_the_owner_saves_a_location_and_reads_it_back_with_the_private_part(plac
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
     saved = response.json()
-    assert saved["revision"] == 2 and saved["registry_version"] == 10
+    assert saved["revision"] == 2 and saved["registry_version"] == 11
     assert saved["fields"]["city"] == places["karachi"]
     assert saved["fields"]["locality"] == places["k1"]
     assert all(saved["fields"][n] == v for n, v in PRIVATE.items())

@@ -145,7 +145,7 @@ def refused(account, view, changes=None, **kw):
 
 def test_the_identity_set_is_exactly_the_seven_fields():
     assert {f.id for f in registry.fields() if f.quota_identity} == set(IDENTITY)
-    assert registry.registry_version() == 10
+    assert registry.registry_version() == 11
     assert publication.CORRECTABLE_FIELDS == ("locality", "area_value", "area_unit", "marla_basis")
 
 
@@ -206,8 +206,10 @@ def test_the_model_inputs_event_follows_the_valuation_fields_only_after_commit(
 ):
     account, view = published()
     with django_capture_on_commit_callbacks(execute=True):
-        done = correct(account, view, {"locality": south()})  # not a valuation input
-    assert bus == [] and done.revision == view.revision + 1
+        done = correct(account, view, {"locality": south()})  # a model input (Story 4.2)
+    assert bus == [ListingModelInputsChanged(listing_id=view.id)]
+    assert done.revision == view.revision + 1
+    bus.clear()
     account, view = published()
     with django_capture_on_commit_callbacks() as callbacks:
         correct(account, view, {"area_value": "11"})

@@ -96,7 +96,7 @@ def pair(places, city="karachi", locality="k1"):
 
 
 def test_the_registry_defines_the_location_fields_at_the_end_with_the_right_classes():
-    assert registry.registry_version() == 10
+    assert registry.registry_version() == 11
     ids = [f.id for f in registry.fields()]
     assert tuple(ids[-len(LOCATION_IDS) - 1 : -1]) == LOCATION_IDS  # amenities come last
     for name in LOCATION_IDS:
@@ -710,14 +710,18 @@ def bus(monkeypatch):
     return seen
 
 
-def test_location_and_address_changes_emit_no_event(
+def test_address_changes_emit_no_event_and_a_locality_change_emits_one(
     bus, places, django_capture_on_commit_callbacks
 ):
     account, view = draft()
+    with django_capture_on_commit_callbacks(execute=True):
+        saved = update(account, view, pair(places))  # the locality is a model input (Story 4.2)
+    assert [event.listing_id for event in bus] == [view.id]
+    bus.clear()
     with django_capture_on_commit_callbacks(execute=True) as callbacks:
-        update(account, view, {**pair(places), "street": STREET, "latitude": LAT, "longitude": LON})
+        update(account, saved, {"street": STREET, "latitude": LAT, "longitude": LON})
     assert bus == [] and callbacks == []
-    assert not any(registry.field(n).valuation_input for n in LOCATION_IDS)
+    assert [n for n in LOCATION_IDS if registry.field(n).valuation_input] == ["locality"]
 
 
 def test_canary_private_values_never_leave_the_owner_resource(places, caplog):

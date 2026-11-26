@@ -79,7 +79,7 @@ def counts():
 
 
 def test_the_registry_defines_the_amenities_field_last_with_the_right_shape():
-    assert registry.registry_version() == 10
+    assert registry.registry_version() == 11
     assert tuple(f.id for f in registry.fields())[-1:] == AMENITY_IDS
     definition = registry.field("amenities")
     assert (definition.type, definition.requirement, definition.field_class) == (
@@ -104,7 +104,7 @@ def test_the_field_is_stored_as_rows_and_is_editable_and_on_the_wire_before_the_
 
 def test_the_loader_accepts_the_type_and_refuses_a_private_one():
     text = registry.FIELDS_PATH.read_text(encoding="utf-8")
-    assert registry.parse(text).version == 10
+    assert registry.parse(text).version == 11
     tail = "    class: public\n    searchable: true\n    valuation_input: true\n"
     assert text.endswith(tail)
     private = text.removesuffix(tail) + "    class: private\n"

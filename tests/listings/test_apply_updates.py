@@ -518,8 +518,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_and_advanced():
     assert codes(account, view, {"title": "short"}) == {"title": "too_short"}
     assert PropertyListing.objects.get().registry_version == 1  # a failed edit changes nothing
     saved = update(account, view, {"title": TITLE})
-    assert saved.registry_version == registry.registry_version() == 10
-    assert PropertyListing.objects.get().registry_version == 10
+    assert saved.registry_version == registry.registry_version() == 11
+    assert PropertyListing.objects.get().registry_version == 11
 
 
 def test_a_registry_change_does_not_alter_a_listing_nobody_edits():
@@ -599,9 +599,11 @@ def test_emitting_with_no_subscribers_is_a_no_op(
     assert callbacks == []
 
 
-def test_only_the_area_residential_plot_commercial_and_amenity_inputs_are_valuation_inputs():
+def test_the_flagged_valuation_inputs_are_exactly_these():
     flagged = {f.id for f in registry.fields() if f.valuation_input}
     assert flagged == {
+        "subtype",  # Story 4.2: the model prices by subtype and locality
+        "locality",
         "area_value",
         "area_unit",
         "marla_basis",

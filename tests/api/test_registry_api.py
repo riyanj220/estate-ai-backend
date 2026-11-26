@@ -41,7 +41,7 @@ def test_served_publicly_with_the_defined_shape():
     assert response.status_code == 200
     body = response.json()
     assert list(body) == ["version", "taxonomy", "fields"]
-    assert body["version"] == 10
+    assert body["version"] == 11
     assert body["taxonomy"] == {
         "categories": [
             {"id": "house", "subtypes": ["house"]},
@@ -124,7 +124,7 @@ def test_cache_headers_and_strong_etag():
     response = Client().get(URL)
     assert response.headers["Cache-Control"] == "public, max-age=300"
     tag = response.headers["ETag"]
-    assert tag == f'"10-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
+    assert tag == f'"11-{registry.content_hash()}-{RESPONSE_SHAPE_VERSION}"' and not tag.startswith(
         "W/"
     )
 
@@ -296,7 +296,7 @@ def test_the_plot_and_commercial_fields_are_served_in_registry_order_with_their_
 
 def test_the_etag_names_version_eight_and_the_new_shape():
     tag = Client().get(URL).headers["ETag"]
-    assert tag == f'"10-{registry.content_hash()}-7"'
+    assert tag == f'"11-{registry.content_hash()}-7"'
 
 
 def test_the_date_type_and_the_terms_are_served_in_the_existing_keys():

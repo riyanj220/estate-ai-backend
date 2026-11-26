@@ -52,7 +52,7 @@ def add_field(**overrides):
 
 def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
     loaded = registry.load()
-    assert loaded.version == 10
+    assert loaded.version == 11
     assert [f.id for f in registry.fields()] == [
         "purpose",
         "category",
@@ -73,12 +73,15 @@ def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
     for definition in registry.fields()[:3]:
         assert definition.requirement == "required_for_publication"
         assert definition.field_class == "public" and definition.quota_identity
-        assert not (definition.searchable or definition.sortable or definition.valuation_input)
+        assert not (definition.searchable or definition.sortable)
+        assert definition.valuation_input == (definition.id == "subtype")  # Story 4.2
     for definition in registry.fields():
         assert definition.field_class == (
             "private" if definition.id in PRIVATE_ADDRESS_IDS else "public"
         )
     assert {f.id for f in registry.fields() if f.valuation_input} == {
+        "subtype",  # Story 4.2: the model prices by subtype and locality
+        "locality",
         "area_value",
         "area_unit",
         "marla_basis",
@@ -134,7 +137,7 @@ def test_plot_file_is_a_distinct_subtype_of_plot():
 
 
 def test_accessors_return_immutable_values():
-    assert registry.registry_version() == 10
+    assert registry.registry_version() == 11
     assert registry.field("purpose").allowed_values == ("sale", "rent")
     assert registry.field("nope") is None
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -274,7 +277,7 @@ def test_startup_fails_on_an_invalid_file(monkeypatch, tmp_path):
     finally:
         monkeypatch.undo()
         registry.load.cache_clear()
-    assert registry.load().version == 10
+    assert registry.load().version == 11
 
 
 def test_catalog_ready_loads_the_registry(monkeypatch):
@@ -341,8 +344,8 @@ def test_the_files_are_found_from_any_working_directory(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     registry.load.cache_clear()
     try:
-        assert registry.load().version == 10
-        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 10
+        assert registry.load().version == 11
+        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 11
     finally:
         registry.load.cache_clear()
 
@@ -742,7 +745,7 @@ def test_a_boolean_field_takes_no_bounds_values_or_scale():
 
 
 def test_the_residential_fields_are_defined_by_the_registry():
-    assert registry.registry_version() == 10
+    assert registry.registry_version() == 11
     bedrooms = registry.field("bedrooms")
     assert bedrooms.requirement == "required_for_publication"
     assert bedrooms.searchable and bedrooms.valuation_input and bedrooms.ai_extractable
@@ -1128,7 +1131,7 @@ def test_a_private_date_field_is_allowed_but_cannot_be_searchable():
 
 
 def test_version_6_adds_the_terms_after_every_details_field():
-    assert registry.registry_version() == 10
+    assert registry.registry_version() == 11
     ids = [f.id for f in registry.fields()]
     assert ids[-len(TAIL_IDS) :] == list(TAIL_IDS)
     assert registry.field("availability_date").type == "date"
@@ -1287,7 +1290,7 @@ def test_the_location_section_is_a_known_section():
 
 
 def test_version_7_adds_the_location_after_the_terms():
-    assert registry.registry_version() == 10
+    assert registry.registry_version() == 11
     ids = [f.id for f in registry.fields()]
     assert ids[-len(TAIL_IDS) :] == list(TAIL_IDS)
     assert ids[-11:-1] == [
