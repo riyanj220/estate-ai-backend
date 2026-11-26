@@ -284,21 +284,23 @@ def public_image_data(view: selectors.PublicImageView) -> dict:
     ).data
 
 
+def public_values(view: selectors.PublicListingView) -> dict:
+    """The projection as the input of `PublicListingSerializer` (and of its subclasses)."""
+    return {
+        "id": view.id,
+        "purpose": view.purpose,
+        "category": view.category,
+        "subtype": view.subtype,
+        "title": view.title,
+        "description": view.description,
+        "fields": dict(view.fields),
+        "media": [public_image_data(item) for item in view.media],
+        "registry_version": view.registry_version,
+    }
+
+
 def preview_data(view: selectors.PublicListingView) -> dict:
-    return ListingPreviewSerializer(
-        {
-            "id": view.id,
-            "purpose": view.purpose,
-            "category": view.category,
-            "subtype": view.subtype,
-            "title": view.title,
-            "description": view.description,
-            "fields": dict(view.fields),
-            "media": [public_image_data(item) for item in view.media],
-            "registry_version": view.registry_version,
-            "estimate": None,
-        }
-    ).data
+    return ListingPreviewSerializer({**public_values(view), "estimate": None}).data
 
 
 class DraftCreateSerializer(serializers.Serializer):

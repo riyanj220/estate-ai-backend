@@ -54,6 +54,10 @@ from apps.presentation.api.profile_images import (
     ProfileImageFileView,
     ProfileImageView,
 )
+from apps.presentation.api.public_listings import (
+    PublicListingDetailView,
+    PublicListingsView,
+)
 from apps.presentation.api.reference import AmenityView, CityView, LocalityView
 from apps.presentation.api.registrations import AgencyRegistrationView, IndividualRegistrationView
 from apps.presentation.api.registry import RegistryView
@@ -210,6 +214,12 @@ urlpatterns = [
         "api/v1/listings/<str:listing_id>/images/<str:image_id>/file",
         ListingImageFileView.as_view(),
         name="listing-image-file",
+    ),
+    path("api/v1/public/listings", PublicListingsView.as_view(), name="public-listings"),
+    path(
+        "api/v1/public/listings/<str:listing_id>",
+        PublicListingDetailView.as_view(),
+        name="public-listing",
     ),
     path("api/v1/me/listings", MyListingsView.as_view(), name="me-listings"),
     path("api/v1/me/listings/counts", MyListingCountsView.as_view(), name="me-listings-counts"),

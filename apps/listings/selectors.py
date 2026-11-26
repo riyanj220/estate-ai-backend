@@ -18,10 +18,11 @@ from decimal import Decimal
 from types import MappingProxyType
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Count, Q
-from django.db.models.functions import Greatest
+from django.db.models import Count, F, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce, Greatest
 
 from apps.catalog import registry
+from apps.catalog import selectors as catalog
 from apps.identity import selectors as identity
 from apps.identity.capabilities import Capability
 from apps.identity.policy import can
@@ -55,7 +56,9 @@ from apps.listings.models import (
     ListingResidential,
     ListingTerms,
     PropertyListing,
+    PublicationEvent,
 )
+from apps.listings.quota import KARACHI
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
@@ -142,7 +145,7 @@ class ListingPage:
 
 
 class InvalidCursor(ValueError):
-    """A cursor that is malformed or was not issued by `list_owned`."""
+    """A cursor that is malformed or was not issued for this list."""
 
 
 def terms_of(row: PropertyListing) -> ListingTerms | None:
@@ -398,7 +401,8 @@ def encode_cursor(created_at: datetime, listing_id: uuid.UUID, status: str | Non
 
 
 def decode_cursor(cursor: str, status: str | None) -> tuple[datetime, uuid.UUID]:
-    """The position in a cursor issued by `list_owned` for the same status filter."""
+    """The position in a cursor issued for the same list: `status` is the status filter of
+    `list_owned`, or the tag of a public sort (`search_public`)."""
     if not isinstance(cursor, str) or not _CURSOR.fullmatch(cursor):
         raise InvalidCursor
     try:
@@ -538,9 +542,15 @@ def public_fields(values: Mapping[str, object], definition=None) -> dict[str, ob
     return shown
 
 
-def public_view_of(row: PropertyListing) -> PublicListingView:
-    # Callers pass only rows from `public_listings()`. The private address is never read.
-    view = view_of(row, public=True, with_private=False)
+def public_view_of(
+    row: PropertyListing,
+    *,
+    images: tuple[ImageView, ...] | None = None,
+    amenities: Mapping[str, str] | None = None,
+) -> PublicListingView:
+    # Public callers pass only rows from `public_listings()`. The private address is never read.
+    # `images` and `amenities` are the row's own, batch-loaded by a list (no query per row).
+    view = view_of(row, public=True, with_private=False, images=images, amenities=amenities)
     return PublicListingView(
         id=row.id,
         purpose=row.purpose,
@@ -577,6 +587,119 @@ def public_listing(viewer: Actor, listing_id) -> PublicListingView:
     if row is None:
         raise DomainError("not_found")
     return public_view_of(row)
+
+
+# --- public discovery (Story 3.1) ----------------------------------------------------------------
+
+SORT_NEWEST = "newest"
+PUBLIC_SORTS = (SORT_NEWEST,)
+
+
+@dataclass(frozen=True)
+class SearchSpec:
+    """What a public search asks for. Empty for now: Story 3.3 adds the filters."""
+
+
+@dataclass(frozen=True)
+class PlaceView:
+    id: uuid.UUID
+    name: str
+
+
+@dataclass(frozen=True)
+class PublicEntry:
+    """A public Listing as discovery shows it: the public projection plus the day it was first
+    published and the names of its city and locality."""
+
+    listing: PublicListingView
+    published_on: date  # the Asia/Karachi calendar date
+    city: PlaceView | None
+    locality: PlaceView | None
+
+
+@dataclass(frozen=True)
+class PublicPage:
+    items: tuple[PublicEntry, ...]
+    next_cursor: str | None
+
+
+def _published():
+    """`public_listings()` with `published_at`: the time of the FIRST publication, so archiving
+    and republishing never moves a Listing back to the top and the keyset position never changes.
+    A row with no publication event (only fixtures write one) counts from its creation."""
+    first = (
+        PublicationEvent.objects.filter(
+            account_id=OuterRef("owner_account_id"), listing_id=OuterRef("id")
+        )
+        .order_by("created_at")
+        .values("created_at")[:1]
+    )
+    return (
+        public_listings()
+        .select_related(*PUBLIC_RELATED)
+        .annotate(published_at=Coalesce(Subquery(first), F("created_at")))
+    )
+
+
+def _entries(rows: list) -> tuple[PublicEntry, ...]:
+    """Rows of `_published()` as entries, with a fixed number of queries whatever their count."""
+    images = media_by_listing(r.id for r in rows)
+    answered = amenities_by_listing(r.id for r in rows)
+    places = [location for r in rows if (location := location_of(r)) is not None]
+    cities = catalog.city_names(p.city for p in places)
+    localities = catalog.locality_names(p.locality for p in places)
+
+    def place(names, key):
+        return PlaceView(key, names[key]) if key in names else None
+
+    entries = []
+    for row in rows:
+        location = location_of(row)
+        entries.append(
+            PublicEntry(
+                listing=public_view_of(row, images=images[row.id], amenities=answered[row.id]),
+                published_on=row.published_at.astimezone(KARACHI).date(),
+                city=place(cities, location.city) if location else None,
+                locality=place(localities, location.locality) if location else None,
+            )
+        )
+    return tuple(entries)
+
+
+def search_public(
+    actor: Actor,
+    spec: SearchSpec,
+    sort: str = SORT_NEWEST,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> PublicPage:
+    """The public Listings, newest publication first (then id), keyset-paginated. Public means the
+    same for every viewer, so `actor` changes nothing; `spec` holds no filter yet. `sort` must be
+    in `PUBLIC_SORTS` (ValueError otherwise); a bad `cursor` raises `InvalidCursor`."""
+    if sort not in PUBLIC_SORTS:
+        raise ValueError(f"unknown sort {sort!r}")
+    tag = f"public:{sort}"
+    rows = _published()
+    if cursor is not None:
+        published_at, last_id = decode_cursor(cursor, tag)
+        rows = rows.filter(
+            Q(published_at__lt=published_at) | Q(published_at=published_at, id__lt=last_id)
+        )
+    size = max(1, min(int(limit), MAX_LIMIT))
+    page = list(rows.order_by("-published_at", "-id")[: size + 1])
+    more = len(page) > size
+    page = page[:size]
+    next_cursor = encode_cursor(page[-1].published_at, page[-1].id, tag) if more else None
+    return PublicPage(_entries(page), next_cursor)
+
+
+def public_detail(viewer: Actor, listing_id) -> PublicEntry:
+    """One public Listing as discovery shows it; the same `not_found` rule as `public_listing`."""
+    key = canonical_uuid(listing_id)
+    row = _published().filter(id=key).first() if key is not None else None
+    if row is None:
+        raise DomainError("not_found")
+    return _entries([row])[0]
 
 
 def preview_of(actor: Actor, listing_id) -> PublicListingView:

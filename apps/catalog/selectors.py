@@ -90,6 +90,19 @@ def get_locality(locality_id) -> LocalityRef | None:
     return LocalityRef(id=row.id, name=row.name, kind=row.kind, city_id=row.city_id)
 
 
+def city_names(city_ids) -> dict[uuid.UUID, str]:
+    """{id: name} of these cities in one query, deactivated ones included: a stored location
+    keeps its name. Unknown ids and None are left out."""
+    ids = {key for key in city_ids if key is not None}
+    return dict(City.objects.filter(id__in=ids).values_list("id", "name")) if ids else {}
+
+
+def locality_names(locality_ids) -> dict[uuid.UUID, str]:
+    """{id: name} of these localities, as `city_names`."""
+    ids = {key for key in locality_ids if key is not None}
+    return dict(Locality.objects.filter(id__in=ids).values_list("id", "name")) if ids else {}
+
+
 @dataclass(frozen=True)
 class AmenityRef:
     code: str

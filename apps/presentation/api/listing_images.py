@@ -19,6 +19,7 @@ from apps.kernel.upload_limit import body_too_large
 from apps.listings import selectors, services
 from apps.presentation.api.actors import get_actor
 from apps.presentation.api.bodies import ConflictWithCurrent, exact_fields, field_errors
+from apps.presentation.api.caching import cache_publicly
 from apps.presentation.api.listings import (
     CONTENT_TYPES,
     ImageSerializer,
@@ -31,7 +32,6 @@ from apps.presentation.api.passwords import NoStoreMixin
 from apps.presentation.api.permissions import AllowPublic, RequireSignedIn
 from apps.presentation.api.throttling import PolicyThrottle
 
-PUBLIC_IMAGE_CACHE_SECONDS = 60
 ORDER_BODY = ("base_revision", "order", "cover_id")
 
 
@@ -255,19 +255,7 @@ class ListingImageFileView(NoStoreMixin, APIView):
         response = super().finalize_response(request, response, *args, **kwargs)
         if response.status_code == status.HTTP_200_OK:
             if getattr(response, "public_image", False):
-                # The answer does not depend on who asks, so it carries no cookie and varies by
-                # none: a request that arrives with a stale or malformed CSRF cookie would make
-                # Django's CSRF middleware reissue it (`Set-Cookie`, `Vary: Cookie`).
-                response["Cache-Control"] = f"public, max-age={PUBLIC_IMAGE_CACHE_SECONDS}"
-                request._request.META["CSRF_COOKIE_NEEDS_UPDATE"] = False
-                # belt and braces: nothing else may leave a cookie or a cookie variance behind
-                response.cookies.clear()
-                parts = [p.strip() for p in response.get("Vary", "").split(",") if p.strip()]
-                kept = [p for p in parts if p.lower() != "cookie"]
-                if kept:
-                    response["Vary"] = ", ".join(kept)
-                elif response.has_header("Vary"):
-                    del response["Vary"]
+                cache_publicly(request, response)
             else:
                 response["Cache-Control"] = "private, no-store"
         return response
