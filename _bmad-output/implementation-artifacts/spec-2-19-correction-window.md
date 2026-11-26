@@ -70,6 +70,10 @@ Accepted/deferred:
 - An unused window survives an archive and a free republication, with its original end. Accepted: within the spec.
 - The database does not make `correction_used` one-way (the runtime role may set it back). Enforced by the application only; no trigger (FYP scope).
 
+Frontend half, as built (no reviewer: simple screen; checks: lint, typecheck, build, api:check, prod listings check, the 13-test correction spec and `test:e2e:changed` 474 tests; full suite in CI):
+
+- "Correct locality or area" section on a Published page while eligible (Karachi end time, time left, confirmation "only once"), otherwise the archive-and-republish note; restricted Listings and Suspended owners see neither; a failed eligibility read shows Retry; "nothing changed" and "only the marla size changed" are answered client side; republish copy no longer names the marla basis; stub registry 10.
+
 ## Verification
 
 **Backend:** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, `scripts/test-changed.sh`, and one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q` before the merge.
