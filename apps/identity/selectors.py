@@ -31,6 +31,7 @@ from apps.kernel.privacy.reads import record_private_read
 
 ACCOUNT_TYPES = tuple(t.value for t in AccountType)
 ADMIN_ACCOUNT_TYPE = AccountType.ADMIN.value
+OWNER_TYPES = (AccountType.INDIVIDUAL.value, AccountType.AGENCY.value)
 
 
 @dataclass(frozen=True)
@@ -297,6 +298,46 @@ OWN_IMAGE_URLS = {
 
 def logo_url(agency_id: uuid.UUID) -> str:
     return f"/api/v1/agencies/{agency_id}/logo"
+
+
+@dataclass(frozen=True)
+class PublicAdvertiser:
+    """All the public may know of a Listing's owner (FR-39): the type and, for an Agency, its
+    public name, logo address and verification. No account id, name of a person or contact."""
+
+    type: str
+    agency_name: str | None = None
+    logo_url: str | None = None
+    verified: bool = False
+
+
+def public_advertisers(account_ids) -> dict[uuid.UUID, PublicAdvertiser]:
+    """`PublicAdvertiser` of each of these owner accounts, by account id, in two queries whatever
+    their number. The caller has already decided that their Listings are public. `verified` is
+    false for everyone until an Agency can be granted Verification (Epic 8)."""
+    rows = list(
+        Account.objects.filter(id__in=set(account_ids)).values_list(
+            "id",
+            "account_type",
+            "agency_profile__id",
+            "agency_profile__agency_name",
+            "agency_profile__image_asset_id",
+            "agency_profile__verification_status",
+        )
+    )
+    assets = media.assets_by_id(row[4] for row in rows if row[4] is not None)
+    found = {}
+    for key, kind, agency_id, name, asset_id, verification in rows:
+        if kind != AccountType.AGENCY:
+            found[key] = PublicAdvertiser(kind)
+            continue
+        found[key] = PublicAdvertiser(
+            kind,
+            agency_name=name,
+            logo_url=logo_url(agency_id) if asset_id in assets else None,
+            verified=verification == "verified",
+        )
+    return found
 
 
 @dataclass(frozen=True)

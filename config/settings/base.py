@@ -168,6 +168,7 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "RegistrationAcceptedStatusEnum": ["check_your_email"],
         "OwnerAccountTypeEnum": ["individual", "agency"],
+        "TypeEnum": "apps.catalog.registry.FIELD_TYPES",
         "EmailVerifiedStatusEnum": ["verified"],
         "FieldClassEnum": ["public", "private"],
         "LocalityKindEnum": ["area", "society"],

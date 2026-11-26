@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from apps.catalog import filters, registry
 from apps.catalog import selectors as catalog
+from apps.identity import selectors as identity
 from apps.listings import selectors
 from apps.presentation.api.actors import get_actor
 from apps.presentation.api.bodies import field_errors
@@ -54,6 +55,20 @@ class PlaceSerializer(serializers.Serializer):
     name = serializers.CharField()
 
 
+class AdvertiserSerializer(serializers.Serializer):
+    """Who advertises the Listing (FR-39). Nothing else about the owner is public here."""
+
+    type = serializers.ChoiceField(choices=identity.OWNER_TYPES)
+    agency_name = serializers.CharField(allow_null=True, help_text="Agencies only.")
+    logo_url = serializers.CharField(
+        allow_null=True,
+        help_text="Agencies only: the public logo route; null without a logo.",
+    )
+    verified = serializers.BooleanField(
+        help_text="An Agency with Verification granted. Always false for now."
+    )
+
+
 class PublicListingCardSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     purpose = serializers.ChoiceField(choices=PURPOSES)
@@ -63,6 +78,7 @@ class PublicListingCardSerializer(serializers.Serializer):
     fields = CardFieldsSerializer()
     city = PlaceSerializer(allow_null=True)
     locality = PlaceSerializer(allow_null=True)
+    advertiser = AdvertiserSerializer()
     cover_url = serializers.CharField(
         allow_null=True, help_text="Relative path of the cover image on the media endpoint."
     )
@@ -77,17 +93,24 @@ class PublicListingPageSerializer(serializers.Serializer):
 
 
 class PublicListingDetailSerializer(PublicListingSerializer):
-    """The public projection plus the publication date and the names of the city and locality."""
+    """The public projection plus the publication date, the names of the city and locality, and
+    the advertiser."""
 
     city = PlaceSerializer(allow_null=True)
     locality = PlaceSerializer(allow_null=True)
+    advertiser = AdvertiserSerializer()
     published_on = serializers.DateField(
         help_text="The Asia/Karachi date of the first publication."
     )
 
 
 def _discovery(entry: selectors.PublicEntry) -> dict:
-    return {"city": entry.city, "locality": entry.locality, "published_on": entry.published_on}
+    return {
+        "city": entry.city,
+        "locality": entry.locality,
+        "published_on": entry.published_on,
+        "advertiser": entry.advertiser,
+    }
 
 
 def _card(entry: selectors.PublicEntry) -> dict:
@@ -313,11 +336,12 @@ class PublicListingDetailView(PublicReadView):
         summary="One published Listing",
         description=(
             "Public; the answer is the same for every caller, the owner included. The public "
-            "projection only: never a private address, coordinates, a phone number, the owner, "
-            "the status, the revision or the provenance. `nearby` amenities are the seller's own "
-            "declaration. A Listing that is not publicly visible, an unknown and a malformed id "
-            "are the same `404 not_found`. `200` has `Cache-Control: public, max-age=60` and no "
-            "cookie; errors are `no-store`."
+            "projection only: never a private address, coordinates, a phone number, the owner "
+            "account, the status, the revision or the provenance. Of the owner, `advertiser` "
+            "gives only the type and, for an Agency, its name, logo and verification. `nearby` "
+            "amenities are the seller's own declaration. A Listing that is not publicly "
+            "visible, an unknown and a malformed id are the same `404 not_found`. `200` has "
+            "`Cache-Control: public, max-age=60` and no cookie; errors are `no-store`."
         ),
         responses={
             200: OpenApiResponse(PublicListingDetailSerializer, description="The Listing"),

@@ -640,9 +640,10 @@ class PlaceView:
 @dataclass(frozen=True)
 class PublicEntry:
     """A public Listing as discovery shows it: the public projection plus the day it was first
-    published and the names of its city and locality."""
+    published, the names of its city and locality, and who advertises it."""
 
     listing: PublicListingView
+    advertiser: identity.PublicAdvertiser
     published_on: date  # the Asia/Karachi calendar date
     city: PlaceView | None
     locality: PlaceView | None
@@ -673,6 +674,7 @@ def _entries(rows: list) -> tuple[PublicEntry, ...]:
     places = [location for r in rows if (location := location_of(r)) is not None]
     cities = catalog.city_names(p.city for p in places)
     localities = catalog.locality_names(p.locality for p in places)
+    advertisers = identity.public_advertisers(r.owner_account_id for r in rows)
 
     def place(names, key):
         return PlaceView(key, names[key]) if key in names else None
@@ -683,6 +685,7 @@ def _entries(rows: list) -> tuple[PublicEntry, ...]:
         entries.append(
             PublicEntry(
                 listing=public_view_of(row, images=images[row.id], amenities=answered[row.id]),
+                advertiser=advertisers[row.owner_account_id],
                 published_on=row.published_at.astimezone(KARACHI).date(),
                 city=place(cities, location.city) if location else None,
                 locality=place(localities, location.locality) if location else None,

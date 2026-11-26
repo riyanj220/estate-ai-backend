@@ -10,8 +10,10 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 
 from apps.catalog import selectors as catalog
-from apps.identity.models import Account, IndividualProfile
+from apps.identity import services
+from apps.identity.models import Account, AgencyProfile, IndividualProfile
 from apps.kernel.models import MediaAsset
+from apps.listings import sample_data
 from apps.listings.models import ListingImage, PropertyListing
 from tests.listings.support import (
     STREET,
@@ -19,9 +21,11 @@ from tests.listings.support import (
     random_email,
     ready_draft,
     seed_cap,
+    seed_media_policies,
     set_account_state,
     set_first_published,
     set_listing_visibility,
+    user,
 )
 
 URL = "/api/v1/public/listings"
@@ -89,7 +93,7 @@ def test_card_and_detail_shapes(owner):
     card = response.json()["results"][0]
     assert set(card) == {
         "id", "purpose", "category", "subtype", "title", "fields", "city", "locality",
-        "cover_url", "published_on",
+        "cover_url", "published_on", "advertiser",
     }  # fmt: skip
     assert card["fields"]["asking_price"] == "1500000.00" and card["fields"]["bedrooms"] == 3
     assert card["city"]["name"] == "Karachi" and card["locality"]["name"] == "Testville North"
@@ -102,7 +106,7 @@ def test_card_and_detail_shapes(owner):
     detail = response.json()
     assert set(detail) == {
         "id", "purpose", "category", "subtype", "title", "description", "fields", "media",
-        "registry_version", "city", "locality", "published_on",
+        "registry_version", "city", "locality", "published_on", "advertiser",
     }  # fmt: skip
     assert detail["description"] == "A quiet home."
     assert detail["fields"]["amenities"] == {amenity: "present"}
@@ -202,6 +206,55 @@ def test_bad_parameters_are_400(query, name):
     assert name in response.json()["error"]["fields"]
 
 
+def advertiser_of(listing_id):
+    card = next(card for card in browse()["results"] if card["id"] == listing_id)
+    detail = Client().get(f"{URL}/{listing_id}").json()
+    assert card["advertiser"] == detail["advertiser"]
+    return detail["advertiser"]
+
+
+def agency(name="Sunrise Estates", logo=False):
+    account = make_account(random_email(), "agency")
+    AgencyProfile.objects.create(
+        account_id=account.id,
+        agency_name=name,
+        business_phone="+923009876543",
+        office_address="OFFICE-CANARY",
+        city_id=catalog.list_cities()[0].id,
+    )
+    if logo:
+        seed_media_policies()
+        services.set_profile_image(user(account), sample_data._png(1), kind="agency")
+    return account
+
+
+def test_the_advertiser_of_an_individual_is_only_its_type(owner):
+    assert advertiser_of(published(owner)) == {
+        "type": "individual",
+        "agency_name": None,
+        "logo_url": None,
+        "verified": False,
+    }
+
+
+def test_the_advertiser_of_an_agency_is_its_name_and_logo(media_root):
+    with_logo, without = agency(logo=True), agency("No Logo Homes")
+    first, second = published(with_logo, 1), published(without, 2)
+    profile = AgencyProfile.objects.get(account_id=with_logo.id)
+    shown = advertiser_of(first)
+    assert shown == {
+        "type": "agency",
+        "agency_name": "Sunrise Estates",
+        "logo_url": f"/api/v1/agencies/{profile.id}/logo",
+        "verified": False,
+    }
+    assert Client().get(shown["logo_url"]).status_code == 200
+    assert advertiser_of(second)["logo_url"] is None
+    text = Client().get(URL).content.decode() + Client().get(f"{URL}/{first}").content.decode()
+    for secret in ("3009876543", "OFFICE-CANARY", str(with_logo.id), str(profile.image_asset_id)):
+        assert secret not in text
+
+
 def test_the_query_count_does_not_grow_with_the_page(owner):
     amenity = catalog.list_amenities()[0].code
     published(owner, amenities={amenity: "present"})
@@ -211,8 +264,11 @@ def test_the_query_count_does_not_grow_with_the_page(owner):
             body = browse()
         return len(captured), len(body["results"])
 
-    one, shown = count()
-    assert shown == 1
-    for minutes in range(1, 20):
+    published(agency(), 1)
+    two, shown = count()
+    assert shown == 2
+    for minutes in range(2, 8):
+        published(agency(f"Agency {minutes}"), minutes, amenities={amenity: "present"})
+    for minutes in range(8, 20):
         published(owner, minutes, amenities={amenity: "present"})
-    assert count() == (one, 20)
+    assert count() == (two, 20)
