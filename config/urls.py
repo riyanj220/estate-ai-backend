@@ -11,6 +11,7 @@ from apps.presentation.adminapi.quota import (
     QuotaPolicyView,
     QuotaUsageView,
 )
+from apps.presentation.api.estimates import EstimateView, ListingEstimateView
 from apps.presentation.api.favourites import (
     FavouriteDetailView,
     FavouriteIdsView,
@@ -222,6 +223,12 @@ urlpatterns = [
         "api/v1/listings/<str:listing_id>/images/<str:image_id>/file",
         ListingImageFileView.as_view(),
         name="listing-image-file",
+    ),
+    path("api/v1/estimates", EstimateView.as_view(), name="estimates"),
+    path(
+        "api/v1/listings/<str:listing_id>/estimate",
+        ListingEstimateView.as_view(),
+        name="listing-estimate",
     ),
     path("api/v1/public/filters", PublicFiltersView.as_view(), name="public-filters"),
     path("api/v1/public/listings", PublicListingsView.as_view(), name="public-listings"),

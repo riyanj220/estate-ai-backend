@@ -4,6 +4,8 @@ One builder serves training and inference. It reads exactly the ids in `SOURCE_F
 else in the mapping (private address, phone, Asking price) can reach the model. Any change to the
 features or their encoding raises `FEATURE_SCHEMA_VERSION` and needs a retrained model."""
 
+import hashlib
+import json
 import math
 from collections.abc import Mapping
 from decimal import Decimal
@@ -84,6 +86,20 @@ def build_features(values: Mapping) -> dict:
         if amenities is None
         else float(sum(state == "present" for state in amenities.values())),
     }
+
+
+def snapshot_of(fields: Mapping, locality: str) -> dict:
+    """The non-private model inputs only (`SOURCE_FIELDS`), the locality by name."""
+    inputs = {name: fields.get(name) for name in SOURCE_FIELDS}
+    inputs["locality"] = locality
+    if inputs["amenities"] is not None:
+        inputs["amenities"] = dict(sorted(inputs["amenities"].items()))
+    return inputs
+
+
+def snapshot_hash(inputs: Mapping) -> str:
+    text = json.dumps(inputs, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 def encode(features: dict, localities: list[str]) -> list[float]:

@@ -24,7 +24,7 @@ from apps.kernel.events import emit
 from apps.listings import lifecycle, validation
 from apps.listings.area import normalised_sqft
 from apps.listings.completeness import problems_of
-from apps.listings.events import ListingModelInputsChanged
+from apps.listings.events import ListingDeleted, ListingModelInputsChanged
 from apps.listings.fields import (
     ADDRESS,
     ADDRESS_FIELDS,
@@ -833,6 +833,7 @@ def _remove_rows(actor: Actor, row: PropertyListing) -> uuid.UUID:
             media.purge_owned_asset(actor, row.owner_account_id, asset_id)
     listing_id = row.id
     row.delete()
+    emit(ListingDeleted(listing_id=listing_id))  # after commit
     return listing_id
 
 

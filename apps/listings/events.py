@@ -26,6 +26,15 @@ class ListingPublished(DomainEvent):
 
 
 @dataclass(frozen=True)
+class ListingDeleted(DomainEvent):
+    """A Listing and its rows were deleted (a Draft, or a sample Listing), after commit. Apps that
+    keep rows by Listing id remove them."""
+
+    name = "listing.deleted"
+    listing_id: uuid.UUID
+
+
+@dataclass(frozen=True)
 class ListingStatusChanged(DomainEvent):
     """A Published (or Sold or Rented) Listing was archived, sold or rented (after commit).
     Ids and the new status only; nothing subscribes yet."""

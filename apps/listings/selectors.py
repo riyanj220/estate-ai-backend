@@ -1069,6 +1069,14 @@ def titles_owned_by(owner_account_id) -> dict[str, tuple[uuid.UUID, str]]:
     return {title: (listing_id, status) for title, listing_id, status in rows}
 
 
+def existing_listing_ids(actor: Actor, listing_ids) -> set[uuid.UUID]:
+    """Which of these Listing ids still exist, for retention sweeps (system actor only)."""
+    if actor.kind is not ActorKind.SYSTEM:
+        raise DomainError("forbidden")
+    found = PropertyListing.objects.filter(id__in=list(listing_ids))
+    return set(found.values_list("id", flat=True))
+
+
 def listing_ids_owned_by(owner_account_ids) -> list[uuid.UUID]:
     """The ids of every Listing owned by any of the accounts, oldest first."""
     return list(
