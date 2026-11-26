@@ -309,6 +309,7 @@ class PublicAdvertiser:
     agency_name: str | None = None
     logo_url: str | None = None
     verified: bool = False
+    agency_id: uuid.UUID | None = None  # the PUBLIC profile id (Story 3.8), never the account id
 
 
 def public_advertisers(account_ids) -> dict[uuid.UUID, PublicAdvertiser]:
@@ -333,11 +334,55 @@ def public_advertisers(account_ids) -> dict[uuid.UUID, PublicAdvertiser]:
             continue
         found[key] = PublicAdvertiser(
             kind,
+            agency_id=agency_id,
             agency_name=name,
             logo_url=logo_url(agency_id) if asset_id in assets else None,
             verified=verification == "verified",
         )
     return found
+
+
+@dataclass(frozen=True)
+class PublicAgency:
+    """All the public may know of an Agency (FR-41). No phone, address, email, city or account
+    id."""
+
+    name: str
+    logo_url: str | None
+    description: str
+    verified: bool
+
+
+def _public_agency_row(agency_id) -> AgencyProfile:
+    """The profile with this PUBLIC id, only while its account is Active. Suspended, Deactivated,
+    Email-unverified, unknown or malformed ids (an account id included) are all the same
+    `not_found`."""
+    key = parse_id(agency_id)
+    row = AgencyProfile.objects.select_related("account").filter(id=key).first() if key else None
+    if (
+        row is None
+        or row.account.account_type != AccountType.AGENCY
+        or row.account.state is not AccountState.ACTIVE
+    ):
+        raise DomainError("not_found")
+    return row
+
+
+def public_agency(agency_id) -> PublicAgency:
+    """The public profile of an Active Agency, or `not_found` (Story 3.8)."""
+    row = _public_agency_row(agency_id)
+    return PublicAgency(
+        name=row.agency_name,
+        logo_url=logo_url(row.id) if image_view(row.image_asset_id, "agency") else None,
+        description=row.description,
+        verified=row.verification_status == "verified",
+    )
+
+
+def public_agency_owner_id(agency_id) -> uuid.UUID:
+    """The account id behind a public Agency, to narrow the public Listings to its own. For
+    server code only: it never goes into a response. Same `not_found` as `public_agency`."""
+    return _public_agency_row(agency_id).account_id
 
 
 @dataclass(frozen=True)
@@ -511,11 +556,7 @@ def logo_for_serving(agency_id, *, with_bytes: bool = True) -> ServedProfileImag
     """The public logo seam: the logo of the Agency profile with this PUBLIC id, only while its
     account is Active. Suspended, Deactivated, Email-unverified, unknown or malformed ids and an
     Agency without a logo (or with a lost one) are all the same `not_found`."""
-    key = parse_id(agency_id)
-    row = AgencyProfile.objects.select_related("account").filter(id=key).first() if key else None
-    if row is None or row.account.state is not AccountState.ACTIVE:
-        raise DomainError("not_found")
-    return _served(row.image_asset_id, with_bytes)
+    return _served(_public_agency_row(agency_id).image_asset_id, with_bytes)
 
 
 def _file_exists(storage_key: str) -> bool:

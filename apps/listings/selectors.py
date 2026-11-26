@@ -810,17 +810,21 @@ def search_public(
     sort: str = SORT_NEWEST,
     cursor: str | None = None,
     limit: int = DEFAULT_LIMIT,
+    owner_account_id: uuid.UUID | None = None,
 ) -> PublicPage:
     """The public Listings that satisfy the required criteria of `spec`, in the order of `sort`,
     keyset-paginated. Public means the same for every viewer, so `actor` changes nothing.
     `newest` is the first publication, latest first; `price_*` compares `asking_price` as stored;
     `relevance` is the number of preference criteria satisfied, then newest. The id breaks every
     tie. `sort` must be in `PUBLIC_SORTS`, and `relevance` needs a preference (ValueError
-    otherwise); a bad `cursor`, or one of another filter or sort, raises `InvalidCursor`."""
+    otherwise); a bad `cursor`, or one of another filter or sort, raises `InvalidCursor`.
+    `owner_account_id` narrows the same query to one advertiser (the Agency page, Story 3.8)."""
     if sort not in PUBLIC_SORTS or (sort == SORT_RELEVANCE and not spec.preferred):
         raise ValueError(f"unknown sort {sort!r}")
     order, tag = _ORDERS[sort], _search_tag(spec, sort)
     rows = _ordered_by(_matching(spec), spec, sort)
+    if owner_account_id is not None:
+        rows = rows.filter(owner_account_id=owner_account_id)
     if cursor is not None:
         rows = rows.filter(_after(order, _decode_position(cursor, tag, order)))
     size = max(1, min(int(limit), MAX_LIMIT))

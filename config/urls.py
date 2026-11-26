@@ -60,6 +60,8 @@ from apps.presentation.api.profile_images import (
     ProfileImageView,
 )
 from apps.presentation.api.public_listings import (
+    PublicAgencyListingsView,
+    PublicAgencyView,
     PublicFiltersView,
     PublicListingDetailView,
     PublicListingsView,
@@ -227,6 +229,16 @@ urlpatterns = [
         "api/v1/public/listings/<str:listing_id>",
         PublicListingDetailView.as_view(),
         name="public-listing",
+    ),
+    path(
+        "api/v1/public/agencies/<str:agency_id>",
+        PublicAgencyView.as_view(),
+        name="public-agency",
+    ),
+    path(
+        "api/v1/public/agencies/<str:agency_id>/listings",
+        PublicAgencyListingsView.as_view(),
+        name="public-agency-listings",
     ),
     path("api/v1/me/favourites", FavouritesView.as_view(), name="me-favourites"),
     path("api/v1/me/favourites/ids", FavouriteIdsView.as_view(), name="me-favourites-ids"),

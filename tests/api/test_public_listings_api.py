@@ -231,6 +231,7 @@ def agency(name="Sunrise Estates", logo=False):
 def test_the_advertiser_of_an_individual_is_only_its_type(owner):
     assert advertiser_of(published(owner)) == {
         "type": "individual",
+        "agency_id": None,
         "agency_name": None,
         "logo_url": None,
         "verified": False,
@@ -244,6 +245,7 @@ def test_the_advertiser_of_an_agency_is_its_name_and_logo(media_root):
     shown = advertiser_of(first)
     assert shown == {
         "type": "agency",
+        "agency_id": str(profile.id),
         "agency_name": "Sunrise Estates",
         "logo_url": f"/api/v1/agencies/{profile.id}/logo",
         "verified": False,

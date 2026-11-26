@@ -59,6 +59,10 @@ class AdvertiserSerializer(serializers.Serializer):
     """Who advertises the Listing (FR-39). Nothing else about the owner is public here."""
 
     type = serializers.ChoiceField(choices=identity.OWNER_TYPES)
+    agency_id = serializers.UUIDField(
+        allow_null=True,
+        help_text="Agencies only: the public profile id (`/api/v1/public/agencies/{agency_id}`).",
+    )
     agency_name = serializers.CharField(allow_null=True, help_text="Agencies only.")
     logo_url = serializers.CharField(
         allow_null=True,
@@ -238,6 +242,56 @@ class PublicReadView(APIView):
         return response
 
 
+LIST_PARAMETERS = [
+    OpenApiParameter("sort", str, enum=list(selectors.PUBLIC_SORTS), required=False),
+    OpenApiParameter("limit", int, required=False),
+    OpenApiParameter("cursor", str, required=False),
+    *_filter_parameters(),
+]
+
+
+def _listing_page(request, owner_account_id=None) -> Response:
+    """The query parameters of the public list, searched and serialised: one path for the
+    marketplace and for one Agency's Listings."""
+    params = {
+        name: values
+        for name, values in request.query_params.lists()
+        if name not in ("sort", "limit", "cursor")
+    }
+    try:
+        spec = filters.parse(params)
+    except filters.InvalidFilter as problem:
+        raise field_errors(problem.errors) from None
+    default = selectors.SORT_RELEVANCE if spec.preferred else selectors.SORT_NEWEST
+    sort = request.query_params.get("sort", default)
+    if sort not in selectors.PUBLIC_SORTS or (
+        sort == selectors.SORT_RELEVANCE and not spec.preferred
+    ):
+        raise field_errors({"sort": "invalid_choice"})
+    limit = _limit(request.query_params.get("limit"))
+    try:
+        page = selectors.search_public(
+            get_actor(request),
+            spec,
+            sort,
+            request.query_params.get("cursor") or None,  # an empty cursor is page one
+            limit,
+            owner_account_id=owner_account_id,
+        )
+    except selectors.InvalidCursor:  # a stable code, never the value
+        raise field_errors({"cursor": "invalid"}) from None
+    following = (
+        None
+        if page.next_cursor is None
+        else replace_query_param(request.build_absolute_uri(), "cursor", page.next_cursor)
+    )
+    return Response(
+        PublicListingPageSerializer(
+            {"results": [_card(entry) for entry in page.items], "next": following}
+        ).data
+    )
+
+
 class PublicListingsView(PublicReadView):
     @extend_schema(
         operation_id="list_public_listings",
@@ -256,54 +310,14 @@ class PublicListingsView(PublicReadView):
             "Listing may stay in a cache for up to a minute after it stops being public); errors "
             "are `no-store`."
         ),
-        parameters=[
-            OpenApiParameter("sort", str, enum=list(selectors.PUBLIC_SORTS), required=False),
-            OpenApiParameter("limit", int, required=False),
-            OpenApiParameter("cursor", str, required=False),
-            *_filter_parameters(),
-        ],
+        parameters=LIST_PARAMETERS,
         responses={
             200: OpenApiResponse(PublicListingPageSerializer, description="One page"),
             400: OpenApiResponse(ErrorBodySerializer, description="`validation_error`"),
         },
     )
     def get(self, request):
-        params = {
-            name: values
-            for name, values in request.query_params.lists()
-            if name not in ("sort", "limit", "cursor")
-        }
-        try:
-            spec = filters.parse(params)
-        except filters.InvalidFilter as problem:
-            raise field_errors(problem.errors) from None
-        default = selectors.SORT_RELEVANCE if spec.preferred else selectors.SORT_NEWEST
-        sort = request.query_params.get("sort", default)
-        if sort not in selectors.PUBLIC_SORTS or (
-            sort == selectors.SORT_RELEVANCE and not spec.preferred
-        ):
-            raise field_errors({"sort": "invalid_choice"})
-        limit = _limit(request.query_params.get("limit"))
-        try:
-            page = selectors.search_public(
-                get_actor(request),
-                spec,
-                sort,
-                request.query_params.get("cursor") or None,  # an empty cursor is page one
-                limit,
-            )
-        except selectors.InvalidCursor:  # a stable code, never the value
-            raise field_errors({"cursor": "invalid"}) from None
-        following = (
-            None
-            if page.next_cursor is None
-            else replace_query_param(request.build_absolute_uri(), "cursor", page.next_cursor)
-        )
-        return Response(
-            PublicListingPageSerializer(
-                {"results": [_card(entry) for entry in page.items], "next": following}
-            ).data
-        )
+        return _listing_page(request)
 
 
 class PublicFiltersView(PublicReadView):
@@ -338,7 +352,8 @@ class PublicListingDetailView(PublicReadView):
             "Public; the answer is the same for every caller, the owner included. The public "
             "projection only: never a private address, coordinates, a phone number, the owner "
             "account, the status, the revision or the provenance. Of the owner, `advertiser` "
-            "gives only the type and, for an Agency, its name, logo and verification. `nearby` "
+            "gives only the type and, for an Agency, its public id, name, logo and verification. "
+            "`nearby` "
             "amenities are the seller's own declaration. A Listing that is not publicly "
             "visible, an unknown and a malformed id are the same `404 not_found`. `200` has "
             "`Cache-Control: public, max-age=60` and no cookie; errors are `no-store`."
@@ -355,3 +370,58 @@ class PublicListingDetailView(PublicReadView):
                 {**public_values(entry.listing), **_discovery(entry)}
             ).data
         )
+
+
+class PublicAgencySerializer(serializers.Serializer):
+    """An Agency's public profile (FR-41), and nothing else about it."""
+
+    name = serializers.CharField()
+    logo_url = serializers.CharField(
+        allow_null=True, help_text="The public logo route; null without a logo."
+    )
+    description = serializers.CharField(allow_blank=True, help_text="Empty when none was written.")
+    verified = serializers.BooleanField(
+        help_text="An Agency with Verification granted. Always false for now."
+    )
+
+
+class PublicAgencyView(PublicReadView):
+    @extend_schema(
+        operation_id="get_public_agency",
+        summary="An Agency's public profile",
+        description=(
+            "Public; the answer is the same for every caller. Only the name, logo route, "
+            "description and verification: never the business phone, office address, email, "
+            "city or account. `agency_id` is `advertiser.agency_id` of a Listing. Only an Active "
+            "Agency: a Suspended, Deactivated or unverified one, an unknown, malformed or "
+            "non-agency id are the same `404 not_found`. `200` has `Cache-Control: public, "
+            "max-age=60` and no cookie (so a profile may stay in a cache for up to a minute); "
+            "errors are `no-store`."
+        ),
+        responses={
+            200: OpenApiResponse(PublicAgencySerializer, description="The Agency"),
+            404: OpenApiResponse(ErrorBodySerializer, description="`not_found`"),
+        },
+    )
+    def get(self, request, agency_id):
+        return Response(PublicAgencySerializer(identity.public_agency(agency_id)).data)
+
+
+class PublicAgencyListingsView(PublicReadView):
+    @extend_schema(
+        operation_id="list_public_agency_listings",
+        summary="Browse and filter one Agency's published Listings",
+        description=(
+            "`GET /api/v1/public/listings` narrowed to one Agency: the same visibility, filters, "
+            "preferences, sorts, `limit`, `cursor`, errors and caching. An Agency whose profile "
+            "is `404 not_found` is the same `404` here, whatever the parameters."
+        ),
+        parameters=LIST_PARAMETERS,
+        responses={
+            200: OpenApiResponse(PublicListingPageSerializer, description="One page"),
+            400: OpenApiResponse(ErrorBodySerializer, description="`validation_error`"),
+            404: OpenApiResponse(ErrorBodySerializer, description="`not_found`"),
+        },
+    )
+    def get(self, request, agency_id):
+        return _listing_page(request, identity.public_agency_owner_id(agency_id))

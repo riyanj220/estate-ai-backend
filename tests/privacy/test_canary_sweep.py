@@ -157,6 +157,7 @@ def seed(canaries):
     return {
         "contexts": contexts,
         "public": [str(x.id) for x in public],
+        "public_agency": str(AgencyProfile.objects.get(account_id=public[1].owner_account_id).id),
         "owner_email": emails[0],
         "owner_listings": {str(x.id): x.owner_account_id for x in listings},
         "png": png,
@@ -295,6 +296,10 @@ def test_no_canary_in_any_response_or_log():
     assert not silent, f"no 200 from these public routes, so nothing was checked: {silent}"
     for listing_id in data["public"]:
         assert any(url.endswith(f"/public/listings/{listing_id}") for _, url in answered)
+    for suffix in ("", "/listings"):  # an Agency page and its list (Story 3.8)
+        assert any(
+            url.endswith(f"/public/agencies/{data['public_agency']}{suffix}") for _, url in answered
+        )
     assert not leaks, "private values in responses:\n" + "\n".join(leaks)
 
     assert any(r.name == REQUEST_LOGGER for r in records), "the request log was not captured"
