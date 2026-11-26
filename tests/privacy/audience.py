@@ -24,6 +24,8 @@ SIGNED_IN = {
     "/api/v1/listings/<str:listing_id>/publish": OWNER,
     "/api/v1/listings/<str:listing_id>/republish": OWNER,
     "/api/v1/listings/<str:listing_id>/status": OWNER,
+    # the caller's own favourites show other accounts' Listings (the public card)
+    "/api/v1/me/favourites": OTHER_ACCOUNT,
     "/api/v1/notifications": OWNER,
     "/api/v1/notifications/<str:notification_id>/read": OWNER,
     "/api/v1/notifications/read-all": OWNER,
@@ -37,10 +39,10 @@ def audience(route) -> str:
     if route.is_explicit and route.permissions == ("admin",):
         return ADMIN
     if route.is_explicit and route.permissions == ("signed_in",):
+        if route.path in SIGNED_IN:  # first: it can narrow a `/me` route to OTHER_ACCOUNT
+            return SIGNED_IN[route.path]
         if route.path == ME or route.path.startswith(ME + "/"):
             return OWNER
-        if route.path in SIGNED_IN:
-            return SIGNED_IN[route.path]
     raise AssertionError(
         f"cannot tell who sees {route.path} {route.permissions}: "
         "add it to SIGNED_IN in tests/privacy/audience.py"

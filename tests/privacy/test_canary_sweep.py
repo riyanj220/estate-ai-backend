@@ -25,7 +25,7 @@ from apps.identity.models import Account, AgencyProfile, IndividualProfile
 from apps.kernel.actor import Actor
 from apps.kernel.request_logging import REQUEST_LOGGER
 from apps.listings import sample_data
-from apps.listings.models import ListingImage, ListingPrivateAddress, PropertyListing
+from apps.listings.models import ListingImage, ListingPrivateAddress, PropertyListing, SavedListing
 from tests.listings.support import (
     PASSWORD,
     make_account,
@@ -78,6 +78,10 @@ class Canaries:
             + [c for c in self.words if c in letters]
             + [c for c in self.exact if c in text]
         )
+
+
+# saving or removing a favourite takes no body, so a viewer's own call may succeed
+FAVOURITE = "/api/v1/me/favourites/<str:listing_id>"
 
 
 @pytest.fixture(autouse=True)
@@ -203,6 +207,11 @@ def viewers(png):
                 city_id=city_id,
             )
         services.set_profile_image(user(account), png, kind=kind)
+        # favourites of public and non-public Listings, so the list has something to leak
+        SavedListing.objects.bulk_create(
+            SavedListing(account_id=account.id, listing_id=listing_id)
+            for listing_id in PropertyListing.objects.values_list("id", flat=True)
+        )
         yield kind, sign_in(email)
 
 
@@ -265,7 +274,7 @@ def test_no_canary_in_any_response_or_log():
                             response = client.generic(method, url, "{}", "application/json")
                             where = f"{who}: {method} {url} -> {response.status_code}"
                             assert response.status_code < 500, where
-                            if unsafe:
+                            if unsafe and route.path != FAVOURITE:
                                 assert response.status_code >= 400, f"not refused: {where}"
                             elif response.status_code == 200:
                                 answered.add((route.path, url))
