@@ -44,6 +44,15 @@ def test_there_is_at_least_one_admin_route():
     assert [r for r in route_table("config.urls") if r.path.startswith(ADMIN_PREFIX)]
 
 
+def test_the_quota_routes_are_under_the_admin_guard():
+    paths = {r.path for r in route_table("config.urls") if r.path.startswith(ADMIN_PREFIX)}
+    assert {
+        "/api/v1/admin/quota-policy",
+        "/api/v1/admin/quota-policy/<str:account_type>",
+        "/api/v1/admin/quota-usage",
+    } <= paths
+
+
 def test_every_admin_route_requires_exactly_the_administrator_capability():
     rows = [r for r in route_table("config.urls") if r.path.startswith(ADMIN_PREFIX)]
     for row in rows:
