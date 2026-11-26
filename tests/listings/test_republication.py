@@ -57,7 +57,6 @@ IDENTITY = (
     "locality",
     "area_value",
     "area_unit",
-    "marla_basis",
 )  # written out from the spec, not read from the registry
 
 
@@ -243,7 +242,6 @@ def test_a_baseline_whose_fingerprint_differs_in_any_one_identity_field_is_count
         "locality": "44444444-4444-4444-8444-444444444444",
         "area_value": "11",
         "area_unit": "kanal",
-        "marla_basis": "250",
     }[name]
     changed = SimpleNamespace(fields={**view.fields, name: other})
     PublicationEvent.objects.filter(listing_id=view.id).update(
@@ -253,7 +251,7 @@ def test_a_baseline_whose_fingerprint_differs_in_any_one_identity_field_is_count
     assert used(account) == 2
 
 
-@pytest.mark.parametrize("name", ["city", "area_value", "area_unit", "marla_basis"])
+@pytest.mark.parametrize("name", ["city", "area_value", "area_unit"])
 def test_really_editing_an_identity_field_while_archived_is_counted(name):
     account, view = archived()
     done = edit(account, view, identity_changes()[name])
@@ -439,7 +437,7 @@ def test_a_limit_of_zero_still_allows_a_free_republication():
     ListingQuotaPolicy.objects.filter(account_type=account.type).update(monthly_limit=0)
     assert republish(account, view).kind == "republish_free"
     view = rearchive(account, view)
-    view = edit(account, view, identity_changes()["marla_basis"])
+    view = edit(account, view, identity_changes()["area_value"])
     assert refused(account, view, publication.QuotaExhausted).code == "quota_exhausted"
 
 
@@ -1243,36 +1241,44 @@ def test_the_migration_through_the_executor_recomputes_unchanged_nulls_drifted_a
         created_at=NOW + timedelta(hours=2),
     )  # fmt: skip
     conn = connections["default"]
+
+    def v9(view):  # what migration 0015 writes (version 9 identity, frozen)
+        return module.fingerprint(dict(view.fields))
+
     try:
         MigrationExecutor(conn).migrate([("listings", "0014_lifecycle_statuses")])
         for view in (unchanged, mixed):
             set_stored(view, old_set(module, view.fields))  # version 8 evidence, data unchanged
         set_stored(drifted, old_set(module, {**drifted.fields, "category": "plot"}))  # drifted
-        set_stored(already, publication.identity_fingerprint(already))  # already the new value
+        set_stored(already, v9(already))  # already the new value
         set_stored(gone, old_set(module, gone.fields))
         PropertyListing.objects.filter(id=gone.id).delete()  # no data left to compare
         before = ledger_snapshot(account)
         assert stored(unchanged) == [old_set(module, unchanged.fields)]
         MigrationExecutor(conn).migrate([("listings", "0015_identity_fingerprint_v9")])
-        live = publication.identity_fingerprint
-        assert stored(unchanged) == [live(unchanged)]
-        assert stored(mixed) == [live(mixed)] * 3  # initial, seed and free alike
+        assert stored(unchanged) == [v9(unchanged)]
+        assert stored(mixed) == [v9(mixed)] * 3  # initial, seed and free alike
         assert stored(drifted) == [None]
-        assert stored(already) == [live(already)]
+        assert stored(already) == [v9(already)]
         assert stored(gone) == [old_set(module, gone.fields)]  # a deleted Listing is left alone
         assert ledger_snapshot(account) == before  # only the fingerprint column changed
         module.recompute(django_apps, None)  # idempotent: a second run changes nothing
-        assert stored(drifted) == [None] and stored(unchanged) == [live(unchanged)]
+        assert stored(drifted) == [None] and stored(unchanged) == [v9(unchanged)]
         assert ledger_snapshot(account) == before
         MigrationExecutor(conn).migrate([("listings", "0014_lifecycle_statuses")])  # reverse: no-op
-        assert stored(unchanged) == [live(unchanged)] and stored(drifted) == [None]
+        assert stored(unchanged) == [v9(unchanged)] and stored(drifted) == [None]
     finally:
         MigrationExecutor(conn).migrate(MigrationExecutor(conn).loader.graph.leaf_nodes())
+    # forward again through 0016: the version 9 values become the live (version 10) ones
+    assert stored(unchanged) == [publication.identity_fingerprint(unchanged)]
     assert first.id in {e.id for e in events_of(mixed)}
     assert republish(account, get(account, unchanged), now=NOW).kind == "republish_free"
     # a NULL baseline can never match: the drifted Listing's next republication is counted
     assert republish(account, get(account, drifted), now=NOW).kind == "republish_counted"
     assert gone_account is not None
+
+
+V10 = "apps.listings.migrations.0016_identity_fingerprint_v10"
 
 
 def growing_registry(monkeypatch):
@@ -1289,6 +1295,7 @@ def grown_recompute():
     from apps.listings.identity_migration import load_listing_values, recompute_fingerprints
 
     module = importlib.import_module(MIGRATION)
+    current = importlib.import_module(V10).IDENTITY
 
     def canonical(name, value):
         if isinstance(value, bool) or isinstance(value, int):
@@ -1306,7 +1313,7 @@ def grown_recompute():
         return values
 
     return lambda: recompute_fingerprints(
-        django_apps, module.IDENTITY, (*module.IDENTITY, "bedrooms"), canonical, load
+        django_apps, current, (*current, "bedrooms"), canonical, load
     )
 
 

@@ -496,7 +496,7 @@ def identity_changes():
     }
 
 
-@pytest.mark.parametrize("name", ["city", "area_value", "area_unit", "marla_basis"])
+@pytest.mark.parametrize("name", ["city", "area_value", "area_unit"])
 def test_identity_fields_are_not_editable_while_published(name, bus):
     account, view = published()
     fields = identity_changes()[name]
@@ -573,7 +573,6 @@ def test_the_identity_set_comes_from_the_registry_flag_and_covers_the_spec_list(
         "locality",
         "area_value",
         "area_unit",
-        "marla_basis",
     }
 
 

@@ -773,7 +773,7 @@ def test_a_failing_subscriber_does_not_undo_the_publication(monkeypatch):
 # --- the fingerprint ------------------------------------------------------------------------
 
 
-GOLDEN = "81c4240f92b2e7b507e5570d92eb2cc8dd59f455f6c0f029c26009bab1bc38dd"
+GOLDEN = "436bd24fae395fdd147d95e5565322cc3d4de57ee57f213f2662c69eeca40aed"
 
 
 def fp(**fields):
@@ -783,7 +783,7 @@ def fp(**fields):
 def test_the_fingerprint_matches_a_golden_vector():
     expected = hashlib.sha256(
         b'{"area_unit":null,"area_value":null,"category":"house","city":null,"locality":null,'
-        b'"marla_basis":null,"purpose":"sale","subtype":"house"}'
+        b'"purpose":"sale","subtype":"house"}'
     ).hexdigest()
     assert fp(purpose="sale", category="house", subtype="house") == expected == GOLDEN
 
@@ -815,12 +815,13 @@ IDENTITY_BASE = {
         ("locality", "44444444-4444-4444-8444-444444444444"),
         ("area_value", "11.0000"),
         ("area_unit", "kanal"),
-        ("marla_basis", "250"),
     ],
 )
 def test_changing_each_new_identity_field_changes_the_fingerprint(name, other):
     assert fp(**IDENTITY_BASE) != fp(**{**IDENTITY_BASE, name: other})
     assert fp(**IDENTITY_BASE) == fp(**IDENTITY_BASE)  # and the base is stable
+    # Story 2.19: the marla basis is not part of the identity
+    assert fp(**IDENTITY_BASE) == fp(**{**IDENTITY_BASE, "marla_basis": "250"})
 
 
 def test_the_fingerprint_is_stable_and_covers_the_identity_fields_only():
@@ -839,7 +840,6 @@ def test_the_fingerprint_is_stable_and_covers_the_identity_fields_only():
         "locality",
         "area_value",
         "area_unit",
-        "marla_basis",
     }
 
 

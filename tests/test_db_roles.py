@@ -62,7 +62,10 @@ def test_append_only_exclusion(runtime_conn, django_db_blocker):
             )
         finally:
             grant_runtime_privileges(
-                connection, settings.RUNTIME_DB_USER, settings.RUNTIME_APPEND_ONLY_TABLES
+                connection,
+                settings.RUNTIME_DB_USER,
+                settings.RUNTIME_APPEND_ONLY_TABLES,
+                settings.RUNTIME_COLUMN_UPDATES,
             )
             runtime_conn.execute("DELETE FROM django_content_type WHERE app_label = 'ao'")
 
@@ -88,7 +91,10 @@ def test_post_migrate_hook_honours_append_only_setting(runtime_conn, django_db_b
                 runtime_conn.execute("DELETE FROM django_content_type WHERE app_label = 'hook'")
         finally:
             grant_runtime_privileges(
-                connection, settings.RUNTIME_DB_USER, settings.RUNTIME_APPEND_ONLY_TABLES
+                connection,
+                settings.RUNTIME_DB_USER,
+                settings.RUNTIME_APPEND_ONLY_TABLES,
+                settings.RUNTIME_COLUMN_UPDATES,
             )
             runtime_conn.execute("DELETE FROM django_content_type WHERE app_label = 'hook'")
 
@@ -220,8 +226,37 @@ def _publication_event_probe(runtime_conn):
     assert runtime_conn.execute(
         "SELECT count(*) FROM listings_publicationevent WHERE kind = 'seed'"
     ).fetchone() == (1,)
+    # Story 2.19: UPDATE on exactly these two columns, nothing else
+    runtime_conn.execute(
+        "UPDATE listings_publicationevent SET correction_used = true, "
+        "identity_fingerprint = 'probe' WHERE kind = 'seed'"
+    )
+    assert runtime_conn.execute(
+        "SELECT correction_used, identity_fingerprint FROM listings_publicationevent "
+        "WHERE kind = 'seed'"
+    ).fetchone() == (True, "probe")
+    columns = [
+        row[0]
+        for row in runtime_conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'listings_publicationevent' ORDER BY column_name"
+        ).fetchall()
+    ]
+    updatable = [
+        column
+        for column in columns
+        if runtime_conn.execute(
+            "SELECT has_column_privilege('listings_publicationevent', %s, 'UPDATE')", [column]
+        ).fetchone()[0]
+    ]
+    assert updatable == ["correction_used", "identity_fingerprint"]
     for sql in (
-        "UPDATE listings_publicationevent SET counted = false",
+        *(
+            f"UPDATE listings_publicationevent SET {column} = {column}"  # noqa: S608
+            for column in columns
+            if column not in updatable
+        ),
+        "UPDATE listings_publicationevent SET correction_used = true, counted = false",
         "DELETE FROM listings_publicationevent",
         "TRUNCATE listings_publicationevent",
     ):

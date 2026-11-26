@@ -6,6 +6,7 @@ import contextlib
 import hashlib
 import importlib
 import threading
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -105,16 +106,23 @@ def test_the_migration_recomputes_an_old_set_fingerprint_without_touching_anythi
     module.recompute(django_apps, None)
     event.refresh_from_db()
     fresh = selectors.get_owned_listing(user(account), view.id)
-    assert event.identity_fingerprint == publication.identity_fingerprint(fresh) != OLD_SET
+    version_9 = module.fingerprint(dict(fresh.fields))
+    assert event.identity_fingerprint == version_9 != OLD_SET
     assert (event.id, event.kind, event.counted, event.created_at, event.idempotency_key) == keep
     assert PublicationEvent.objects.get(listing_id=gone.id).identity_fingerprint == OLD_SET
     assert ledger(account) == before  # nothing consumed, nothing written
     module.recompute(django_apps, None)  # idempotent
     event.refresh_from_db()
-    assert event.identity_fingerprint == publication.identity_fingerprint(fresh)
+    assert event.identity_fingerprint == version_9
 
 
-def test_the_frozen_canonicalisation_matches_the_live_one_for_every_identity_field_shape():
+def test_the_frozen_canonicalisation_matches_the_live_one_for_every_identity_field_shape(
+    monkeypatch,
+):
+    version_9 = [  # the identity set 0015 was written for: the marla basis included
+        replace(f, quota_identity=True) if f.id == "marla_basis" else f for f in registry.fields()
+    ]
+    monkeypatch.setattr(registry, "fields", lambda: version_9)
     module = importlib.import_module(MIGRATION)
     place = places()
     cases = [
@@ -152,8 +160,9 @@ def test_the_migration_runs_through_the_executor_and_back_as_a_no_op():
         assert PublicationEvent.objects.get().identity_fingerprint == OLD_SET  # reverse: no-op
         MigrationExecutor(conn).migrate([("listings", "0015_identity_fingerprint_v9")])
         event = PublicationEvent.objects.get()
-        assert event.identity_fingerprint == publication.identity_fingerprint(
-            selectors.get_owned_listing(user(account), view.id)
+        module = importlib.import_module(MIGRATION)
+        assert event.identity_fingerprint == module.fingerprint(
+            dict(selectors.get_owned_listing(user(account), view.id).fields)
         )
     finally:
         MigrationExecutor(conn).migrate(MigrationExecutor(conn).loader.graph.leaf_nodes())
