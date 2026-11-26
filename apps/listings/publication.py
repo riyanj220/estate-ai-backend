@@ -340,9 +340,12 @@ def _run(
         row.updated_at = now
         row.delete_after = None  # no longer a Draft that can expire
         row.expiry_notice_sent_at = None
+        if row.first_published_at is None:  # once: republishing never moves it
+            row.first_published_at = now
         row.save(
             update_fields=[
                 "status",
+                "first_published_at",
                 "revision",
                 "updated_at",
                 "delete_after",

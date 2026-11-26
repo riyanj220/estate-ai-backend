@@ -28,7 +28,6 @@ from django.db.models import (
     IntegerField,
     OuterRef,
     Q,
-    Subquery,
     Value,
     When,
 )
@@ -72,7 +71,6 @@ from apps.listings.models import (
     ListingResidential,
     ListingTerms,
     PropertyListing,
-    PublicationEvent,
 )
 from apps.listings.quota import KARACHI
 
@@ -659,18 +657,12 @@ class PublicPage:
 def _published():
     """`public_listings()` with `published_at`: the time of the FIRST publication, so archiving
     and republishing never moves a Listing back to the top and the keyset position never changes.
-    A row with no publication event (only fixtures write one) counts from its creation."""
-    first = (
-        PublicationEvent.objects.filter(
-            account_id=OuterRef("owner_account_id"), listing_id=OuterRef("id")
-        )
-        .order_by("created_at")
-        .values("created_at")[:1]
-    )
+    A row without one (only fixtures write such a row) counts from its creation. The expression
+    is the one of `listings_public_newest_idx`."""
     return (
         public_listings()
         .select_related(*PUBLIC_RELATED)
-        .annotate(published_at=Coalesce(Subquery(first), F("created_at")))
+        .annotate(published_at=Coalesce("first_published_at", "created_at"))
     )
 
 
@@ -752,7 +744,9 @@ def _after(order, position) -> Q:
     for (name, descending), value in zip(order, position, strict=True):
         condition |= Q(**tied, **{f"{name}__{'lt' if descending else 'gt'}": value})
         tied[name] = value
-    return condition
+    # implied by the above, but as one range on the first key an index scan can start there
+    (first, descending), start = order[0], position[0]
+    return Q(**{f"{first}__{'lte' if descending else 'gte'}": start}) & condition
 
 
 def _search_tag(spec: filters.ListingFilter, sort: str) -> str:

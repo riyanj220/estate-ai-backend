@@ -7,7 +7,7 @@ from django.contrib.postgres.constraints import ExclusionConstraint
 from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
 from django.db import models
 from django.db.models import Func
-from django.db.models.functions import Length
+from django.db.models.functions import Coalesce, Length
 from django.db.models.lookups import GreaterThanOrEqual, LessThanOrEqual
 from django.utils import timezone
 
@@ -232,6 +232,9 @@ class PropertyListing(models.Model):
     provenance = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
+    # The FIRST publication, set once by `listings.publication` (the events keep the history):
+    # public search orders by it, which an index can serve (`docs/performance.md`).
+    first_published_at = models.DateTimeField(null=True)
     # Draft retention (Story 2.13), written only by the owning services and never with `revision`
     # or `updated_at`: when the owner last opened or previewed the Draft (at most hourly), and
     # the notice that a Draft with no activity will be deleted (both set together, or neither).
@@ -263,6 +266,14 @@ class PropertyListing(models.Model):
             # the public predicate (`listings.policy.public_q`): published, not restricted, by owner
             models.Index(
                 fields=["status", "restricted", "owner_account_id"], name="listings_public_idx"
+            ),
+            # the newest-first public list (`selectors._published`, the same expression): only
+            # published, unrestricted rows, so a page reads little more than the rows it returns
+            models.Index(
+                Coalesce("first_published_at", "created_at").desc(),
+                models.F("id").desc(),
+                condition=models.Q(status=ListingStatus.PUBLISHED.value, restricted=False),
+                name="listings_public_newest_idx",
             ),
         ]
         constraints = [
