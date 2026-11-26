@@ -939,3 +939,25 @@ settings define it, i.e. local development, otherwise `default`, which is the sc
 Decision: seed events ARE removed on `--reset` (rather than left as harmless history) so a reset leaves no trace of the
 accounts that went away and a reseed never meets an old key; a seed idempotency key is `seed-<index>` per owner and a
 reseed creates new accounts, so keys cannot clash either way. See `docs/sample-data.md`.
+
+## Favourites (Story 3.7)
+
+`SavedListing` (account id, Listing, time; unique per account and Listing; no copy of the Listing). Routes, all
+`no-store`, unsafe ones with `X-CSRFToken`:
+
+| Route | Does |
+| --- | --- |
+| `GET /api/v1/me/favourites` | own favourites, latest saved first, 20 per page; `listing` is the public card or `null` |
+| `GET /api/v1/me/favourites/ids` | every saved Listing id, for the Save buttons |
+| `PUT /api/v1/me/favourites/{listing_id}` | save; idempotent, `204` |
+| `DELETE /api/v1/me/favourites/{listing_id}` | remove; `204`, or `not_found` if not saved |
+
+- Individual and Agency accounts only. Active and Email-unverified save, view and remove; Suspended view and remove
+  (FR-74: view stays, nothing new is added); Deactivated and administrators `forbidden`; Visitors `unauthenticated`.
+- Only a publicly visible Listing (`public_listings()`) can be newly saved, else `not_found`. Own Listings included.
+- A saved Listing that stops being public stays in the list as `listing: null` (no longer available); it comes back
+  if it becomes public again. Removing never touches the Listing.
+- Cap: 500 per account (`favourites` rate-limit policy), `429 throttled` without `Retry-After`.
+- Deleting a Listing (a Draft, or sample data) deletes its favourites (foreign key cascade). A Published Listing is
+  never deleted, so archived, sold and removed ones keep theirs. Removing favourites on account deactivation belongs
+  to the deactivation story.

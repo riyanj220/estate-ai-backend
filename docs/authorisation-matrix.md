@@ -55,6 +55,9 @@ whose permission is not explicit.
 | `/api/v1/me/agency-profile/image` | DELETE, PUT | signed_in | `apps.presentation.api.profile_images.AgencyProfileImageView` |
 | `/api/v1/me/agency-profile/image/file` | GET, HEAD | public | `apps.presentation.api.profile_images.AgencyProfileImageFileView` |
 | `/api/v1/me/email-change` | POST | signed_in | `apps.presentation.api.profile.EmailChangeRequestView` |
+| `/api/v1/me/favourites` | GET | signed_in | `apps.presentation.api.favourites.FavouritesView` |
+| `/api/v1/me/favourites/<str:listing_id>` | DELETE, PUT | signed_in | `apps.presentation.api.favourites.FavouriteDetailView` |
+| `/api/v1/me/favourites/ids` | GET | signed_in | `apps.presentation.api.favourites.FavouriteIdsView` |
 | `/api/v1/me/listings` | GET | signed_in | `apps.presentation.api.listings.MyListingsView` |
 | `/api/v1/me/listings/counts` | GET | signed_in | `apps.presentation.api.listings.MyListingCountsView` |
 | `/api/v1/me/password` | POST | signed_in | `apps.presentation.api.passwords.ChangePasswordView` |
@@ -84,6 +87,10 @@ whose permission is not explicit.
 Routes shown as `public` whose owner check lives in a selector: the Listing media endpoint (`image_for_serving`, which asks `listings.policy.can_view`: an image of a public Listing goes to anyone, any other only to its owner, see `docs/visibility.md`), the owner
 file routes of Story 2.11 (`own_image_for_serving`: a Visitor, another account, the other type and an administrator get 404)
 and the public Agency logo (`logo_for_serving`: served only while the Agency account is Active, otherwise 404).
+
+Favourites (Story 3.7, `/api/v1/me/favourites*`) are the caller's own by construction: a Visitor gets 401, an administrator
+or Deactivated account 403, a Suspended account may view and remove but not save (403), and another account sees an empty
+list and gets `not_found` when removing a Listing it has not saved (`docs/listings.md`).
 
 ## Extending the matrix in later phases
 
