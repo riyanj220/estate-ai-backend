@@ -12,7 +12,7 @@ from django.test.utils import CaptureQueriesContext
 from apps.catalog import selectors as catalog
 from apps.identity.models import Account, IndividualProfile
 from apps.kernel.models import MediaAsset
-from apps.listings.models import ListingImage, PropertyListing, PublicationEvent
+from apps.listings.models import ListingImage, PropertyListing
 from tests.listings.support import (
     STREET,
     make_account,
@@ -20,6 +20,7 @@ from tests.listings.support import (
     ready_draft,
     seed_cap,
     set_account_state,
+    set_first_published,
     set_listing_visibility,
 )
 
@@ -47,14 +48,8 @@ def published(owner, minutes=0, **extra):
     """A public Listing first published `minutes` after START."""
     view = ready_draft(owner, extra=extra, images=2)
     set_listing_visibility(view.id)
-    event(owner, view.id, START + timedelta(minutes=minutes))
+    set_first_published(view.id, START + timedelta(minutes=minutes))
     return str(view.id)
-
-
-def event(owner, listing_id, at, kind="initial"):
-    PublicationEvent.objects.create(
-        account_id=owner.id, listing_id=listing_id, kind=kind, counted=False, created_at=at
-    )
 
 
 def browse(query=""):
@@ -168,9 +163,9 @@ def test_restricted_unknown_and_malformed_ids_are_one_404(owner):
     assert all(answer == answers[0] for answer in answers)
 
 
-def test_newest_first_publication_and_republishing_does_not_bump(owner):
+def test_newest_first_publication(owner):
+    # that republishing does not bump a Listing: tests/listings/test_republication.py
     old, new = published(owner, 1), published(owner, 2)
-    event(owner, old, START + timedelta(days=3), kind="republish_free")
     assert ids(browse()) == [new, old]
     assert ids(browse("?sort=newest")) == [new, old]
 

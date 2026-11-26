@@ -68,6 +68,9 @@ jobs:
         run: docker/postgres/create_roles.sh
       # One database per xdist worker (test_estate_ai_gw0, ...), created by the migrator role.
       - run: uv run pytest -n auto
+      # NFR-1 timing budgets (docs/performance.md): serial, about a minute, deselected above.
+      - name: Performance budgets
+        run: uv run pytest -m perf -s --show-capture=no -p no:logging
 
   secret-scan:
     runs-on: ubuntu-latest

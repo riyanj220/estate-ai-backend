@@ -166,6 +166,8 @@ def test_the_same_month_with_the_identity_unchanged_is_free_and_writes_everythin
     assert done.listing.fields == get(account, view).fields
     row = PropertyListing.objects.get(id=view.id)
     assert (row.status, row.revision, row.updated_at) == ("published", view.revision + 1, LATER)
+    # set by the first publication and never moved: republishing does not bump it in the list
+    assert row.first_published_at == events_of(view)[0].created_at != LATER
     event = events_of(view)[-1]
     assert (event.kind, event.counted, event.idempotency_key, event.created_at) == (
         "republish_free",
@@ -1246,13 +1248,14 @@ def test_the_migration_through_the_executor_recomputes_unchanged_nulls_drifted_a
         return module.fingerprint(dict(view.fields))
 
     try:
-        MigrationExecutor(conn).migrate([("listings", "0014_lifecycle_statuses")])
         for view in (unchanged, mixed):
             set_stored(view, old_set(module, view.fields))  # version 8 evidence, data unchanged
         set_stored(drifted, old_set(module, {**drifted.fields, "category": "plot"}))  # drifted
         set_stored(already, v9(already))  # already the new value
         set_stored(gone, old_set(module, gone.fields))
+        # before the rollback: the current models do not fit an older schema
         PropertyListing.objects.filter(id=gone.id).delete()  # no data left to compare
+        MigrationExecutor(conn).migrate([("listings", "0014_lifecycle_statuses")])
         before = ledger_snapshot(account)
         assert stored(unchanged) == [old_set(module, unchanged.fields)]
         MigrationExecutor(conn).migrate([("listings", "0015_identity_fingerprint_v9")])

@@ -34,5 +34,5 @@ common=(-q -n "$workers")
 # Guards first (marker), then the affected directories without repeating the guards.
 uv run pytest "${common[@]}" -m guard "$@"
 if [ "${#selected[@]}" -gt 0 ]; then
-  uv run pytest "${common[@]}" -m "not guard" "${selected[@]}" "$@"
+  uv run pytest "${common[@]}" -m "not guard and not perf" "${selected[@]}" "$@"
 fi

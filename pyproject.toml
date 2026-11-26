@@ -29,9 +29,10 @@ package = false
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra -m 'not perf'"
 markers = [
     "guard: architecture, authorisation, privacy and OpenAPI contract guards (uv run pytest -m guard)",
+    "perf: timing budgets on the large fixture; deselected by default (uv run pytest -m perf -s)",
 ]
 
 [tool.ruff]

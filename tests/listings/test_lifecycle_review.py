@@ -155,15 +155,15 @@ def test_the_migration_runs_through_the_executor_and_back_as_a_no_op():
     account, view = published()
     PublicationEvent.objects.update(identity_fingerprint=OLD_SET)
     conn = connections["default"]
+    # read before the rollback: the current models do not fit an older schema
+    fields = dict(selectors.get_owned_listing(user(account), view.id).fields)
     try:
         MigrationExecutor(conn).migrate([("listings", "0014_lifecycle_statuses")])
         assert PublicationEvent.objects.get().identity_fingerprint == OLD_SET  # reverse: no-op
         MigrationExecutor(conn).migrate([("listings", "0015_identity_fingerprint_v9")])
         event = PublicationEvent.objects.get()
         module = importlib.import_module(MIGRATION)
-        assert event.identity_fingerprint == module.fingerprint(
-            dict(selectors.get_owned_listing(user(account), view.id).fields)
-        )
+        assert event.identity_fingerprint == module.fingerprint(fields)
     finally:
         MigrationExecutor(conn).migrate(MigrationExecutor(conn).loader.graph.leaf_nodes())
 

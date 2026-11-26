@@ -800,13 +800,14 @@ def test_the_version_10_migration_recomputes_unchanged_nulls_drifted_and_keeps_t
 
     conn = connections["default"]
     try:
-        MigrationExecutor(conn).migrate([("listings", "0015_identity_fingerprint_v9")])
         put(unchanged, old(unchanged.fields))
         put(drifted, old({**drifted.fields, "marla_basis": "250"}))  # no proof any more
         put(already, publication.identity_fingerprint(already))
         put(gone, old(gone.fields))
         put(unset, None)
+        # before the rollback: the current models do not fit an older schema
         PropertyListing.objects.filter(id=gone.id).delete()
+        MigrationExecutor(conn).migrate([("listings", "0015_identity_fingerprint_v9")])
         before = ledger()
         MigrationExecutor(conn).migrate([("listings", "0016_identity_fingerprint_v10")])
         assert stored(unchanged) == [publication.identity_fingerprint(unchanged)]

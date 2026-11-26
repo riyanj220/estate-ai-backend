@@ -14,13 +14,13 @@ from apps.catalog import selectors as catalog
 from apps.identity.models import Account
 from apps.kernel.actor import Actor
 from apps.listings import selectors
-from apps.listings.models import PublicationEvent
 from tests.listings.support import (
     make_account,
     random_email,
     ready_draft,
     seed_cap,
     set_account_state,
+    set_first_published,
     set_listing_visibility,
 )
 
@@ -42,13 +42,7 @@ def owner():
 def published(owner, minutes=0, **extra):
     view = ready_draft(owner, extra=extra)
     set_listing_visibility(view.id)
-    PublicationEvent.objects.create(
-        account_id=owner.id,
-        listing_id=view.id,
-        kind="initial",
-        counted=False,
-        created_at=START + timedelta(minutes=minutes),
-    )
+    set_first_published(view.id, START + timedelta(minutes=minutes))
     return str(view.id)
 
 

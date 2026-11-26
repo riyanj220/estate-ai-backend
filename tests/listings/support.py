@@ -198,6 +198,13 @@ def set_listing_visibility(listing_id, status="published", restricted=False):
     PropertyListing.objects.filter(id=listing_id).update(status=status, restricted=restricted)
 
 
+def set_first_published(listing_id, at):
+    """The first publication time, as `listings.publication` would have stored it."""
+    from apps.listings.models import PropertyListing
+
+    PropertyListing.objects.filter(id=listing_id).update(first_published_at=at)
+
+
 # Story 2.15: a Draft that can be published, built through the real write path.
 TITLE = "Family house near the park"
 COMPLETE = {
