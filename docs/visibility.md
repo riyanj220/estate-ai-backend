@@ -94,7 +94,7 @@ the names of the city and locality, and the advertiser. A list uses a fixed numb
 (`docs/performance.md`).
 
 The advertiser (Story 3.6, `identity.selectors.public_advertisers`) is
-`{type, agency_name, logo_url, verified}`: `type` is `individual` or `agency`; the name and the logo route
+`{type, agency_id, agency_name, logo_url, verified}`: `type` is `individual` or `agency`; the public profile id (Story 3.8), the name and the logo route
 (`/api/v1/agencies/{agency_id}/logo`, null without a logo) are for Agencies only; `verified` stays false until Epic 8
 grants Verification. Nothing else about the owner is public: no account id, personal name, phone, email or address.
 It belongs to discovery, not to `PublicListingView`, so the owner's preview is unchanged.
@@ -110,6 +110,19 @@ A card is `id`, `purpose`, `category`, `subtype`, `title`, `fields` (price, area
 same for every caller. A `200` is `Cache-Control: public, max-age=60` with no cookie; every error is `no-store`. A
 Listing that is not public, an unknown and a malformed id are the same `404`. A bad `limit` (1 to 50), `cursor`,
 `sort` or filter is `400`.
+
+### Agency pages (Story 3.8)
+
+| Route | Answer |
+| --- | --- |
+| `GET /api/v1/public/agencies/{agency_id}` | `{name, logo_url, description, verified}` |
+| `GET /api/v1/public/agencies/{agency_id}/listings?<filters>&sort=&limit=&cursor=` | `{results: [card], next}` |
+
+`agency_id` is the public profile id (`advertiser.agency_id`), never the account id. Only an Active Agency has these
+(and its logo): Suspended, Deactivated, Email-unverified, unknown, malformed and non-agency ids are the same `404`,
+before any parameter is looked at. The list is `search_public` with an owner restriction, so filters, sorts, cursors,
+errors and caching are those of the marketplace list. The business phone, office address, email and city are never
+returned.
 
 `newest` orders by the FIRST publication event, then id, so archiving and republishing cannot move a Listing back to
 the top. The routes have no application rate limit.
