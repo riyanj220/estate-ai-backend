@@ -17,6 +17,7 @@ class IdentityConfig(AppConfig):
         )
         from apps.identity.models import AccountType
         from apps.kernel import audit, notifications, retention
+        from apps.kernel.privacy.reads import register_private_target
 
         # Metadata holds enumerated values only: never email, phone, hash or the suspension reason.
         audit.register_action("account.created", {"account_type": [t.value for t in AccountType]})
@@ -55,6 +56,11 @@ class IdentityConfig(AppConfig):
         # In-app counterparts of the old-address mail notices; empty payloads (no private data).
         for kind in ("account.password_changed", "account.email_changed"):
             notifications.register_kind(kind, {})
+        # Never the reason: the account reads it from its own session summary.
+        for kind in ("account.suspended", "account.reactivated"):
+            notifications.register_kind(kind, {})
+
+        register_private_target("account", "An account's email, name and state")
 
         subscribers.register()
         retention.register("identity.email_verification_tokens", verification.purge_expired)

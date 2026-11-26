@@ -25,7 +25,9 @@ from apps.identity.models import (
 from apps.identity.policy import capabilities_for
 from apps.identity.state import AccountState
 from apps.kernel import media, storage
+from apps.kernel.actor import Actor, require_admin
 from apps.kernel.errors import DomainError
+from apps.kernel.privacy.reads import record_private_read
 
 ACCOUNT_TYPES = tuple(t.value for t in AccountType)
 ADMIN_ACCOUNT_TYPE = AccountType.ADMIN.value
@@ -71,6 +73,60 @@ def get_account(account_id) -> AccountView | None:
         type=account.account_type,
         state=account.state,
         suspension_reason=account.suspension_reason,
+    )
+
+
+@dataclass(frozen=True)
+class AdminAccountView:
+    """An account as an administrator reads it after giving a reason. `email` is private."""
+
+    id: uuid.UUID
+    email: str = field(repr=False)
+    account_type: str
+    display_name: str
+    state: AccountState
+    email_verified: bool
+    suspension_reason: str = field(repr=False)
+    suspended_at: datetime | None
+
+
+def account_id_for_admin_lookup(actor: Actor, email: str) -> uuid.UUID:
+    """The id of the Individual or Agency account holding this address (any case), and nothing
+    else: reading it is `admin_read_account`. Unknown and administrator addresses are the same
+    `not_found`."""
+    require_admin(actor)
+    key = (
+        Account.objects.annotate(lowered=Lower("email"))
+        .filter(
+            lowered=email.strip().lower(),
+            account_type__in=(AccountType.INDIVIDUAL, AccountType.AGENCY),
+        )
+        .values_list("id", flat=True)
+        .first()
+    )
+    if key is None:
+        raise DomainError("not_found")
+    return key
+
+
+def admin_read_account(actor: Actor, reason: str, account_id: uuid.UUID) -> AdminAccountView:
+    """A reasoned private read (`docs/audit.md`) of one Individual or Agency account."""
+    record_private_read(actor, reason, ("account", account_id))
+    account = Account.objects.filter(
+        id=account_id, account_type__in=(AccountType.INDIVIDUAL, AccountType.AGENCY)
+    ).first()
+    if account is None:
+        raise DomainError("not_found")
+    summary = summarise(account)
+    return AdminAccountView(
+        id=account.id,
+        email=account.email,
+        account_type=account.account_type,
+        display_name=summary.full_name or summary.agency_name,
+        state=account.state,
+        email_verified=account.email_verified_at is not None,
+        suspension_reason=account.suspension_reason,
+        suspended_at=account.suspended_at,
     )
 
 
@@ -200,6 +256,8 @@ class ActorSummary:
     full_name: str
     agency_name: str  # public-class; empty for non-agency accounts
     capabilities: tuple[str, ...]
+    # The account's own, only while it is Suspended; None otherwise.
+    suspension_reason: str | None = field(default=None, repr=False)
 
 
 def summarise(account: Account) -> ActorSummary:
@@ -216,6 +274,9 @@ def summarise(account: Account) -> ActorSummary:
         full_name=profile.full_name if profile else "",
         agency_name=agency.agency_name if agency else "",
         capabilities=tuple(c.value for c in capabilities_for(account.account_type, account.state)),
+        suspension_reason=(
+            account.suspension_reason if account.state is AccountState.SUSPENDED else None
+        ),
     )
 
 

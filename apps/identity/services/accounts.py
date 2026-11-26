@@ -1,4 +1,4 @@
-"""Account creation and the administrator state changes: suspend, reactivate, deactivate."""
+"""Account creation and the administrator deactivation."""
 
 from django.contrib.auth.hashers import make_password
 from django.db import IntegrityError, transaction
@@ -30,7 +30,6 @@ from apps.identity.validation import (
 from apps.kernel import audit
 from apps.kernel.actor import Actor, require_admin
 from apps.kernel.errors import DomainError
-from apps.kernel.privacy.patterns import LONG_DIGIT_RUN, reject_contact_details
 
 
 def _clean_email(email, *, allow_sample: bool = False) -> str:
@@ -40,22 +39,8 @@ def _clean_email(email, *, allow_sample: bool = False) -> str:
     return email
 
 
-def _clean_reason(reason) -> str:
-    if not isinstance(reason, str):
-        raise DomainError("validation_error")
-    reason = reason.strip()
-    if (
-        not 1 <= len(reason) <= audit.REASON_MAX
-        or not reason.isprintable()
-        or LONG_DIGIT_RUN.search(reason)
-        or reject_contact_details(reason) is not None
-    ):
-        raise DomainError("validation_error")
-    return reason
-
-
 def _require_manageable(actor: Actor, account: Account) -> None:
-    """Administrators never suspend, reactivate or deactivate themselves or other administrators."""
+    """Administrators never deactivate themselves or other administrators."""
     if account.account_type == AccountType.ADMIN or account.id == actor.account_id:
         raise DomainError("validation_error")
 
@@ -93,37 +78,6 @@ def create_account(actor: Actor, email: str, password: str, account_type: str) -
         account = _insert_account(actor, email, make_password(password), account_type)
         if account is None:
             raise DomainError("validation_error")
-        return _view(account.id)
-
-
-def suspend(actor: Actor, account_id, reason: str) -> AccountView:
-    """Suspend an account. The reason is kept on the row only, never in the audit record."""
-    require_admin(actor)
-    reason = _clean_reason(reason)
-    with transaction.atomic():
-        account = _locked(account_id)
-        _require_manageable(actor, account)
-        if account.suspended_at is not None:
-            raise DomainError("validation_error")
-        account.suspended_at = timezone.now()
-        account.suspension_reason = reason
-        account.save(update_fields=["suspended_at", "suspension_reason", "updated_at"])
-        audit.record(actor, "account.suspended", "account", account.id)
-        return _view(account.id)
-
-
-def reactivate(actor: Actor, account_id) -> AccountView:
-    """Clear the suspension only: back to Active if the email is verified, else Email-unverified."""
-    require_admin(actor)
-    with transaction.atomic():
-        account = _locked(account_id)  # a deactivated account is `not_found`: never reactivated
-        _require_manageable(actor, account)
-        if account.suspended_at is None:
-            raise DomainError("validation_error")
-        account.suspended_at = None
-        account.suspension_reason = ""
-        account.save(update_fields=["suspended_at", "suspension_reason", "updated_at"])
-        audit.record(actor, "account.reactivated", "account", account.id)
         return _view(account.id)
 
 

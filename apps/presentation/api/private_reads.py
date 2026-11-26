@@ -6,6 +6,7 @@ The view passes `reason` to its selector, whose `admin_read_*` function records 
 
 from rest_framework import serializers
 
+from apps.kernel.privacy.patterns import LONG_DIGIT_RUN, reject_contact_details
 from apps.kernel.privacy.reads import REASON_MAX, REASON_MIN
 
 
@@ -18,6 +19,14 @@ class _StrictReasonField(serializers.CharField):
 
 class ReasonedReadSerializer(serializers.Serializer):
     reason = _StrictReasonField(min_length=REASON_MIN, max_length=REASON_MAX, trim_whitespace=True)
+
+    def validate_reason(self, value):
+        """The recorder refuses these too; refuse here so the answer is a 400, not a fault."""
+        if not value.isprintable():
+            raise serializers.ValidationError("Invalid reason.", code="invalid")
+        if LONG_DIGIT_RUN.search(value) or reject_contact_details(value) is not None:
+            raise serializers.ValidationError("Contact details.", code="contains_contact_details")
+        return value
 
 
 class ReasonedReadMixin:

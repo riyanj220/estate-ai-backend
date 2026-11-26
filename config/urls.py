@@ -1,5 +1,10 @@
 from django.urls import path
 
+from apps.presentation.adminapi.accounts import (
+    AccountLookupView,
+    AccountReactivateView,
+    AccountSuspendView,
+)
 from apps.presentation.adminapi.me import AdminMeView
 from apps.presentation.adminapi.quota import (
     QuotaPolicyDetailView,
@@ -101,6 +106,17 @@ urlpatterns = [
         name="admin-quota-policy-type",
     ),
     path("api/v1/admin/quota-usage", QuotaUsageView.as_view(), name="admin-quota-usage"),
+    path("api/v1/admin/accounts/lookup", AccountLookupView.as_view(), name="admin-account-lookup"),
+    path(
+        "api/v1/admin/accounts/<str:account_id>/suspend",
+        AccountSuspendView.as_view(),
+        name="admin-account-suspend",
+    ),
+    path(
+        "api/v1/admin/accounts/<str:account_id>/reactivate",
+        AccountReactivateView.as_view(),
+        name="admin-account-reactivate",
+    ),
     path("api/v1/me", MeView.as_view(), name="me"),
     path("api/v1/me/password", ChangePasswordView.as_view(), name="me-password"),
     path("api/v1/me/profile", ProfileDetailView.as_view(), name="me-profile"),

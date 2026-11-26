@@ -24,7 +24,9 @@ class Account(models.Model):
     )
     email_verified_at = models.DateTimeField(null=True, blank=True)
     suspended_at = models.DateTimeField(null=True, blank=True)
-    suspension_reason = models.CharField(max_length=300, blank=True, default="")
+    suspension_reason = models.CharField(max_length=500, blank=True, default="")
+    # Why the last suspension was lifted: for administrators only, no response carries it.
+    reactivation_reason = models.CharField(max_length=500, blank=True, default="", db_default="")
     deactivated_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

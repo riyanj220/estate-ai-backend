@@ -14,7 +14,7 @@ from django.utils import timezone
 from apps.identity import notices, selectors
 from apps.identity.models import Account, AgencyProfile, EmailChangeToken, IndividualProfile
 from apps.identity.services._common import _view
-from apps.identity.services.accounts import create_account, deactivate, reactivate, suspend
+from apps.identity.services.accounts import create_account, deactivate
 from apps.identity.services.admin import (
     AdminRefused,
     disable_admin,
@@ -70,6 +70,11 @@ from apps.identity.services.sessions_auth import (
     sign_in,
     sign_out,
 )
+from apps.identity.services.suspension import (
+    SuspensionView,
+    reactivate_account,
+    suspend_account,
+)
 from apps.kernel import audit, ratelimit
 
 __all__ = [
@@ -83,6 +88,7 @@ __all__ = [
     "PasswordInvalid",
     "RegistrationInvalid",
     "SignedIn",
+    "SuspensionView",
     "_view",
     "admin_sign_in",
     "audit",
@@ -106,7 +112,7 @@ __all__ = [
     "provision_admin",
     "purge_profile_image",
     "ratelimit",
-    "reactivate",
+    "reactivate_account",
     "refresh_session",
     "register_agency",
     "register_individual",
@@ -123,7 +129,7 @@ __all__ = [
     "set_profile_image",
     "sign_in",
     "sign_out",
-    "suspend",
+    "suspend_account",
     "timezone",
     "update_agency_profile",
     "update_profile",

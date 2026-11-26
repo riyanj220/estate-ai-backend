@@ -61,6 +61,10 @@ class ActorSummarySerializer(serializers.Serializer):
         help_text="Agency name (public); empty for non-agency accounts."
     )
     capabilities = serializers.ListField(child=serializers.ChoiceField(choices=list(Capability)))
+    suspension_reason = serializers.CharField(
+        allow_null=True,
+        help_text="Why the account is Suspended; null otherwise. Private: owner only.",
+    )
 
 
 class CsrfTokenSerializer(serializers.Serializer):
@@ -77,6 +81,7 @@ def _summary_data(summary: selectors.ActorSummary) -> dict:
             "full_name": summary.full_name,
             "agency_name": summary.agency_name,
             "capabilities": list(summary.capabilities),
+            "suspension_reason": summary.suspension_reason,
         }
     ).data
 
