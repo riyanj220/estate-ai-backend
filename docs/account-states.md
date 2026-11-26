@@ -57,6 +57,9 @@ archive), so the table above is unchanged.
 
 Republishing an Archived Listing (Story 2.18, `publication.republish`) is the `publish` row: only an Active owner may (`403 email_not_verified` and `403 publishing_unavailable` otherwise), and a restricted Listing cannot be republished (`403`).
 
+The one-time correction of locality and area (Story 2.19, `publication.correct`) follows the edit row: email_unverified and
+active owners yes, suspended `403`; the eligibility read answers `available: false` to a suspended owner.
+
 A restricted Listing may only be archived by its owner; a removed one cannot be changed; sold and rented are view only
 (`docs/listings.md`, "Lifecycle after publication").
 

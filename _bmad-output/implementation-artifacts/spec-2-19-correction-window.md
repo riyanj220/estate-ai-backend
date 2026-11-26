@@ -61,6 +61,15 @@ context:
 
 ## Review Triage Log
 
+### Backend review batch (coordinator decisions)
+
+No blocking issues. Patched: stale "insert and read only" statements (`docs/listings.md`, `docs/sample-data.md`, the `remove_seed_events` docstring, the settings comment); a test that a correction refused by the post-write completeness check (no live image) leaves fields, revision, flag, fingerprint and audit untouched; the `write_locked` caller guard now also catches module-level, `async def`, aliased and by-name uses, with can-fail cases.
+
+Accepted/deferred:
+- Migration `0016` (drift rule) sets NULL where only the marla basis of an Archived Listing was edited after its event, so that republication is counted and uses a slot. Accepted: only development data exists.
+- An unused window survives an archive and a free republication, with its original end. Accepted: within the spec.
+- The database does not make `correction_used` one-way (the runtime role may set it back). Enforced by the application only; no trigger (FYP scope).
+
 ## Verification
 
 **Backend:** `uv run ruff check . && uv run ruff format --check . && env -u DJANGO_SETTINGS_MODULE uv run lint-imports && uv run python manage.py makemigrations --check --dry-run && uv run python manage.py spectacular --validate --file openapi.yaml`, `scripts/test-changed.sh`, and one parallel full run `env -u DJANGO_SETTINGS_MODULE uv run pytest -n 3 -q` before the merge.

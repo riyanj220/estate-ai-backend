@@ -90,7 +90,9 @@ A client never supplies an owner, status or revision (unknown body fields are `u
 
 ## Editing: `services.apply_updates(actor, listing_id, base_revision, updates, origin="manual")`
 
-The only function that changes Listing fields after creation. It returns the new `ListingView`.
+The function that changes Listing fields after creation. It returns the new `ListingView`. The write itself
+(validation, fields, provenance, revision) is `services.write_locked`, whose only other caller is the one-time
+`publication.correct` ("Correction window"); guard: `tests/architecture/test_publication_event_updates.py`.
 
 Refusals, in order: Visitor `unauthenticated`; a listing id that is not a canonical UUID of a Listing owned by the
 actor's account `not_found` (another owner, an administrator, a system actor and an unknown id are indistinguishable);
@@ -441,8 +443,9 @@ decided from the locked rows after the stale check.
 row as any edit does and emits `listing.model_inputs_changed` when a `valuation_input` field changed. Two extra rules:
 
 - **Identity fields are locked while Published.** The set is the registry flag `quota_identity` (read from the registry,
-  never listed in code): `purpose`, `category`, `subtype` (never editable at all), `city`, `locality`, `area_value`,
-  `area_unit` and `marla_basis`. An update that would change the stored value of one (including clearing it, or the
+  never listed in code): `purpose`, `category`, `subtype` (never editable at all), `city`, `locality`, `area_value`
+  and `area_unit` (`marla_basis` is not one since Story 2.19: it is editable while Published like any other field).
+  `locality` and the area may be corrected once shortly after a publication ("Correction window", below). An update that would change the stored value of one (including clearing it, or the
   implicit clearing of the locality by a city change) is `not_editable` on that field, reported together with the other
   failing fields. Sending the stored value again is accepted and changes nothing. They are editable on a Draft and on an
   Archived Listing (identity changes are re-checked, and counted, at republication, Story 2.18). `price_basis` stays
@@ -700,9 +703,11 @@ that migration and, later, Story 2.20's service.
 
 `listings.PublicationEvent` is the history `listings.publication.publish` writes (Story 2.15; kinds `initial`, `republish_counted`,
 `republish_free`, `restore`, `seed`; `counted` only for the first two, by CHECK; no foreign keys, so history outlives a
-Listing; idempotency key unique per account). Never updated or deleted by application code, with ONE exception: `publication.remove_seed_events`
-(kind `seed` only, system actor, privileged connection; the sample-data reset). The runtime role has
-INSERT and SELECT only (`RUNTIME_APPEND_ONLY_TABLES`). Only `listings/publication.py` writes it (an AST guard in
+Listing; idempotency key unique per account). Application code deletes a row in one place only, `publication.remove_seed_events`
+(kind `seed` only, system actor, privileged connection; the sample-data reset), and updates two columns only
+(`publication.correct`). The runtime role has INSERT and SELECT (`RUNTIME_APPEND_ONLY_TABLES`) plus UPDATE on exactly `correction_used` and `identity_fingerprint`
+(`RUNTIME_COLUMN_UPDATES`, Story 2.19: the one-time correction, `publication.correct`; guard
+`tests/architecture/test_publication_event_updates.py`). Only `listings/publication.py` writes it (an AST guard in
 `tests/listings/test_quota.py` lists the writers, and follows a name bound to the model, so a split `rows = PublicationEvent.objects...; rows.filter().delete()` is flagged too; tests may insert directly).
 
 `listings.quota`: `quota_limit_at(account_type, at)` resolves the limit at the time of an attempt (never stored on an
@@ -763,13 +768,17 @@ publishing."), keyed by that field; the owner confirms by saving the value. Opti
 
 Fingerprint: `publication.identity_fingerprint(view)` is the SHA-256 hex of the canonical JSON (sorted keys, no
 whitespace, ASCII, decimals normalised, text in NFC) of the registry fields flagged `quota_identity` (since Story 2.17, registry version 9: purpose,
-category, subtype, city, locality, area_value, area_unit and marla_basis; the same flag locks them while Published). It is
-stored on the event and never leaves the service. Version 9 changes the fingerprint, so migration
+category, subtype, city, locality, area_value, area_unit and marla_basis; since Story 2.19, registry version 10, the same
+without marla_basis; the same flag locks them while Published). It is
+stored on the event and never leaves the service. Version 9 changed the fingerprint, so migration
 `0015_identity_fingerprint_v9` recomputes `identity_fingerprint` of every event (`initial`, `seed`, later kinds) whose
 Listing still exists, from the stored Listing with the canonicalisation frozen inside the migration (no live imports),
 without consuming quota or writing events; it is idempotent and its reverse is a no-op. Events of deleted Listings keep
-their value. Since Story 2.18 the loop is `identity_migration.recompute_fingerprints` (below, the drift rule). The widening of the identity set also widens `confirm_required` (an AI-written, unconfirmed value of
-city, locality, area value, area unit or marla basis blocks publication until the owner confirms it): this is intended.
+their value. Version 10 does the same with migration `0016_identity_fingerprint_v10` (old set with marla_basis, new
+set without; the drift rule applies, so an Archived Listing whose marla basis or other identity was edited after its
+event gets NULL and its next republication is counted). Since Story 2.18 the loop is `identity_migration.recompute_fingerprints` (below, the drift rule). The widening of the identity set also widens `confirm_required` (an AI-written, unconfirmed value of
+city, locality, area value or area unit blocks publication until the owner confirms it): this is intended. An
+unconfirmed AI marla basis no longer blocks (it is not an identity field).
 
 Error codes added (Story 2.15; Story 2.18 adds none): `quota_exhausted` (409), `email_not_verified` (403), `publishing_unavailable` (403). Field
 sentences added: `images_required`, `confirm_required`.
@@ -818,9 +827,9 @@ republication), and its stored fingerprint equals the current one (a NULL one ne
 `republish_counted` (no baseline, another month, a baseline later than `now`, a NULL fingerprint, or a changed identity field). A counted republication
 needs `allowance.remaining >= 1` under the account lock (else `409 quota_exhausted`, same `details` as publishing,
 nothing consumed); a free one never reads the allowance, so an exhausted account or a limit of 0 can still republish free.
-A counted event becomes the new baseline; a free one never moves it. `identity_fingerprint` is always stored. The eight
-identity fields are the registry flag `quota_identity` (purpose, category, subtype, city, locality, area value, area unit,
-marla basis); the owner may edit them while Archived (2.17), which is exactly what makes the next republication counted (changing a field and back is counted both times, because each counted
+A counted event becomes the new baseline; a free one never moves it. `identity_fingerprint` is always stored. The seven
+identity fields are the registry flag `quota_identity` (purpose, category, subtype, city, locality, area value, area
+unit); the owner may edit them while Archived (2.17), which is exactly what makes the next republication counted (changing a field and back is counted both times, because each counted
 republication moves the baseline).
 `quota.allowance_for` counts `republish_counted` events and ignores free ones. A key belongs to one operation: a key that
 produced a publication cannot republish (`422 idempotency_key_reused`) and the other way round (the unique
@@ -852,6 +861,45 @@ the same function: the frozen result equals the live fingerprint under the grown
 `tests/listings/test_republication.py`; `tests/listings/test_lifecycle_review.py` covers the version-9 migration itself
 and the frozen canonicalisation against the live one for every field shape.
 
+## Correction window (Story 2.19, AD-7)
+
+An honest typo in the locality or area of a freshly published Listing can be fixed once, without archiving and without
+using a publication.
+
+**Window.** The Listing is `published` and not restricted, and its **last counted** event (`initial` or
+`republish_counted`; `seed`, `restore` and `republish_free` events are never it, and an older counted event never stands
+in for the last one) has `correction_used = false` and `created_at <= now < created_at + 24 h` (exactly 24 hours later is
+closed; an event later than the clock opens nothing). So a counted republication opens a new window, a free republication
+neither opens nor extends one and does not reopen a used one (an unused window keeps running through an archive and a free
+republication), and a seeded Listing has none.
+
+**`publication.correct(actor, listing_id, base_revision, changes, now=None)`.** `changes` holds `locality`, `area_value`,
+`area_unit` and `marla_basis` only. Before the transaction: Visitor `401`; not the owner's (another account, an
+administrator, a system actor, unknown, malformed) `404`; a bad shape, or any other field id (`city`, `category`,
+`subtype`, `purpose`, ...: `not_editable`; unknown ids: `unknown_field`) `400`. Then one transaction, account lock then
+Listing lock, the clock read after the account lock: (1) `409 stale_revision` + `current`; (2) not `published`, `409
+conflict`; (3) restricted, `403 forbidden`; (4) an account that may not edit a Published Listing (Suspended,
+Deactivated) `403 forbidden`; (5) no open window, `409 correction_unavailable`; (6) the validation of a Published edit,
+all field errors at once, completeness on the touched fields (`locality_not_in_city`, `invalid_area`, `required` for a
+cleared value, ...). Two rules are added: a `marla_basis` that differs while neither `area_value` nor `area_unit` does is
+`not_editable` (it is only the companion of an area change; on its own it is an ordinary edit), and a request that changes
+nothing is `non_field_errors: no_change`. A refused or failed attempt writes nothing and spends nothing.
+
+**On success** the fields are written by the same write path as every edit (`services.write_locked`, which `apply_updates`
+also uses: `revision + 1`, a manual `ListingRevision`, manual provenance); the counted event gets `correction_used = true`
+and `identity_fingerprint` of the corrected Listing (its only two updatable columns); audit `listing.corrected` (target the
+Listing id; metadata one boolean per correctable field: did its value change); `listing.model_inputs_changed` after commit
+when a `valuation_input` field changed. No event is created and no quota is read or used. Because the fingerprint moved
+with the data, a later republication in the same Karachi month with unchanged identity is free.
+
+**Endpoints.** `GET /api/v1/listings/{id}/correction` is `{"available": bool, "expires_at": string|null}`
+(`publication.correction_window`; `expires_at` carries `+05:00`; `available` is false with null for every reason there is no
+window, a Suspended owner included; not the owner's `404`, Visitor `401`). `POST` on the same path takes `{base_revision,
+fields}` (CSRF) and returns `200` with the owner Listing. Both `Cache-Control: no-store`.
+
+New error code: `correction_unavailable` (409, "The correction window is closed. Archive the listing to change these
+details."). New field sentence: `no_change` ("Nothing would change. Enter a different locality or area.").
+
 ### The `seed` kind (Story 2.16)
 
 `publish(..., kind="seed")` is keyword-only (default `initial`; any other value is `validation_error`). ONLY the system
@@ -864,8 +912,8 @@ above: the idempotency claim (scoped to the owner), account then Listing locks, 
 refusals, complete validation, the audit record and `listing.published` after commit.
 
 `publication.remove_seed_events(actor, account_ids, using=...)` is the one place an event is deleted: system actor only,
-`kind=seed` and `counted=False` rows of the given accounts only. The runtime role may only INSERT and SELECT events, so
-the sample-data command passes the privileged connection alias (`sample_data.privileged_alias()`: `migrator` where the
+`kind=seed` and `counted=False` rows of the given accounts only. The runtime role cannot DELETE events (it may INSERT,
+SELECT and UPDATE only `correction_used` and `identity_fingerprint`), so the sample-data command passes the privileged connection alias (`sample_data.privileged_alias()`: `migrator` where the
 settings define it, i.e. local development, otherwise `default`, which is the schema owner under the test settings).
 Decision: seed events ARE removed on `--reset` (rather than left as harmless history) so a reset leaves no trace of the
 accounts that went away and a reseed never meets an old key; a seed idempotency key is `seed-<index>` per owner and a

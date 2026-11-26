@@ -40,7 +40,7 @@ events (below), then the accounts (profile, sessions and tokens cascade; the emp
 `services.remove_sample_account` refuse anything not on the reserved domain, so even a mistaken call cannot touch a real
 record. Reset leaves any non-sample account or Listing alone, including ones that look similar.
 
-Publication events: the runtime role may only INSERT and SELECT them, so `--reset` deletes the seed events through the
+Publication events: the runtime role cannot DELETE them (it may INSERT, SELECT and UPDATE only `correction_used` and `identity_fingerprint`), so `--reset` deletes the seed events through the
 privileged connection alias (`migrator` in local development; the migrator password is in `.env`). Seed idempotency keys
 are `seed-<index>` per account and a reseed makes new accounts, so keys never clash.
 

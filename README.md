@@ -34,7 +34,8 @@ database, re-run `docker/postgres/create_roles.sh` (it creates missing roles and
 Always migrate with `--database=migrator`; plain `migrate` runs as `runtime` and is refused.
 After each migration, `post_migrate` grants DML on all tables to `runtime`; run
 `python manage.py grant_runtime_privileges` to re-apply. Tables that must be append-only
-go in the `RUNTIME_APPEND_ONLY_TABLES` setting (the only route, so every migrate honours it).
+go in the `RUNTIME_APPEND_ONLY_TABLES` setting (the only route, so every migrate honours it);
+the few columns of such a table that may still be updated go in `RUNTIME_COLUMN_UPDATES`.
 
 ## Settings
 
