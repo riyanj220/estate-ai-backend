@@ -633,7 +633,9 @@ def upload_image(actor: Actor, listing_id, data: bytes) -> ImageView:
     """
     key = _owned_editable(actor, listing_id)
     listing = PropertyListing.objects.filter(id=key).first()
-    if listing is None or not lifecycle.owner_may_edit(listing):
+    if listing is None:  # deleted since the ownership check
+        raise DomainError("not_found")
+    if not lifecycle.owner_may_edit(listing):
         raise DomainError("forbidden")
     if live_image_count(key) >= MAX_IMAGES:  # ghosts (lost asset rows) are not counted
         raise DomainError("too_many_images")
