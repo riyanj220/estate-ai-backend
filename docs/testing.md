@@ -21,6 +21,27 @@ All commands need the compose database running and `.env` present, and are run w
 so run them whenever you touch more than one app, a route, a serializer or a service signature. Mark a new guard test
 file with `pytestmark = pytest.mark.guard`.
 
+## Privacy gates (Story 3.2)
+
+Three `guard` tests in `tests/privacy` cover later endpoints without new test code (`audience.py` says who sees each
+route, from the permissions of the authorisation matrix):
+
+- `test_schema_walk.py`: no public or other-account response schema (`$ref`s resolved) has a private registry field or a
+  private profile column, and no public one has a phone-like property.
+- `test_canary_sweep.py`: canary phones, emails, addresses and coordinates are stored, every route is called as a
+  Visitor and as two other accounts, and no response body or header may contain one.
+- The same run captures every log record and searches it for the canaries.
+
+When a gate fails on a new route:
+
+- `cannot tell who sees <route>`: a signed-in route outside `/api/v1/me` must be declared `OWNER` or `OTHER_ACCOUNT` in
+  `SIGNED_IN` (`tests/privacy/audience.py`).
+- `cannot build a URL for <route>`: add a value for its new path parameter to `seed()` in `test_canary_sweep.py`.
+- `no 200 from these public routes`: seed what the route needs to answer, so that it is really checked.
+
+The sweep calls non-`GET` methods only on routes with a path parameter, with an empty body, and expects a refusal. It
+sends no query parameters, so a response branch that needs one is not exercised.
+
 ## `scripts/test-changed.sh`
 
 Lists files changed against the base ref (default `main`, plus untracked files), maps `apps/<app>/...` to

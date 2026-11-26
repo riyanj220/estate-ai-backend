@@ -114,6 +114,11 @@ the top. The routes have no application rate limit.
 - Answer a refusal with `not_found`, never `forbidden`.
 - A new field class or status goes through `visibility_of`, the predicate in `policy.public_q()` and the matrix test.
 
+## Privacy gates (Story 3.2)
+
+A new public or other-account-facing route is checked automatically for private fields in its schema and private values
+in its responses and logs (`tests/privacy`, run by `pytest -m guard`; see `docs/testing.md`).
+
 ## Caching and takedown delay
 
 A public image is sent with `Cache-Control: public, max-age=60`, so after moderation restricts a Listing, or its owner is
