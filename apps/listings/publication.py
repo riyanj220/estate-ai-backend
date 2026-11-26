@@ -1,6 +1,6 @@
-"""Publishing a Draft and republishing an Archived Listing (AD-7, Stories 2.15 and 2.18). The ONLY
-code that sets `ListingStatus.PUBLISHED` and the only writer of `PublicationEvent` (an architecture
-guard enforces both).
+"""Publishing a Draft, republishing an Archived Listing and correcting a freshly published one
+(AD-7, Stories 2.15, 2.18 and 2.19). The ONLY code that sets `ListingStatus.PUBLISHED` and the
+only writer of `PublicationEvent` (an architecture guard enforces both).
 
 `publish` and `republish` share one transaction (`_run`, parameterised by `_Mode`), in this
 order: claim the idempotency key; lock the account and then the Listing row; compare
@@ -12,15 +12,20 @@ the status and bump the revision; write the audit record; complete the claim; em
 `listing.published` (last, after commit). Any refusal or error rolls everything back, the claim
 included, so nothing is consumed and the same key may be retried. No AI call, upload, mail or
 notification happens here.
+
+`correct` is the one-time correction of the locality and area within 24 hours of the last counted
+publication. It writes no event: it marks that event `correction_used` and moves its fingerprint
+to the corrected identity (the only two columns of an event that are ever updated), so the
+correction never costs a publication.
 """
 
 import hashlib
 import json
 import re
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.db import DEFAULT_DB_ALIAS, transaction
@@ -28,15 +33,17 @@ from django.utils import timezone
 
 from apps.catalog import registry
 from apps.identity import selectors as identity
+from apps.identity.capabilities import Access, Capability, matrix_access
+from apps.identity.policy import can
 from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, lock_account
 from apps.identity.state import AccountState
 from apps.kernel import audit, idempotency
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.kernel.events import emit
-from apps.listings import quota
+from apps.listings import lifecycle, quota, validation
 from apps.listings.completeness import problems_of
-from apps.listings.events import ListingPublished
+from apps.listings.events import ListingModelInputsChanged, ListingPublished
 from apps.listings.lifecycle import ListingStatus, Origin
 from apps.listings.models import (
     COUNTED_KINDS,
@@ -52,7 +59,7 @@ from apps.listings.selectors import (
     live_image_count,
     view_of,
 )
-from apps.listings.services import FieldsInvalid, StaleRevision
+from apps.listings.services import FieldsInvalid, StaleRevision, write_locked
 
 SCOPE = "listings.publish"
 KEY_FIELD = "idempotency_key"  # the name a header problem is reported under
@@ -64,6 +71,13 @@ KIND_REPUBLISH_COUNTED = "republish_counted"
 KIND_REPUBLISH_FREE = "republish_free"
 _REPUBLISH_KINDS = (KIND_REPUBLISH_COUNTED, KIND_REPUBLISH_FREE)
 _KEY = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+CORRECTION_WINDOW = timedelta(hours=24)
+# What a correction accepts. `marla_basis` is not an identity field: it is here only as the
+# companion of a changed area, so that the corrected area is valid.
+CORRECTABLE_FIELDS = ("locality", "area_value", "area_unit", "marla_basis")
+_CORRECTED_IDENTITY = ("locality", "area_value", "area_unit")  # one of these must change
+_CORRECTED_AREA = ("area_value", "area_unit")
 
 
 class QuotaExhausted(DomainError):
@@ -186,15 +200,11 @@ class Republication:
     kind: str
 
 
-def _republish_kind(row, fingerprint: str, now: datetime) -> str:
-    """`republish_free` only if the Listing's last COUNTED event (`initial` or `republish_counted`;
-    `seed` and `republish_free` events are never a baseline) fell in the same Karachi calendar
-    month as `now` (and not later than `now`: a baseline in the future of the clock is not in the
-    past, so it never makes a free republication) and carries the same identity fingerprint as the
-    Listing has now; otherwise `republish_counted` (no baseline, another month, a baseline later
-    than `now`, a null stored fingerprint, or a changed identity field). Called under
-    the account and Listing locks, so no other publication can move the baseline meanwhile."""
-    baseline = (
+def _last_counted(row) -> PublicationEvent | None:
+    """The Listing's last COUNTED event (`initial` or `republish_counted`; `seed` and
+    `republish_free` events are never it): the baseline of a republication and the one a
+    correction window belongs to."""
+    return (
         PublicationEvent.objects.filter(
             account_id=row.owner_account_id,
             listing_id=row.id,
@@ -204,6 +214,17 @@ def _republish_kind(row, fingerprint: str, now: datetime) -> str:
         .order_by("-created_at", "-id")
         .first()
     )
+
+
+def _republish_kind(row, fingerprint: str, now: datetime) -> str:
+    """`republish_free` only if the Listing's last COUNTED event (`initial` or `republish_counted`;
+    `seed` and `republish_free` events are never a baseline) fell in the same Karachi calendar
+    month as `now` (and not later than `now`: a baseline in the future of the clock is not in the
+    past, so it never makes a free republication) and carries the same identity fingerprint as the
+    Listing has now; otherwise `republish_counted` (no baseline, another month, a baseline later
+    than `now`, a null stored fingerprint, or a changed identity field). Called under
+    the account and Listing locks, so no other publication can move the baseline meanwhile."""
+    baseline = _last_counted(row)
     if baseline is None or baseline.identity_fingerprint != fingerprint:
         return KIND_REPUBLISH_COUNTED
     start, end = quota.month_bounds(now)
@@ -404,10 +425,160 @@ def republish(
     return Republication(result, kind)
 
 
+def _open_correction(row, now: datetime) -> PublicationEvent | None:
+    """The counted event whose correction window is open at `now`, or None: the Listing's LAST
+    counted event, not yet used for a correction, with `created_at <= now < created_at + 24 h`
+    (exactly 24 hours later is closed; an event later than `now` opens nothing). An older event
+    never stands in for a used or expired last one."""
+    event = _last_counted(row)
+    if event is None or event.correction_used:
+        return None
+    if not event.created_at <= now < event.created_at + CORRECTION_WINDOW:
+        return None
+    return event
+
+
+def _check_correction_shape(base_revision, changes) -> dict[str, str]:
+    errors = validation.check_shape(base_revision, changes)
+    if isinstance(changes, Mapping):
+        for name in changes:
+            known = isinstance(name, str) and registry.field(name) is not None
+            if known and name not in CORRECTABLE_FIELDS:  # city, category, title, ...
+                errors[name] = "not_editable"
+    return errors
+
+
+def _judge_correction(changes: Mapping) -> Callable[[Mapping, Mapping, Mapping], dict[str, str]]:
+    """The two rules a correction adds to a Published edit, judged on the normalised values: a
+    marla basis only changes together with the area value or unit, and a request that changes
+    none of the locality, area value and area unit is refused (the one correction is not spent)."""
+
+    def judge(current: Mapping, values: Mapping, errors: Mapping) -> dict[str, str]:
+        def touched(name) -> bool:  # a refused value counts: its own code is the answer
+            return name in errors or (name in values and values[name] != current[name])
+
+        found: dict[str, str] = {}
+        if (
+            "marla_basis" in changes
+            and touched("marla_basis")
+            and not any(touched(name) for name in _CORRECTED_AREA)
+        ):
+            found["marla_basis"] = "not_editable"
+        if not found and not any(touched(name) for name in (*_CORRECTED_IDENTITY, "marla_basis")):
+            found[validation.NON_FIELD] = "no_change"
+        return found
+
+    return judge
+
+
+def correction_window(actor: Actor, listing_id, now: datetime | None = None) -> datetime | None:
+    """Until when the owner may correct this Listing (aware, in the Karachi offset), or None when
+    there is no open window for any reason: not Published, restricted, an account that may not
+    edit (Suspended, Deactivated), no counted publication, 24 hours passed or already used.
+    A Visitor is `unauthenticated`; another owner, an administrator, a system actor and an unknown
+    or malformed id are `not_found`. A read: it takes no lock and writes nothing."""
+    require_signed_in(actor)
+    key = canonical_uuid(listing_id)
+    row = (
+        PropertyListing.objects.filter(id=key, owner_account_id=actor.account_id).first()
+        if key is not None and actor.kind is ActorKind.USER
+        else None
+    )
+    if row is None:
+        raise DomainError("not_found")
+    if not lifecycle.is_published(row) or row.restricted or not can(actor, Capability.EDIT_DRAFTS):
+        return None
+    event = _open_correction(row, now if now is not None else timezone.now())
+    if event is None:
+        return None
+    return (event.created_at + CORRECTION_WINDOW).astimezone(quota.KARACHI)
+
+
+def correct(
+    actor: Actor, listing_id, base_revision, changes, now: datetime | None = None
+) -> ListingView:
+    """Correct the locality and area of a freshly published Listing, once per counted publication
+    (Story 2.19). `changes` maps `CORRECTABLE_FIELDS` ids to wire values; `now` is for tests.
+
+    Refusals before the transaction: Visitor `unauthenticated`; not the actor's own Listing
+    (another owner, an administrator, a system actor, an unknown or malformed id) `not_found`; a
+    bad `base_revision` or `changes` shape and any other field id `FieldsInvalid`. Inside one
+    transaction (account lock, then Listing lock; the clock is read after the account lock):
+    `StaleRevision`; not Published `conflict`; restricted `forbidden`; an account that may not
+    edit a Published Listing `forbidden`; no open window (`_open_correction`)
+    `correction_unavailable`; then the validation of a Published edit (`services.write_locked`:
+    all field errors at once, completeness on the touched fields) with `no_change` and the marla
+    basis rule of `_judge_correction`. A refusal or error writes nothing and spends nothing.
+
+    On success: the fields, `revision + 1` and a manual revision row through the single write
+    path; the counted event gets `correction_used` and the fingerprint of the corrected identity;
+    audit `listing.corrected` (which fields, never values); `listing.model_inputs_changed` after
+    commit if a valuation input changed. No event is created and no quota is read or used."""
+    require_signed_in(actor)
+    key = canonical_uuid(listing_id)
+    owned = (
+        key is not None
+        and actor.kind is ActorKind.USER
+        and PropertyListing.objects.filter(id=key, owner_account_id=actor.account_id).exists()
+    )
+    if not owned:
+        raise DomainError("not_found")
+    problems = _check_correction_shape(base_revision, changes)
+    if problems:
+        raise FieldsInvalid(problems)
+    with transaction.atomic():
+        account = lock_account(actor.account_id)
+        now = now if now is not None else timezone.now()  # read after the lock wait
+        row = (
+            PropertyListing.objects.select_for_update()
+            .filter(id=key, owner_account_id=actor.account_id)
+            .first()
+        )
+        if row is None:
+            raise DomainError("not_found")
+        if row.revision != base_revision:
+            raise StaleRevision(view_of(row, with_private=True))
+        if not lifecycle.is_published(row):
+            raise DomainError("conflict")
+        if row.restricted:
+            raise DomainError("forbidden")
+        if account.type == ADMIN_ACCOUNT_TYPE:
+            raise DomainError("not_found")
+        if matrix_access(account.state, Capability.EDIT_DRAFTS) is not Access.ALLOWED:
+            raise DomainError("forbidden")
+        event = _open_correction(row, now)
+        if event is None:
+            raise DomainError("correction_unavailable")
+        written = write_locked(
+            actor,
+            row,
+            changes,
+            Origin.MANUAL,
+            unlocked=frozenset(_CORRECTED_IDENTITY),
+            judge=_judge_correction(changes),
+        )
+        marked = PublicationEvent.objects.filter(id=event.id, correction_used=False).update(
+            correction_used=True, identity_fingerprint=identity_fingerprint(written.view)
+        )
+        if marked != 1:  # unreachable under the account lock; never spend a window twice
+            raise DomainError("correction_unavailable")
+        audit.record(
+            actor,
+            "listing.corrected",
+            "listing",
+            row.id,
+            {name: name in written.changed for name in CORRECTABLE_FIELDS},
+        )
+        if written.model_inputs_changed:
+            emit(ListingModelInputsChanged(listing_id=row.id))  # last: after commit
+    return written.view
+
+
 def remove_seed_events(actor: Actor, account_ids, *, using: str | None = None) -> int:
     """Delete the `seed` events of the given (sample) accounts: the one place an event is ever
     removed. System actor only (`forbidden` otherwise); never touches another kind. The runtime
-    role may only insert and read events, so the sample-data command passes `using`, the
+    role cannot delete events (it may insert, read and update only `correction_used` and
+    `identity_fingerprint`), so the sample-data command passes `using`, the
     privileged connection alias (`sample_data.privileged_alias`). Returns the number removed."""
     if actor.kind is not ActorKind.SYSTEM:
         raise DomainError("forbidden")

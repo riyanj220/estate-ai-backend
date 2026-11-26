@@ -623,8 +623,10 @@ class ListingQuotaPolicy(models.Model):
 class PublicationEvent(models.Model):
     """One publication, republication, restore or seed, for the monthly count (AD-7).
 
-    Written by `listings.publication` only, and never updated or deleted by application code,
-    except `publication.remove_seed_events` (kind `seed` only, system actor, privileged connection).
+    Written by `listings.publication` only. Application code never deletes a row (except
+    `publication.remove_seed_events`: kind `seed` only, system actor, privileged connection) and
+    updates only `correction_used` and `identity_fingerprint` (`publication.correct`; the runtime
+    role has no other UPDATE).
     `account_id` and `listing_id` are plain columns: no foreign key, so the
     quota history survives a Listing's deletion."""
 

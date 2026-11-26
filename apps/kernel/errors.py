@@ -30,6 +30,11 @@ CATALOGUE: dict[str, ErrorCode] = _catalogue(
     ErrorCode("stale_revision", 409, "The resource changed since it was loaded."),
     ErrorCode("conflict", 409, "This action cannot be done in the current state."),
     ErrorCode("quota_exhausted", 409, "You have used all your publications for this month."),
+    ErrorCode(
+        "correction_unavailable",
+        409,
+        "The correction window is closed. Archive the listing to change these details.",
+    ),
     ErrorCode("storage_cap_exceeded", 409, "Your storage limit is reached. Remove an image first."),
     ErrorCode("too_many_images", 409, "A listing can have at most 10 images."),
     ErrorCode("link_used", 409, "This link has already been used or replaced by a newer one."),
@@ -109,6 +114,7 @@ FIELD_MESSAGES: dict[str, str] = {
     "out_of_range": "Enter a number within the allowed range, using digits and a decimal point.",
     "locality_not_in_city": "Choose a locality that belongs to the selected city.",
     "images_required": "Add at least one image.",
+    "no_change": "Nothing would change. Enter a different locality or area.",
     "confirm_required": "Confirm this value before publishing.",
 }
 DEFAULT_FIELD_MESSAGE = "Enter a valid value."

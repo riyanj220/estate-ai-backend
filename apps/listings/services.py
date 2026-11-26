@@ -1,7 +1,8 @@
 """Write path for Listings. Only this module creates or changes Listing rows (AD-3)."""
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -243,6 +244,21 @@ def _locked_owned(key, actor) -> PropertyListing:
     return row
 
 
+@dataclass(frozen=True)
+class Written:
+    """What `write_locked` did: the resulting view, the names of the fields whose VALUE changed
+    (derived ones and confirmation-only writes left out) and whether a `valuation_input` field is
+    among all changed values."""
+
+    view: ListingView
+    changed: frozenset[str]
+    model_inputs_changed: bool
+
+
+# (current stored values, normalised new values, field errors so far) -> more field errors
+Judge = Callable[[Mapping, Mapping, Mapping], Mapping[str, str]]
+
+
 def apply_updates(
     actor: Actor,
     listing_id,
@@ -250,7 +266,8 @@ def apply_updates(
     updates: Mapping[str, object],
     origin: Origin | str = Origin.MANUAL,
 ) -> ListingView:
-    """The only function that changes Listing fields after creation (AD-10, AD-22).
+    """The function that changes Listing fields after creation (AD-10, AD-22); the write itself is
+    `write_locked`, also used by the one-time `publication.correct`.
 
     Refusals, in order: Visitor `unauthenticated`; a listing id that is not a canonical UUID of
     a Listing owned by the actor's account `not_found` (another owner, an administrator, a system
@@ -293,6 +310,31 @@ def apply_updates(
             raise StaleRevision(view_of(row, with_private=True))
         if not lifecycle.owner_may_edit(row):
             raise DomainError("forbidden")
+        written = write_locked(actor, row, updates, origin)
+        if written.model_inputs_changed:
+            emit(ListingModelInputsChanged(listing_id=row.id))  # last: after-commit
+    return written.view
+
+
+def write_locked(
+    actor: Actor,
+    row: PropertyListing,
+    updates: Mapping[str, object],
+    origin: Origin,
+    *,
+    unlocked: frozenset[str] = frozenset(),
+    judge: Judge | None = None,
+) -> Written:
+    """The one write path of Listing fields, for a caller that already holds the Listing row
+    lock inside a transaction and has decided who may write (`apply_updates`, and
+    `publication.correct`; an architecture guard pins the callers). It checks no actor, revision
+    or status, and emits nothing: the caller emits `listing.model_inputs_changed` last.
+
+    `unlocked` names identity fields that may change although the Listing is Published (the
+    one-time correction only). `judge` adds the caller's own field errors, reported with the
+    rest. Everything else is as described on `apply_updates`."""
+    with transaction.atomic():  # joins the caller's transaction
+        base_revision = row.revision
         terms = terms_of(row)
         stored_terms = terms is not None
         if terms is None:
@@ -356,10 +398,14 @@ def apply_updates(
                 if (
                     definition is not None
                     and definition.quota_identity
+                    and name not in unlocked
                     and name not in errors  # a more specific code (invalid, ...) stays
                     and not (name in values and values[name] == current[name])
                 ):
                     errors[name] = "not_editable"
+        if judge is not None:
+            for name, code in judge(current, values, errors).items():
+                errors.setdefault(name, code)
         if errors:
             raise FieldsInvalid(errors)
         provenance = clean_provenance(row.provenance)
@@ -384,7 +430,7 @@ def apply_updates(
             if sqft != current["area_sqft"]:
                 changed["area_sqft"] = sqft
         if not changed:
-            return view_of(
+            unchanged_view = view_of(
                 row,
                 terms if stored_terms else None,
                 area if stored_area else None,
@@ -396,6 +442,7 @@ def apply_updates(
                 amenities=stored_amenities,
                 with_private=True,
             )
+            return Written(unchanged_view, frozenset(), False)
         now = timezone.now()
         for name, value in changed.items():
             table = DERIVED[name] if name in DERIVED else STORAGE[name]
@@ -479,9 +526,12 @@ def apply_updates(
             )
             if problems:
                 raise FieldsInvalid(problems)
-        if any(registry.field(n).valuation_input for n in changed if changed[n] != current[n]):
-            emit(ListingModelInputsChanged(listing_id=row.id))  # last: after-commit
-    return view
+        different = frozenset(n for n in changed if changed[n] != current[n])
+    return Written(
+        view,
+        different - frozenset(DERIVED),
+        any(registry.field(n).valuation_input for n in different),
+    )
 
 
 def _owned_editable(actor: Actor, listing_id) -> uuid.UUID:

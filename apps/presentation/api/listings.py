@@ -375,6 +375,44 @@ class PublishConflictSerializer(serializers.Serializer):
     details = QuotaDetailsSerializer(required=False, help_text="With `quota_exhausted` only.")
 
 
+ListingCorrectionFieldsSerializer = _field_serializer(
+    "ListingCorrectionFieldsSerializer",
+    publication.CORRECTABLE_FIELDS,
+    True,
+    "What a correction accepts: send only what changes. `marla_basis` only changes together "
+    "with `area_value` or `area_unit`.",
+)
+
+
+class ListingCorrectionSerializer(serializers.Serializer):
+    base_revision = serializers.IntegerField(
+        min_value=1, help_text="The `revision` of the Listing the client last read."
+    )
+    fields = ListingCorrectionFieldsSerializer()
+
+    def to_internal_value(self, data):
+        # Only the two keys are accepted; shapes and values are judged by the service.
+        values = exact_fields(data, UPDATE_BODY)
+        return {name: values.get(name) for name in UPDATE_BODY}
+
+
+class CorrectionWindowSerializer(serializers.Serializer):
+    available = serializers.BooleanField(
+        help_text="Whether the owner may correct the locality and area now."
+    )
+    expires_at = _OffsetDateTimeField(
+        allow_null=True,
+        help_text="When the open window closes, +05:00; null when `available` is false.",
+    )
+
+
+class CorrectionConflictSerializer(serializers.Serializer):
+    """`409`: the error envelope plus, for `stale_revision`, the Listing as it is now."""
+
+    error = ErrorBodySerializer()
+    current = ListingSerializer(required=False, help_text="With `stale_revision` only.")
+
+
 class RepublishedListingSerializer(ListingSerializer):
     """The owner Listing plus how the republication was recorded (Story 2.18)."""
 
@@ -590,8 +628,9 @@ class ListingDetailView(NoStoreMixin, APIView):
             "`invalid_choice`, `not_applicable`, `invalid_measure`, `out_of_range`, "
             "`locality_not_in_city`, "
             "`contains_contact_details`, `not_editable` (also an identity field of a `published` "
-            "Listing: `city`, `locality`, `area_value`, `area_unit` and `marla_basis` are locked "
-            "while it is published, editable as a Draft or Archived); unknown ids are "
+            "Listing: `city`, `locality`, `area_value` and `area_unit` are locked while it is "
+            "published, editable as a Draft or Archived; `locality` and the area may be corrected "
+            "once, see `/correction`; `marla_basis` stays editable); unknown ids are "
             "`unknown_field` under `non_field_errors`) and never echoes a value. Another "
             "account's, an unknown or a malformed id is `404 not_found`; an account that may "
             "not edit (Suspended, Deactivated) is `403 forbidden`, and so is a `sold`, `rented` or "
@@ -874,7 +913,7 @@ class ListingRepublishView(NoStoreMixin, APIView):
             "(every stored value is judged again, all problems at once). `publication_kind` says "
             "how it was recorded: `republish_free` (no publication used) only when the Listing's "
             "last counted publication is from the same Karachi calendar month as now and none of "
-            "the purpose, category, subtype, city, locality, area value, area unit or marla basis "
+            "the purpose, category, subtype, city, locality, area value or area unit "
             "has changed; otherwise "
             "`republish_counted`, which uses one monthly publication. The same key with the same "
             "body within 24 hours returns the Listing as it is now with the original "
@@ -992,4 +1031,87 @@ class ListingPublishView(NoStoreMixin, APIView):
                 exc.code,
                 {"limit": exc.limit, "used": exc.used, "resets_at": exc.resets_at.isoformat()},
             ) from None
+        return Response(listing_data(view))
+
+
+class ListingCorrectionView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="get_listing_correction",
+        summary="Whether one of the signed-in account's own Listings may still be corrected",
+        description=(
+            "Owner only. `available` is true only for a `published`, not restricted Listing of "
+            "an account that may edit it, whose last counted publication is less than 24 hours "
+            "old and not yet used for a correction; `expires_at` then says when the window "
+            "closes (+05:00). In every other case `available` is false and `expires_at` null. "
+            "Another account's, an administrator's, an unknown and a malformed id are `404 "
+            "not_found`; a Visitor gets `401`. Reads only. Never cached."
+        ),
+        responses={
+            200: OpenApiResponse(CorrectionWindowSerializer, description="The window"),
+            401: OpenApiResponse(ErrorBodySerializer, description="`unauthenticated`"),
+            404: OpenApiResponse(ErrorBodySerializer, description="`not_found`"),
+        },
+    )
+    def get(self, request, listing_id):
+        expires_at = publication.correction_window(get_actor(request), listing_id)
+        return Response(
+            CorrectionWindowSerializer(
+                {"available": expires_at is not None, "expires_at": expires_at}
+            ).data
+        )
+
+    @extend_schema(
+        operation_id="correct_listing",
+        summary="Correct the locality and area of a recently published Listing, once",
+        description=(
+            "Needs `X-CSRFToken`. Body: `{base_revision, fields}` and nothing else; `fields` "
+            "holds only what changes among `locality`, `area_value`, `area_unit` and "
+            "`marla_basis` (any other id, `city`, `category`, `subtype` and `purpose` included, "
+            "is `400 validation_error` and nothing is written). It can be done ONCE per counted "
+            "publication, within 24 hours of it (exactly 24 hours is closed); it uses no "
+            "publication, and a later republication in the same Karachi month with the corrected "
+            "details unchanged is free. Order of refusals: another account's, an "
+            "administrator's, an unknown and a malformed id are `404 not_found`; a Visitor is "
+            "`401`; a `base_revision` that is not the current `revision` is `409 stale_revision` "
+            "with the Listing under `current`; a Listing that is not `published` is `409 "
+            "conflict`; a restricted Listing, a Suspended or a Deactivated account is `403 "
+            "forbidden`; a closed or used window is `409 correction_unavailable`. Then the "
+            "values are judged as for any edit of a published Listing, all at once (`400`, "
+            "codes keyed by field id, for example `locality_not_in_city`, `invalid_area`, "
+            "`required`, `not_applicable`). A `marla_basis` that differs while neither "
+            "`area_value` nor `area_unit` does is `not_editable` (change it with an ordinary "
+            "edit). A request that changes nothing is `400` with `non_field_errors` (`no_change`). "
+            "A refused request does not use up the correction. Never cached."
+        ),
+        request=ListingCorrectionSerializer,
+        responses={
+            200: OpenApiResponse(ListingSerializer, description="The corrected Listing"),
+            400: OpenApiResponse(ErrorBodySerializer, description="`validation_error`"),
+            401: OpenApiResponse(ErrorBodySerializer, description="`unauthenticated`"),
+            403: OpenApiResponse(
+                ErrorBodySerializer,
+                description="`forbidden`: restricted, Suspended, or a missing CSRF token",
+            ),
+            404: OpenApiResponse(ErrorBodySerializer, description="`not_found`"),
+            409: OpenApiResponse(
+                CorrectionConflictSerializer,
+                description="`stale_revision` (with `current`), `conflict` or "
+                "`correction_unavailable`",
+            ),
+        },
+    )
+    def post(self, request, listing_id):
+        serializer = ListingCorrectionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        body = serializer.validated_data
+        try:
+            view = publication.correct(
+                get_actor(request), listing_id, body["base_revision"], body["fields"]
+            )
+        except services.FieldsInvalid as exc:
+            raise field_errors(exc.fields) from None
+        except services.StaleRevision as exc:
+            raise ConflictWithCurrent(listing_data(exc.current)) from None
         return Response(listing_data(view))

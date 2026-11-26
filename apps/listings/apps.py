@@ -27,6 +27,11 @@ class ListingsConfig(AppConfig):
         audit.register_action(
             "listing.republished", {"kind": ["republish_counted", "republish_free"]}
         )
+        # A one-time correction: the Listing id is the target; which fields changed, never values.
+        audit.register_action(
+            "listing.corrected",
+            {"locality": bool, "area_value": bool, "area_unit": bool, "marla_basis": bool},
+        )
         # Status moves out of Published: the two statuses only (no content, no reason text).
         audit.register_action(
             "listing.status_changed",

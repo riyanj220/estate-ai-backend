@@ -1,4 +1,4 @@
-"""The reusable core of a fingerprint data migration (Story 2.18; first used by migration 0015).
+"""The reusable core of a fingerprint data migration (Story 2.18; used by migrations 0015 and 0016).
 
 When the set of `quota_identity` registry fields changes, the stored `identity_fingerprint` of
 every publication event is out of date. A migration to the pattern calls `recompute_fingerprints`
