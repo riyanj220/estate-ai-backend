@@ -11,7 +11,9 @@ def role_exists(connection, role: str) -> bool:
         return cursor.fetchone() is not None
 
 
-def grant_runtime_privileges(connection, role: str, append_only=()) -> None:
+def grant_runtime_privileges(connection, role: str, append_only=(), column_updates=None) -> None:
+    """DML on every table; `append_only` tables lose UPDATE, DELETE and TRUNCATE, then
+    `column_updates` (table -> column names) gives UPDATE back on exactly those columns."""
     if not _ROLE_RE.match(role):
         raise ValueError("Invalid database role name.")
     quote = connection.ops.quote_name
@@ -27,3 +29,6 @@ def grant_runtime_privileges(connection, role: str, append_only=()) -> None:
         cursor.execute(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {schema} TO {r}")
         for table in append_only:
             cursor.execute(f"REVOKE UPDATE, DELETE, TRUNCATE ON {schema}.{quote(table)} FROM {r}")
+        for table, columns in (column_updates or {}).items():  # after the revoke, always
+            names = ", ".join(quote(column) for column in columns)
+            cursor.execute(f"GRANT UPDATE ({names}) ON {schema}.{quote(table)} TO {r}")

@@ -1,7 +1,7 @@
 # The Field registry (AD-4). Every change needs a version bump and a new lock:
 #   uv run python scripts/registry_lock.py
 # Format and rules: docs/registry.md
-version: 9
+version: 10
 
 taxonomy:
   purposes: [sale, rent]
@@ -116,7 +116,6 @@ fields:
     class: public
     ai_extractable: true
     valuation_input: true
-    quota_identity: true
   - id: area_sqft
     type: decimal
     derived: true

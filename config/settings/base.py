@@ -45,8 +45,14 @@ DB_PORT = env_int("POSTGRES_PORT", 5432)
 MIGRATOR_DB_USER = env("MIGRATOR_USER", "migrator")
 RUNTIME_DB_USER = env("RUNTIME_USER", "runtime")
 
-# Tables the runtime role may only read and insert (the audit table, Story 1.10).
+# Tables the runtime role may read and insert but not delete, truncate or update (the audit table,
+# Story 1.10), except for the columns named in RUNTIME_COLUMN_UPDATES below.
 RUNTIME_APPEND_ONLY_TABLES: list[str] = ["kernel_auditrecord", "listings_publicationevent"]
+# The only columns of those tables the runtime role may still UPDATE (Story 2.19: the one-time
+# correction marks its counted publication event and moves its identity fingerprint).
+RUNTIME_COLUMN_UPDATES: dict[str, list[str]] = {
+    "listings_publicationevent": ["correction_used", "identity_fingerprint"],
+}
 
 
 # Story 2.16: `seed_sample_data` runs under the local and test settings only. A staging or other

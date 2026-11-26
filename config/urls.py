@@ -10,6 +10,7 @@ from apps.presentation.api.listing_images import (
 )
 from apps.presentation.api.listings import (
     DraftCreateView,
+    ListingCorrectionView,
     ListingDetailView,
     ListingPreviewView,
     ListingPublishView,
@@ -156,6 +157,11 @@ urlpatterns = [
         "api/v1/listings/<str:listing_id>/republish",
         ListingRepublishView.as_view(),
         name="listing-republish",
+    ),
+    path(
+        "api/v1/listings/<str:listing_id>/correction",
+        ListingCorrectionView.as_view(),
+        name="listing-correction",
     ),
     path(
         "api/v1/listings/<str:listing_id>/status",

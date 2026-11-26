@@ -8,7 +8,8 @@ from config.privileges import grant_runtime_privileges, role_exists
 class Command(BaseCommand):
     help = (
         "Grant DML (never DDL) privileges to the runtime database role. "
-        "Append-only tables come from settings.RUNTIME_APPEND_ONLY_TABLES."
+        "Append-only tables come from settings.RUNTIME_APPEND_ONLY_TABLES, the columns "
+        "they may still update from settings.RUNTIME_COLUMN_UPDATES."
     )
 
     def add_arguments(self, parser):
@@ -20,5 +21,7 @@ class Command(BaseCommand):
         role = settings.RUNTIME_DB_USER
         if not role_exists(connection, role):
             raise CommandError("Runtime database role does not exist.")
-        grant_runtime_privileges(connection, role, settings.RUNTIME_APPEND_ONLY_TABLES)
+        grant_runtime_privileges(
+            connection, role, settings.RUNTIME_APPEND_ONLY_TABLES, settings.RUNTIME_COLUMN_UPDATES
+        )
         self.stdout.write("Runtime privileges granted.")

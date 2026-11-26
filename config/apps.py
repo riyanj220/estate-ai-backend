@@ -15,7 +15,9 @@ def _grant_after_migrate(sender, using, **kwargs):
     role = settings.RUNTIME_DB_USER
     if connection.settings_dict["USER"] == role or not role_exists(connection, role):
         return
-    grant_runtime_privileges(connection, role, settings.RUNTIME_APPEND_ONLY_TABLES)
+    grant_runtime_privileges(
+        connection, role, settings.RUNTIME_APPEND_ONLY_TABLES, settings.RUNTIME_COLUMN_UPDATES
+    )
 
 
 class ConfigAppConfig(AppConfig):
