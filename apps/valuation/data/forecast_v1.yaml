@@ -1,0 +1,12 @@
+# 5-Year Price Forecast scenario parameters, version 1 (FR-45, FR-77). Assumed annual growth rates
+# by locality tier (data/localities.yaml): invented scenarios, not predictions. Compounded yearly:
+# value_after_n = estimate * (1 + rate) ** n.
+# Never edit a released file: add forecast_v2.yaml and raise FORECAST_VERSION in data/forecast.py.
+version: 1
+localities_version: 1
+horizon_years: 5
+annual_growth:
+  premium: {low: "0.05", base: "0.09", high: "0.13"}
+  upper_mid: {low: "0.05", base: "0.08", high: "0.12"}
+  mid: {low: "0.04", base: "0.08", high: "0.11"}
+  affordable: {low: "0.03", base: "0.07", high: "0.10"}

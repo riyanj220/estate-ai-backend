@@ -12,6 +12,9 @@ dependencies = [
     "pyyaml>=6.0.3",
     "pillow>=13.0,<14",
     "tzdata>=2024.1",
+    "scikit-learn>=1.7,<2",
+    "numpy>=2,<3",
+    "threadpoolctl>=3.8.0",
 ]
 
 [dependency-groups]

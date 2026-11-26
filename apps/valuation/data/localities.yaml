@@ -1,0 +1,76 @@
+# Synthetic locality tiers and base rates (PKR per square foot) for the valuation dataset and the
+# forecast. Invented for this project, not market data. Names match catalog's seeded localities.
+# Changing anything here means a new `version`, a new dataset and a retrained model.
+version: 1
+localities:
+  Clifton: {tier: premium, base_rate: 30000}
+  Clifton Block 5: {tier: premium, base_rate: 33000}
+  Bath Island: {tier: premium, base_rate: 31000}
+  Zamzama: {tier: premium, base_rate: 32000}
+  Emaar Crescent Bay: {tier: premium, base_rate: 38000}
+  Sunset Boulevard: {tier: premium, base_rate: 26000}
+  DHA Phase 1: {tier: premium, base_rate: 25000}
+  DHA Phase 2: {tier: premium, base_rate: 26000}
+  DHA Phase 2 Extension: {tier: premium, base_rate: 24000}
+  DHA Phase 4: {tier: premium, base_rate: 29000}
+  DHA Phase 5: {tier: premium, base_rate: 32000}
+  DHA Phase 6: {tier: premium, base_rate: 31000}
+  DHA Phase 7: {tier: premium, base_rate: 24000}
+  DHA Phase 8: {tier: premium, base_rate: 28000}
+  PECHS: {tier: upper_mid, base_rate: 20000}
+  Bahadurabad: {tier: upper_mid, base_rate: 21000}
+  Tariq Road: {tier: upper_mid, base_rate: 19000}
+  Sharfabad: {tier: upper_mid, base_rate: 18500}
+  Garden: {tier: upper_mid, base_rate: 15000}
+  Defence View: {tier: upper_mid, base_rate: 16000}
+  KDA Scheme 1: {tier: upper_mid, base_rate: 20000}
+  KAECHS: {tier: upper_mid, base_rate: 19500}
+  Karachi Cooperative Housing Society: {tier: upper_mid, base_rate: 19000}
+  Pakistan Employees Cooperative Housing Society: {tier: upper_mid, base_rate: 18000}
+  Memon Society: {tier: upper_mid, base_rate: 15500}
+  Al-Hilal Society: {tier: upper_mid, base_rate: 16500}
+  Cantt Karachi: {tier: upper_mid, base_rate: 21000}
+  Askari 4: {tier: upper_mid, base_rate: 19000}
+  Askari 5: {tier: upper_mid, base_rate: 17000}
+  Askari 11: {tier: upper_mid, base_rate: 14500}
+  Falcon Society: {tier: upper_mid, base_rate: 18000}
+  Jamshed Town: {tier: upper_mid, base_rate: 15000}
+  Gulshan-e-Iqbal: {tier: mid, base_rate: 14000}
+  Gulistan-e-Jauhar: {tier: mid, base_rate: 11500}
+  North Nazimabad: {tier: mid, base_rate: 14500}
+  Nazimabad: {tier: mid, base_rate: 12000}
+  Federal B Area: {tier: mid, base_rate: 11500}
+  Federal B Area Society: {tier: mid, base_rate: 12000}
+  Saddar: {tier: mid, base_rate: 13000}
+  Gulberg: {tier: mid, base_rate: 12500}
+  Block 13-D Gulshan: {tier: mid, base_rate: 12500}
+  Naya Nazimabad: {tier: mid, base_rate: 11000}
+  Malir Cantonment: {tier: mid, base_rate: 13000}
+  Gulistan-e-Johar Society: {tier: mid, base_rate: 11000}
+  Scheme 33: {tier: mid, base_rate: 9500}
+  KDA Scheme 33 Society: {tier: mid, base_rate: 9500}
+  Saima Arabian Villas: {tier: mid, base_rate: 10000}
+  Taj Complex: {tier: mid, base_rate: 10500}
+  Soldier Bazaar: {tier: mid, base_rate: 10000}
+  Bahria Town Karachi: {tier: mid, base_rate: 9000}
+  Precinct 1 Bahria: {tier: mid, base_rate: 9500}
+  DHA City Karachi: {tier: mid, base_rate: 8500}
+  Korangi: {tier: affordable, base_rate: 7500}
+  Landhi: {tier: affordable, base_rate: 6000}
+  Malir: {tier: affordable, base_rate: 6500}
+  Shah Faisal Colony: {tier: affordable, base_rate: 7000}
+  North Karachi: {tier: affordable, base_rate: 8000}
+  New Karachi: {tier: affordable, base_rate: 6500}
+  Orangi Town: {tier: affordable, base_rate: 4500}
+  Liaquatabad: {tier: affordable, base_rate: 8000}
+  Lyari: {tier: affordable, base_rate: 5500}
+  Gulshan-e-Maymar: {tier: affordable, base_rate: 7000}
+  Surjani Town: {tier: affordable, base_rate: 4800}
+  Baldia Town: {tier: affordable, base_rate: 4300}
+  SITE: {tier: affordable, base_rate: 6000}
+  Manghopir: {tier: affordable, base_rate: 3800}
+  Kemari: {tier: affordable, base_rate: 5000}
+  Safoora Goth: {tier: affordable, base_rate: 7200}
+  Gadap Town: {tier: affordable, base_rate: 3500}
+  Mehmoodabad: {tier: affordable, base_rate: 8000}
+  Gulshan-e-Hadeed: {tier: affordable, base_rate: 5200}

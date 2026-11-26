@@ -1,7 +1,7 @@
 # The Field registry (AD-4). Every change needs a version bump and a new lock:
 #   uv run python scripts/registry_lock.py
 # Format and rules: docs/registry.md
-version: 10
+version: 11
 
 taxonomy:
   purposes: [sale, rent]
@@ -37,6 +37,7 @@ fields:
     allowed_values: [house, apartment, residential_plot, commercial_plot, plot_file, shop, office]
     class: public
     quota_identity: true
+    valuation_input: true
   - id: title
     type: text
     requirement: required_for_publication
@@ -704,6 +705,7 @@ fields:
     class: public
     searchable: true
     quota_identity: true
+    valuation_input: true
   - id: society
     type: text
     section: location

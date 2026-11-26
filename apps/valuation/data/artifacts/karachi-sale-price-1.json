@@ -1,0 +1,33 @@
+{
+  "name": "karachi-sale-price",
+  "version": 1,
+  "feature_schema_version": 1,
+  "trained_at": "2026-11-26T22:10:50+00:00",
+  "sklearn_version": "1.9.1",
+  "artifact_sha256": "cb9a2c96fe81fa0197c7c5fbb07d706556f2ba58f2453fb8f3f9438b64e0eaa2",
+  "dataset": {
+    "seed": 20261127,
+    "rows": 15000,
+    "sha256": "0d7b089b77a164ca91a43c276f03383550ad0ffa65ad016b2d5176a0264c816b",
+    "localities_version": 1
+  },
+  "metrics": {
+    "train_rows": 12000,
+    "test_rows": 3000,
+    "model": {
+      "mae_pkr": 3985267,
+      "mape": 0.0974,
+      "r2": 0.9784
+    },
+    "baseline_locality": {
+      "mae_pkr": 6979649,
+      "mape": 0.1717,
+      "r2": 0.9338
+    },
+    "baseline_locality_subtype": {
+      "mae_pkr": 5883160,
+      "mape": 0.1387,
+      "r2": 0.9484
+    }
+  }
+}
