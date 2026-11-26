@@ -567,11 +567,11 @@ def test_suspension_hides_the_logo_and_reactivation_shows_it_again():
     agency = uploaded_agency()
     path = logo_url(agency_id_of(agency))
     assert Client().get(path).status_code == 200
-    identity_services.suspend(ADMIN_ACTOR, agency.account_id, "policy breach")
+    identity_services.suspend_account(ADMIN_ACTOR, agency.account_id, "policy breach")
     assert Client().get(path).status_code == 404
     assert MediaAsset.objects.count() == 1  # the asset is kept
     assert agency.get(file_of("agency")).status_code == 200  # the owner still sees it
-    identity_services.reactivate(ADMIN_ACTOR, agency.account_id)
+    identity_services.reactivate_account(ADMIN_ACTOR, agency.account_id, "appeal upheld")
     assert Client().get(path).status_code == 200
 
 

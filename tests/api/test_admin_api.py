@@ -116,6 +116,7 @@ def test_admin_sign_in_returns_the_summary_and_a_short_hardened_cookie(db):
         "full_name": "",
         "agency_name": "",
         "capabilities": ["sign_in", "browse"],
+        "suspension_reason": None,
     }
     cookie = client.cookies[COOKIE]
     assert cookie["httponly"] and cookie["samesite"] == "Lax" and cookie["path"] == "/"

@@ -100,7 +100,7 @@ def test_sign_in_issues_a_session_and_stores_only_the_hash(db, clock):
 def test_unverified_and_suspended_accounts_can_sign_in(db, verified, state):
     view = make(verified=verified)
     if state is AccountState.SUSPENDED:
-        services.suspend(ADMIN, view.id, "policy breach")
+        services.suspend_account(ADMIN, view.id, "policy breach")
     result = sign_in()
     assert result.summary.state is state
     assert "sign_in" in result.summary.capabilities
@@ -329,7 +329,7 @@ def test_deactivated_account_session_is_not_live_even_before_the_event_runs(db):
 def test_suspended_account_keeps_its_session_and_shows_suspended(db):
     view = make()
     token = sign_in().token
-    services.suspend(ADMIN, view.id, "policy breach")
+    services.suspend_account(ADMIN, view.id, "policy breach")
     session = live(token)
     assert session is not None
     summary = selectors.get_actor_summary(session.account_id)
@@ -483,7 +483,7 @@ def test_listed_capabilities_match_what_can_grants(db, kind, verified):
 
 def test_suspended_individual_capabilities(db):
     view = make()
-    services.suspend(ADMIN, view.id, "policy breach")
+    services.suspend_account(ADMIN, view.id, "policy breach")
     assert selectors.get_actor_summary(view.id).capabilities == (
         "sign_in",
         "browse",

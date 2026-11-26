@@ -124,6 +124,7 @@ def test_sign_in_returns_the_summary_and_a_hardened_cookie(db):
         "full_name": "",
         "agency_name": "",
         "capabilities": ["sign_in", "browse", "view_drafts", "edit_drafts"],
+        "suspension_reason": None,
     }
     cookie = client.cookies[COOKIE]
     assert cookie["httponly"] and cookie["samesite"] == "Lax"
@@ -146,7 +147,7 @@ def test_secure_flag_follows_the_setting(db, settings):
 def test_unverified_and_suspended_accounts_sign_in(db, verified, state):
     view = make(verified=verified)
     if state == "suspended":
-        services.suspend(ADMIN, view.id, "policy breach")
+        services.suspend_account(ADMIN, view.id, "policy breach")
     response = sign_in(browser())
     assert (response.status_code, response.json()["state"]) == (200, state)
     assert "publish" not in response.json()["capabilities"]
@@ -261,6 +262,7 @@ def test_me_returns_the_summary_with_full_name_and_no_store(db, django_capture_o
         "full_name",
         "agency_name",
         "capabilities",
+        "suspension_reason",
     }
     assert "phone" not in json.dumps(body) and "password" not in json.dumps(body)
 
@@ -330,7 +332,7 @@ def test_me_without_a_valid_cookie_is_unauthenticated(db):
 def test_me_reflects_suspension_without_ending_the_session(db):
     view = make()
     client = signed_in()
-    services.suspend(ADMIN, view.id, "policy breach")
+    services.suspend_account(ADMIN, view.id, "policy breach")
     body = client.get(ME).json()
     assert (body["state"], body["capabilities"]) == (
         "suspended",
@@ -524,6 +526,7 @@ def test_openapi_documents_the_session_routes(tmp_path):
         "full_name",
         "agency_name",
         "capabilities",
+        "suspension_reason",
     }
 
 

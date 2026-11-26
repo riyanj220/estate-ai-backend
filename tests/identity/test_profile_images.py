@@ -459,11 +459,11 @@ def test_suspension_keeps_the_asset_and_reactivation_shows_the_logo_again():
     agency = owner("agency")
     put(agency)
     profile_id = profile_of(agency).id
-    services.suspend(ADMIN, agency.id, "policy breach")
+    services.suspend_account(ADMIN, agency.id, "policy breach")
     assert MediaAsset.objects.count() == 1
     with pytest.raises(DomainError):
         selectors.logo_for_serving(profile_id)
-    services.reactivate(ADMIN, agency.id)
+    services.reactivate_account(ADMIN, agency.id, "appeal upheld")
     assert selectors.logo_for_serving(profile_id).size > 0
 
 

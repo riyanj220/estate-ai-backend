@@ -148,7 +148,7 @@ def test_verify_unknown_account_is_not_found(db):
 
 def test_suspend_stores_reason_audits_without_it_and_emits_nothing(db, received):
     view = create()
-    result = services.suspend(ADMIN, view.id, "  Repeated policy breaches  ")
+    result = services.suspend_account(ADMIN, view.id, "  Repeated policy breaches  ")
     assert (result.state, result.suspension_reason) == (S.SUSPENDED, "Repeated policy breaches")
     audit = AuditRecord.objects.get(action="account.suspended")
     assert audit.metadata == {} and audit.reason == ""
@@ -156,60 +156,81 @@ def test_suspend_stores_reason_audits_without_it_and_emits_nothing(db, received)
     assert received == []
 
 
-@pytest.mark.parametrize("reason", ["", "   ", "x" * 301, "mail me@x.com", "call 0300123456", None])
-def test_bad_reason_is_refused_without_writes(db, reason):
+@pytest.mark.parametrize(
+    ("reason", "code"),
+    [
+        (None, "required"),
+        (5, "invalid"),
+        ("", "too_short"),
+        ("    ", "too_short"),
+        ("  four  ", "too_short"),
+        ("x" * 501, "too_long"),
+        ("two\nlines", "invalid"),
+        ("mail me@x.com", "contains_contact_details"),
+        ("call 0300123456", "contains_contact_details"),
+    ],
+)
+@pytest.mark.parametrize("name", ["suspend_account", "reactivate_account"])
+def test_bad_reason_is_refused_without_writes(db, name, reason, code):
     view = create()
-    assert codes(services.suspend, ADMIN, view.id, reason) == "validation_error"
+    with pytest.raises(services.FieldsInvalid) as exc:
+        getattr(services, name)(ADMIN, view.id, reason)
+    assert exc.value.fields == {"reason": code}
     assert Account.objects.get(id=view.id).suspended_at is None
-    assert not AuditRecord.objects.filter(action="account.suspended").exists()
+    assert AuditRecord.objects.count() == 1
 
 
-def test_reason_limits_are_inclusive(db):
+@pytest.mark.parametrize("reason", ["x" * 5, "x" * 500, "Case 123456 breach"])
+def test_reason_limits_are_inclusive(db, reason):
     view = create()
-    assert services.suspend(ADMIN, view.id, "x" * 300).state is S.SUSPENDED
+    assert services.suspend_account(ADMIN, view.id, reason).state is S.SUSPENDED
+    assert services.reactivate_account(ADMIN, view.id, reason).state is S.EMAIL_UNVERIFIED
 
 
-def test_digit_runs_below_seven_are_fine(db):
+def test_suspending_twice_is_a_conflict(db):
     view = create()
-    assert services.suspend(ADMIN, view.id, "Case 123456 breach").state is S.SUSPENDED
-
-
-def test_suspending_twice_is_refused(db):
-    view = create()
-    services.suspend(ADMIN, view.id, "one")
-    assert codes(services.suspend, ADMIN, view.id, "two") == "validation_error"
-    assert selectors.get_account(view.id).suspension_reason == "one"
+    services.suspend_account(ADMIN, view.id, "first reason")
+    assert codes(services.suspend_account, ADMIN, view.id, "second reason") == "conflict"
+    assert selectors.get_account(view.id).suspension_reason == "first reason"
+    assert AuditRecord.objects.filter(action="account.suspended").count() == 1
 
 
 def test_reactivate_verified_returns_to_active(db):
     view = create()
     services.mark_email_verified(SYSTEM, view.id)
-    services.suspend(ADMIN, view.id, "r")
-    result = services.reactivate(ADMIN, view.id)
-    assert (result.state, result.suspension_reason) == (S.ACTIVE, "")
+    services.suspend_account(ADMIN, view.id, "policy breach")
+    result = services.reactivate_account(ADMIN, view.id, "  appeal upheld  ")
+    assert (result.state, result.suspension_reason, result.suspended_at) == (S.ACTIVE, "", None)
+    assert Account.objects.get(id=view.id).reactivation_reason == "appeal upheld"
     assert AuditRecord.objects.filter(action="account.reactivated").count() == 1
+    services.suspend_account(ADMIN, view.id, "policy breach")
+    assert Account.objects.get(id=view.id).reactivation_reason == ""
 
 
 def test_reactivate_unverified_returns_to_email_unverified(db):
     view = create()
-    services.suspend(ADMIN, view.id, "r")
-    assert services.reactivate(ADMIN, view.id).state is S.EMAIL_UNVERIFIED
+    services.suspend_account(ADMIN, view.id, "policy breach")
+    result = services.reactivate_account(ADMIN, view.id, "appeal upheld")
+    assert result.state is S.EMAIL_UNVERIFIED
 
 
-def test_reactivating_a_non_suspended_account_is_refused(db):
+def test_reactivating_a_non_suspended_account_is_a_conflict(db):
     view = create()
-    assert codes(services.reactivate, ADMIN, view.id) == "validation_error"
+    assert codes(services.reactivate_account, ADMIN, view.id, "appeal upheld") == "conflict"
     assert not AuditRecord.objects.filter(action="account.reactivated").exists()
 
 
 def test_verification_while_suspended_is_kept(db):
     view = create()
-    services.suspend(ADMIN, view.id, "r")
+    services.suspend_account(ADMIN, view.id, "policy breach")
     assert services.mark_email_verified(SYSTEM, view.id).state is S.SUSPENDED
-    assert services.reactivate(ADMIN, view.id).state is S.ACTIVE
+    assert services.reactivate_account(ADMIN, view.id, "appeal upheld").state is S.ACTIVE
 
 
-@pytest.mark.parametrize("call_args", [("suspend", "r"), ("reactivate",), ("deactivate",)])
+CHANGES = [("suspend_account", "policy breach"), ("reactivate_account", "appeal upheld")]
+
+
+@pytest.mark.parametrize("call_args", [*CHANGES, ("deactivate",)])
 @pytest.mark.parametrize(
     ("actor", "code"),
     [
@@ -217,6 +238,7 @@ def test_verification_while_suspended_is_kept(db):
         (Actor.user(uuid.uuid4()), "not_found"),
         (Actor.system(), "not_found"),
     ],
+    ids=["visitor", "user", "system"],
 )
 def test_non_admins_cannot_change_state(db, actor, code, call_args):
     view = create()
@@ -227,7 +249,7 @@ def test_non_admins_cannot_change_state(db, actor, code, call_args):
     assert (row.suspended_at, row.deactivated_at) == (None, None)
 
 
-@pytest.mark.parametrize("call_args", [("suspend", "r"), ("reactivate",), ("deactivate",)])
+@pytest.mark.parametrize("call_args", [*CHANGES, ("deactivate",)])
 def test_unknown_account_is_not_found(db, call_args):
     name, *rest = call_args
     assert codes(getattr(services, name), ADMIN, uuid.uuid4(), *rest) == "not_found"
@@ -264,19 +286,20 @@ def test_rolled_back_deactivation_emits_nothing(received):
     assert not AuditRecord.objects.filter(action="account.deactivated").exists()
 
 
-@pytest.mark.parametrize("call_args", [("suspend", "r"), ("reactivate",), ("deactivate",)])
+@pytest.mark.parametrize("call_args", [*CHANGES, ("deactivate",)])
 def test_deactivated_account_cannot_be_changed_again(db, call_args):
     view = create()
     services.deactivate(ADMIN, view.id)
     name, *rest = call_args
-    assert codes(getattr(services, name), ADMIN, view.id, *rest) == "not_found"
+    expected = "not_found" if name == "deactivate" else "conflict"
+    assert codes(getattr(services, name), ADMIN, view.id, *rest) == expected
     assert codes(services.mark_email_verified, SYSTEM, view.id) == "not_found"
     assert AuditRecord.objects.filter(action="account.deactivated").count() == 1
 
 
 def test_deactivating_a_suspended_account_wins(db):
     view = create()
-    services.suspend(ADMIN, view.id, "r")
+    services.suspend_account(ADMIN, view.id, "policy breach")
     assert services.deactivate(ADMIN, view.id).state is S.DEACTIVATED
 
 
@@ -287,7 +310,7 @@ def test_failure_after_audit_write_rolls_back_account_and_audit(monkeypatch, nam
     if name != "verify":
         services.mark_email_verified(SYSTEM, view.id)
     if name == "reactivate":
-        services.suspend(ADMIN, view.id, "r")
+        services.suspend_account(ADMIN, view.id, "policy breach")
     before_rows = list(Account.objects.values())
     before_audit = AuditRecord.objects.count()
     original = services.audit.record
@@ -300,8 +323,8 @@ def test_failure_after_audit_write_rolls_back_account_and_audit(monkeypatch, nam
     calls = {
         "create": lambda: services.create_account(SYSTEM, "new@example.com", PASSWORD, "agency"),
         "verify": lambda: services.mark_email_verified(SYSTEM, view.id),
-        "suspend": lambda: services.suspend(ADMIN, view.id, "r"),
-        "reactivate": lambda: services.reactivate(ADMIN, view.id),
+        "suspend": lambda: services.suspend_account(ADMIN, view.id, "policy breach"),
+        "reactivate": lambda: services.reactivate_account(ADMIN, view.id, "appeal upheld"),
         "deactivate": lambda: services.deactivate(ADMIN, view.id),
     }
     with pytest.raises(RuntimeError):
@@ -317,8 +340,8 @@ def test_no_email_hash_or_reason_in_audit_or_logs(db, caplog):
     caplog.set_level(logging.DEBUG)
     view = create("canary.person@example.com")
     services.mark_email_verified(SYSTEM, view.id)
-    services.suspend(ADMIN, view.id, "canary-reason-text")
-    services.reactivate(ADMIN, view.id)
+    services.suspend_account(ADMIN, view.id, "canary-reason-text")
+    services.reactivate_account(ADMIN, view.id, "canary-reason-again")
     services.deactivate(ADMIN, view.id)
     stored = Account.objects.get(id=view.id)
     dump = " ".join(
@@ -350,7 +373,7 @@ def test_get_account_handles_unknown_and_malformed_ids(db):
 
 def test_suspended_shows_reason_and_may_be_signed_in(db):
     view = create()
-    services.suspend(ADMIN, view.id, "Policy breach")
+    services.suspend_account(ADMIN, view.id, "Policy breach")
     got = selectors.get_signed_in_account(str(view.id))
     assert (got.state, got.suspension_reason) == (S.SUSPENDED, "Policy breach")
 
@@ -378,7 +401,7 @@ def test_is_active_owner(db, kind, verify, suspend, deactivate, expected):
     if verify:
         services.mark_email_verified(SYSTEM, view.id)
     if suspend:
-        services.suspend(ADMIN, view.id, "r")
+        services.suspend_account(ADMIN, view.id, "policy breach")
     if deactivate:
         services.deactivate(ADMIN, view.id)
     assert selectors.is_active_owner(view.id) is expected
@@ -523,7 +546,7 @@ def test_other_integrity_errors_are_not_reported_as_duplicate_email(db, monkeypa
 )
 def test_reason_with_seven_digits_in_total_is_refused(db, reason):
     view = create()
-    assert codes(services.suspend, ADMIN, view.id, reason) == "validation_error"
+    assert codes(services.suspend_account, ADMIN, view.id, reason) == "validation_error"
 
 
 @pytest.mark.parametrize(
@@ -538,7 +561,7 @@ def test_reason_with_seven_digits_in_total_is_refused(db, reason):
 )
 def test_reason_rules_kept_from_the_interim_check_are_refused(db, reason):
     view = create()
-    assert codes(services.suspend, ADMIN, view.id, reason) == "validation_error"
+    assert codes(services.suspend_account, ADMIN, view.id, reason) == "validation_error"
 
 
 @pytest.mark.parametrize("email", ["user@localhost", "a,b@c.de", 'a"b@c.de'])
@@ -555,18 +578,20 @@ def test_view_raises_runtime_error_when_row_is_missing(db):
 # --- administrators are not managed here ---------------------------------------------------
 
 
-@pytest.mark.parametrize("call_args", [("suspend", "r"), ("reactivate",), ("deactivate",)])
-def test_admin_accounts_and_self_cannot_be_managed(db, call_args):
+@pytest.mark.parametrize(
+    ("call_args", "code"),
+    [
+        (CHANGES[0], "not_found"),
+        (CHANGES[1], "not_found"),
+        (("deactivate",), "validation_error"),
+    ],
+)
+def test_admin_accounts_cannot_be_managed(db, call_args, code):
     name, *rest = call_args
     other_admin = create("admin2@example.com", "admin")
     own = create("admin1@example.com", "admin")
-    individual = create()
-    for target, actor in (
-        (other_admin.id, ADMIN),
-        (own.id, Actor.admin(own.id)),
-        (individual.id, Actor.admin(individual.id)),
-    ):
-        assert codes(getattr(services, name), actor, target, *rest) == "validation_error"
+    for target, actor in ((other_admin.id, ADMIN), (own.id, Actor.admin(own.id))):
+        assert codes(getattr(services, name), actor, target, *rest) == code
     assert not AuditRecord.objects.exclude(action="account.created").exists()
     assert not Account.objects.exclude(suspended_at=None, deactivated_at=None).exists()
 
