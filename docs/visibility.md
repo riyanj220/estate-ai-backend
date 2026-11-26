@@ -90,16 +90,23 @@ everyone else gets the identical `404`. An administrator may fetch images of a p
 `public_listings()` and build each row with the same `public_view_of`. `spec` is a `catalog.filters.ListingFilter`
 (see Filters below).
 They add the date of the first publication (Asia/Karachi, `first_published_at`, which republishing does not move) and
-the names of the city and locality. A list uses a fixed number of queries whatever its size (`docs/performance.md`).
+the names of the city and locality, and the advertiser. A list uses a fixed number of queries whatever its size
+(`docs/performance.md`).
+
+The advertiser (Story 3.6, `identity.selectors.public_advertisers`) is
+`{type, agency_name, logo_url, verified}`: `type` is `individual` or `agency`; the name and the logo route
+(`/api/v1/agencies/{agency_id}/logo`, null without a logo) are for Agencies only; `verified` stays false until Epic 8
+grants Verification. Nothing else about the owner is public: no account id, personal name, phone, email or address.
+It belongs to discovery, not to `PublicListingView`, so the owner's preview is unchanged.
 
 | Route | Answer |
 | --- | --- |
 | `GET /api/v1/public/listings?<filters>&sort=&limit=20&cursor=` | `{results: [card], next}` |
 | `GET /api/v1/public/filters` | `{registry_version, sorts, preference_prefix, filters}` |
-| `GET /api/v1/public/listings/{id}` | the public projection plus `city`, `locality`, `published_on` |
+| `GET /api/v1/public/listings/{id}` | the public projection plus `city`, `locality`, `published_on`, `advertiser` |
 
 A card is `id`, `purpose`, `category`, `subtype`, `title`, `fields` (price, area, bedrooms, bathrooms), `city`,
-`locality` (`{id, name}` or null), `cover_url`, `published_on`. Neither route authenticates anyone: the answer is the
+`locality` (`{id, name}` or null), `advertiser`, `cover_url`, `published_on`. Neither route authenticates anyone: the answer is the
 same for every caller. A `200` is `Cache-Control: public, max-age=60` with no cookie; every error is `no-store`. A
 Listing that is not public, an unknown and a malformed id are the same `404`. A bad `limit` (1 to 50), `cursor`,
 `sort` or filter is `400`.
