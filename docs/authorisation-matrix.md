@@ -68,6 +68,7 @@ whose permission is not explicit.
 | `/api/v1/notifications/unread-count` | GET | signed_in | `apps.presentation.api.notifications.UnreadCountView` |
 | `/api/v1/password-reset-requests` | POST | public | `apps.presentation.api.passwords.PasswordResetRequestView` |
 | `/api/v1/password-resets/confirm` | POST | public | `apps.presentation.api.passwords.PasswordResetConfirmView` |
+| `/api/v1/public/filters` | GET | public | `apps.presentation.api.public_listings.PublicFiltersView` |
 | `/api/v1/public/listings` | GET | public | `apps.presentation.api.public_listings.PublicListingsView` |
 | `/api/v1/public/listings/<str:listing_id>` | GET | public | `apps.presentation.api.public_listings.PublicListingDetailView` |
 | `/api/v1/reference/amenities` | GET | public | `apps.presentation.api.reference.AmenityView` |

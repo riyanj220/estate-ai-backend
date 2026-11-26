@@ -87,23 +87,51 @@ everyone else gets the identical `404`. An administrator may fetch images of a p
 ## Public discovery (Story 3.1)
 
 `selectors.search_public(actor, spec, sort, cursor, limit)` and `selectors.public_detail(viewer, id)` start from
-`public_listings()` and build each row with the same `public_view_of`. `spec` (`SearchSpec`) is empty until Story 3.3.
+`public_listings()` and build each row with the same `public_view_of`. `spec` is a `catalog.filters.ListingFilter`
+(see Filters below).
 They add the date of the first publication (Asia/Karachi) and the names of the city and locality. A list uses a fixed
 number of queries whatever its size.
 
 | Route | Answer |
 | --- | --- |
-| `GET /api/v1/public/listings?sort=newest&limit=20&cursor=` | `{results: [card], next}` |
+| `GET /api/v1/public/listings?<filters>&sort=&limit=20&cursor=` | `{results: [card], next}` |
+| `GET /api/v1/public/filters` | `{registry_version, sorts, preference_prefix, filters}` |
 | `GET /api/v1/public/listings/{id}` | the public projection plus `city`, `locality`, `published_on` |
 
 A card is `id`, `purpose`, `category`, `subtype`, `title`, `fields` (price, area, bedrooms, bathrooms), `city`,
 `locality` (`{id, name}` or null), `cover_url`, `published_on`. Neither route authenticates anyone: the answer is the
 same for every caller. A `200` is `Cache-Control: public, max-age=60` with no cookie; every error is `no-store`. A
-Listing that is not public, an unknown and a malformed id are the same `404`. A bad `limit` (1 to 50), `cursor` or
-`sort` is `400`.
+Listing that is not public, an unknown and a malformed id are the same `404`. A bad `limit` (1 to 50), `cursor`,
+`sort` or filter is `400`.
 
 `newest` orders by the FIRST publication event, then id, so archiving and republishing cannot move a Listing back to
 the top. The routes have no application rate limit.
+
+## Filters (Story 3.3)
+
+`catalog.filters` generates the filters from the registry: `purpose`, `category`, `subtype` and every public
+`searchable` field of a structured type. Free text (`title`, `description`) has no filter, and `area_value` and
+`area_unit` are left out in favour of `area_sqft`. A newly searchable field needs no code. `parse(params)` returns the
+abstract `ListingFilter` (required and preferred criteria); `search_public` is the only code that turns it into a query.
+
+| Kind | Fields | Parameters |
+| --- | --- | --- |
+| choice (any of) | `purpose`, `category`, `subtype`, `price_basis`, `rental_period`, `furnishing`, `city`, `locality` | `<id>=a,b` |
+| range (inclusive) | `asking_price`, `area_sqft`, `bedrooms`, `bathrooms`, `parking_spaces` | `<id>_min`, `<id>_max` |
+| amenities (all of, state `present`) | `amenities`, `nearby` codes included (seller-declared) | `amenities=a,b` |
+| boolean | none yet | `<id>=true` or `false` |
+
+- Required criteria AND together. A Listing that has not answered a field never matches a criterion on it, so a marla
+  or kanal area without a basis is left out of any area filter.
+- `prefer_<parameter>` never excludes. Relevance is the number of preferences met (each amenity code is one; the two
+  bounds of a range are one).
+- `sort`: `newest`, `price_asc`, `price_desc`, `relevance` (needs a preference, and is then the default). The ties of
+  `relevance` fall to `newest`, and the id breaks every tie.
+- Price compares `asking_price` as stored: a `per_unit` price is not multiplied out and rental periods are not
+  converted. `purpose`, `price_basis` and `rental_period` keep unlike prices apart.
+- The cursor carries the sort keys and a hash of the filter and sort: used with another, it is `400`.
+- `400 validation_error` names each unknown, repeated or bad parameter and `<id>_max` for an inverted range. An amenity
+  code must be active; a well-formed city or locality id that matches nothing gives an empty list.
 
 ## How later stories must use it
 

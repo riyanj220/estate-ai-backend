@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework.utils.urls import replace_query_param
 from rest_framework.views import APIView
 
+from apps.catalog import filters, registry
+from apps.catalog import selectors as catalog
 from apps.listings import selectors
 from apps.presentation.api.actors import get_actor
 from apps.presentation.api.bodies import field_errors
@@ -23,6 +25,8 @@ from apps.presentation.api.listings import (
     public_values,
 )
 from apps.presentation.api.permissions import AllowPublic
+from apps.presentation.api.reference import AmenitySerializer
+from apps.presentation.api.registry import _bound
 from apps.presentation.api.serializers import ErrorBodySerializer
 
 # The facts a card shows. Values come from the projection's `fields`, which holds public ones only.
@@ -108,6 +112,93 @@ def _limit(raw: str | None) -> int:
     raise field_errors({"limit": "invalid"})
 
 
+class PublicFilterSerializer(serializers.Serializer):
+    id = serializers.CharField(help_text="The registry field id.")
+    type = serializers.ChoiceField(choices=registry.FIELD_TYPES)
+    match = serializers.ChoiceField(
+        choices=[filters.CHOICE, filters.RANGE, filters.BOOLEAN, filters.AMENITIES],
+        help_text=(
+            "`choice`: comma-separated, any of them. `range`: inclusive `_min` and `_max`. "
+            "`boolean`: `true` or `false`. `amenities`: comma-separated codes, all of them."
+        ),
+    )
+    params = serializers.ListField(
+        child=serializers.CharField(), help_text="The query parameter names."
+    )
+    allowed_values = serializers.ListField(
+        child=serializers.CharField(), allow_null=True, help_text="Enums only."
+    )
+    options = AmenitySerializer(
+        many=True,
+        allow_null=True,
+        help_text=(
+            "Amenities only: the active catalogue. A `nearby` entry is the seller's own "
+            "declaration."
+        ),
+    )
+    reference = serializers.CharField(
+        allow_null=True, help_text="`city` or `locality`: values are ids from the reference lists."
+    )
+    min = serializers.CharField(allow_null=True, help_text="Ranges: the registry's smallest.")
+    max = serializers.CharField(allow_null=True, help_text="Ranges: the largest bound accepted.")
+    seller_declared = serializers.BooleanField()
+    purposes = serializers.ListField(
+        child=serializers.CharField(), help_text="Applicability; empty means all."
+    )
+    categories = serializers.ListField(child=serializers.CharField())
+    subtypes = serializers.ListField(child=serializers.CharField())
+
+
+class PublicFiltersSerializer(serializers.Serializer):
+    registry_version = serializers.IntegerField()
+    sorts = serializers.ListField(
+        child=serializers.CharField(), help_text="`relevance` only with a preference."
+    )
+    preference_prefix = serializers.CharField(
+        help_text="Put before any filter parameter to make it a preference."
+    )
+    filters = PublicFilterSerializer(many=True)
+
+
+def _filter_body(item: filters.Filterable, options) -> dict:
+    definition = item.definition
+    bounded = item.kind == filters.RANGE
+    return {
+        "id": item.id,
+        "type": definition.type,
+        "match": item.kind,
+        "params": list(item.params),
+        "allowed_values": definition.allowed_values,
+        "options": options if item.kind == filters.AMENITIES else None,
+        "reference": definition.reference,
+        "min": _bound(definition.minimum) if bounded else None,
+        "max": _bound(definition.maximum) if bounded else None,
+        "seller_declared": definition.seller_declared,
+        "purposes": definition.applicability.purposes,
+        "categories": definition.applicability.categories,
+        "subtypes": definition.applicability.subtypes,
+    }
+
+
+_PARAMETER_TYPES = {"integer": int, "boolean": bool}
+
+
+def _filter_parameters() -> list[OpenApiParameter]:
+    return [
+        OpenApiParameter(
+            prefix + name,
+            _PARAMETER_TYPES.get(item.definition.type, str),
+            required=False,
+            description=(
+                "Preference: ranks, never excludes." if prefix else f"Filter ({item.kind})."
+            ),
+        )
+        for prefix in ("", filters.PREFER)
+        for item in filters.filterable()
+        for name in item.params
+    ]
+
+
 class PublicReadView(APIView):
     """Anyone may read, nobody is identified: a success may be cached by anyone for a minute,
     every other answer is `no-store`."""
@@ -127,20 +218,26 @@ class PublicReadView(APIView):
 class PublicListingsView(PublicReadView):
     @extend_schema(
         operation_id="list_public_listings",
-        summary="Browse the published Listings, newest first",
+        summary="Browse and filter the published Listings",
         description=(
             "Public; the answer is the same for every caller. Only publicly visible Listings "
-            "(published, not restricted, owner Active), newest first publication first. `limit` "
-            "is 1 to 50 (default 20); `next` is the link to the following page and carries an "
-            "opaque `cursor`. A bad `limit`, `cursor` or `sort` is `400 validation_error` under "
-            "that name in `fields`. `200` has `Cache-Control: public, max-age=60` and no cookie "
-            "(so a Listing may stay in a cache for up to a minute after it stops being public); "
-            "errors are `no-store`."
+            "(published, not restricted, owner Active). Every filter given must hold; a Listing "
+            "that has not answered an attribute never matches a filter on it. A `prefer_` "
+            "parameter excludes nothing: it only ranks under `sort=relevance` (the default when "
+            "one is given; otherwise `newest`). Prices are compared as stored, so give `purpose` "
+            "to keep sale and rent apart. Area is in square feet. `GET /api/v1/public/filters` "
+            "describes the parameters. `limit` is 1 to 50 (default 20); `next` is the link to the "
+            "following page and carries an opaque `cursor`, valid only with the same filters and "
+            "sort. An unknown, repeated or bad parameter is `400 validation_error` under its name "
+            "in `fields`. `200` has `Cache-Control: public, max-age=60` and no cookie (so a "
+            "Listing may stay in a cache for up to a minute after it stops being public); errors "
+            "are `no-store`."
         ),
         parameters=[
             OpenApiParameter("sort", str, enum=list(selectors.PUBLIC_SORTS), required=False),
             OpenApiParameter("limit", int, required=False),
             OpenApiParameter("cursor", str, required=False),
+            *_filter_parameters(),
         ],
         responses={
             200: OpenApiResponse(PublicListingPageSerializer, description="One page"),
@@ -148,14 +245,26 @@ class PublicListingsView(PublicReadView):
         },
     )
     def get(self, request):
-        sort = request.query_params.get("sort", selectors.SORT_NEWEST)
-        if sort not in selectors.PUBLIC_SORTS:
+        params = {
+            name: values
+            for name, values in request.query_params.lists()
+            if name not in ("sort", "limit", "cursor")
+        }
+        try:
+            spec = filters.parse(params)
+        except filters.InvalidFilter as problem:
+            raise field_errors(problem.errors) from None
+        default = selectors.SORT_RELEVANCE if spec.preferred else selectors.SORT_NEWEST
+        sort = request.query_params.get("sort", default)
+        if sort not in selectors.PUBLIC_SORTS or (
+            sort == selectors.SORT_RELEVANCE and not spec.preferred
+        ):
             raise field_errors({"sort": "invalid_choice"})
         limit = _limit(request.query_params.get("limit"))
         try:
             page = selectors.search_public(
                 get_actor(request),
-                selectors.SearchSpec(),
+                spec,
                 sort,
                 request.query_params.get("cursor") or None,  # an empty cursor is page one
                 limit,
@@ -170,6 +279,30 @@ class PublicListingsView(PublicReadView):
         return Response(
             PublicListingPageSerializer(
                 {"results": [_card(entry) for entry in page.items], "next": following}
+            ).data
+        )
+
+
+class PublicFiltersView(PublicReadView):
+    @extend_schema(
+        operation_id="get_public_filters",
+        summary="The filters of the public list",
+        description=(
+            "Public. Generated from the Field registry and the amenity catalogue: what "
+            "`GET /api/v1/public/listings` accepts. `Cache-Control: public, max-age=60`."
+        ),
+        responses={200: OpenApiResponse(PublicFiltersSerializer, description="The filters")},
+    )
+    def get(self, request):
+        options = catalog.list_amenities()
+        return Response(
+            PublicFiltersSerializer(
+                {
+                    "registry_version": registry.registry_version(),
+                    "sorts": selectors.PUBLIC_SORTS,
+                    "preference_prefix": filters.PREFER,
+                    "filters": [_filter_body(item, options) for item in filters.filterable()],
+                }
             ).data
         )
 

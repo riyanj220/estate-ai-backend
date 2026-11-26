@@ -217,6 +217,9 @@ an enum whose values differ from the taxonomy, a missing or non-integer version,
 applicability naming values outside the taxonomy, and the hard rule that a **private-class field flagged `searchable`,
 `sortable` or `valuation_input` is rejected**. `tests/catalog/test_registry.py` has a bad fixture per rule.
 
+A public `searchable` field of a structured type appears in the public filter with no other change
+(`catalog.filters`, `docs/visibility.md`).
+
 ## Versioning and the lock
 
 Every Listing stores the `registry_version` it was written under. To change the registry:

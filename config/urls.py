@@ -55,6 +55,7 @@ from apps.presentation.api.profile_images import (
     ProfileImageView,
 )
 from apps.presentation.api.public_listings import (
+    PublicFiltersView,
     PublicListingDetailView,
     PublicListingsView,
 )
@@ -215,6 +216,7 @@ urlpatterns = [
         ListingImageFileView.as_view(),
         name="listing-image-file",
     ),
+    path("api/v1/public/filters", PublicFiltersView.as_view(), name="public-filters"),
     path("api/v1/public/listings", PublicListingsView.as_view(), name="public-listings"),
     path(
         "api/v1/public/listings/<str:listing_id>",

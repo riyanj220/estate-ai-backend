@@ -8,6 +8,7 @@ only implementations of visibility (AD-5, `docs/visibility.md`).
 
 import base64
 import binascii
+import hashlib
 import json
 import re
 import uuid
@@ -18,10 +19,22 @@ from decimal import Decimal
 from types import MappingProxyType
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Count, F, OuterRef, Q, Subquery
+from django.db.models import (
+    Case,
+    Count,
+    DecimalField,
+    Exists,
+    F,
+    IntegerField,
+    OuterRef,
+    Q,
+    Subquery,
+    Value,
+    When,
+)
 from django.db.models.functions import Coalesce, Greatest
 
-from apps.catalog import registry
+from apps.catalog import filters, registry
 from apps.catalog import selectors as catalog
 from apps.identity import selectors as identity
 from apps.identity.capabilities import Capability
@@ -36,12 +49,15 @@ from apps.listings.fields import (
     AMENITIES_FIELD,
     AREA_FIELDS,
     COMMERCIAL_FIELDS,
+    DERIVED,
     DERIVED_FIELDS,
     IDENTITY_FIELDS,
+    LISTING,
     LISTING_FIELDS,
     LOCATION_FIELDS,
     PLOT_FIELDS,
     RESIDENTIAL_FIELDS,
+    STORAGE,
     TERMS_FIELDS,
 )
 from apps.listings.lifecycle import ListingStatus, Origin, visibility_of
@@ -64,6 +80,7 @@ DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
 _MIN_YEAR, _MAX_YEAR = 2000, 9000
 _CURSOR = re.compile(r"^[A-Za-z0-9_-]{1,200}$")
+_SEARCH_CURSOR = re.compile(r"^[A-Za-z0-9_-]{1,300}$")
 _COLUMN_FIELDS = (*IDENTITY_FIELDS, *LISTING_FIELDS)
 # The detail tables joined into a read: the owner's resource also joins the PRIVATE address; the
 # public projection never does.
@@ -402,7 +419,7 @@ def encode_cursor(created_at: datetime, listing_id: uuid.UUID, status: str | Non
 
 def decode_cursor(cursor: str, status: str | None) -> tuple[datetime, uuid.UUID]:
     """The position in a cursor issued for the same list: `status` is the status filter of
-    `list_owned`, or the tag of a public sort (`search_public`)."""
+    `list_owned`."""
     if not isinstance(cursor, str) or not _CURSOR.fullmatch(cursor):
         raise InvalidCursor
     try:
@@ -592,12 +609,28 @@ def public_listing(viewer: Actor, listing_id) -> PublicListingView:
 # --- public discovery (Story 3.1) ----------------------------------------------------------------
 
 SORT_NEWEST = "newest"
-PUBLIC_SORTS = (SORT_NEWEST,)
+SORT_PRICE_ASC = "price_asc"
+SORT_PRICE_DESC = "price_desc"
+SORT_RELEVANCE = "relevance"  # only with preference criteria
+PUBLIC_SORTS = (SORT_NEWEST, SORT_PRICE_ASC, SORT_PRICE_DESC, SORT_RELEVANCE)
 
-
-@dataclass(frozen=True)
-class SearchSpec:
-    """What a public search asks for. Empty for now: Story 3.3 adds the filters."""
+# the sort keys of each order, as (annotation or column, descending); the last one is unique
+_ORDERS = {
+    SORT_NEWEST: (("published_at", True), ("id", True)),
+    SORT_PRICE_ASC: (("price_key", False), ("id", True)),
+    SORT_PRICE_DESC: (("price_key", True), ("id", True)),
+    SORT_RELEVANCE: (("score", True), ("published_at", True), ("id", True)),
+}
+# stands in for a missing price, so that it sorts last either way (publication requires one)
+_NO_PRICE = {SORT_PRICE_ASC: Decimal("1e15"), SORT_PRICE_DESC: Decimal(-1)}
+# the ORM path from a Listing to the table of a field (`listings.fields`)
+_PATHS = {
+    **{name: "" for name in IDENTITY_FIELDS},
+    **{
+        name: "" if table == LISTING else f"{table}__"
+        for name, table in {**STORAGE, **DERIVED}.items()
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -666,30 +699,138 @@ def _entries(rows: list) -> tuple[PublicEntry, ...]:
     return tuple(entries)
 
 
+def _condition(criterion: filters.Criterion):
+    """The query condition of one criterion. NULL (unanswered) never satisfies it."""
+    if criterion.kind == filters.AMENITIES:
+        return Q(
+            Exists(
+                ListingAmenity.objects.filter(
+                    listing_id=OuterRef("pk"), amenity_code=criterion.values[0], state="present"
+                )
+            )
+        )
+    column = _PATHS[criterion.field] + criterion.field
+    if criterion.kind == filters.CHOICE:
+        return Q(**{f"{column}__in": criterion.values})
+    if criterion.kind == filters.BOOLEAN:
+        return Q(**{column: criterion.values[0]})
+    bounds = {"gte": criterion.low, "lte": criterion.high}
+    return Q(**{f"{column}__{op}": value for op, value in bounds.items() if value is not None})
+
+
+def _matching(spec: filters.ListingFilter):
+    """`_published()` narrowed to the required criteria: every public search and count starts
+    here. A criterion on a field that is not filterable (a private one included) is refused."""
+    allowed = {item.id for item in filters.filterable()}
+    if not {c.field for c in (*spec.required, *spec.preferred)} <= allowed:
+        raise ValueError("a criterion on a field that is not filterable")
+    rows = _published()
+    for criterion in spec.required:
+        rows = rows.filter(_condition(criterion))
+    return rows
+
+
+def _ordered_by(rows, spec: filters.ListingFilter, sort: str):
+    """`rows` with the annotation the sort needs."""
+    if sort == SORT_RELEVANCE:
+        points = [
+            Case(When(_condition(c), then=Value(1)), default=Value(0), output_field=IntegerField())
+            for c in spec.preferred
+        ]
+        return rows.annotate(score=sum(points[1:], points[0]))
+    if sort in _NO_PRICE:
+        money = DecimalField(max_digits=20, decimal_places=2)
+        return rows.annotate(
+            price_key=Coalesce(F("terms__asking_price"), Value(_NO_PRICE[sort]), output_field=money)
+        )
+    return rows
+
+
+def _after(order, position) -> Q:
+    """The rows after `position` in `order` (keyset pagination)."""
+    condition, tied = Q(), {}
+    for (name, descending), value in zip(order, position, strict=True):
+        condition |= Q(**tied, **{f"{name}__{'lt' if descending else 'gt'}": value})
+        tied[name] = value
+    return condition
+
+
+def _search_tag(spec: filters.ListingFilter, sort: str) -> str:
+    """Binds a cursor to the filter and the sort it was issued for."""
+    return f"{sort}:{hashlib.sha256(repr(spec).encode()).hexdigest()[:16]}"
+
+
+def _encode_position(tag: str, order, row) -> str:
+    values = []
+    for name, _ in order:
+        value = getattr(row, name)
+        values.append(value.isoformat() if isinstance(value, datetime) else str(value))
+    raw = json.dumps({"s": tag, "k": values}, separators=(",", ":"))
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def _sort_value(name: str, text: str):
+    """One stored sort key back from its text, strictly."""
+    if name == "id":
+        value = canonical_uuid(text)
+    elif name == "score":
+        value = int(text) if len(text) <= 4 and text.isascii() and text.isdigit() else None
+    elif name == "price_key":
+        value = Decimal(text)
+        if not value.is_finite() or abs(value) > _NO_PRICE[SORT_PRICE_ASC]:
+            value = None
+    else:
+        value = datetime.fromisoformat(text)
+        value = value.astimezone(UTC) if value.tzinfo else None
+        if value is not None and not _MIN_YEAR <= value.year <= _MAX_YEAR:
+            value = None
+    if value is None:
+        raise InvalidCursor
+    return value
+
+
+def _decode_position(cursor: str, tag: str, order) -> list:
+    if not isinstance(cursor, str) or not _SEARCH_CURSOR.fullmatch(cursor):
+        raise InvalidCursor
+    try:
+        data = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        if not isinstance(data, dict) or set(data) != {"s", "k"} or data["s"] != tag:
+            raise InvalidCursor
+        keys = data["k"]
+        if not isinstance(keys, list) or len(keys) != len(order):
+            raise InvalidCursor
+        if not all(isinstance(key, str) for key in keys):
+            raise InvalidCursor
+        return [_sort_value(name, key) for (name, _), key in zip(order, keys, strict=True)]
+    except (binascii.Error, ValueError, TypeError, ArithmeticError, RecursionError):
+        raise InvalidCursor from None
+
+
 def search_public(
     actor: Actor,
-    spec: SearchSpec,
+    spec: filters.ListingFilter,
     sort: str = SORT_NEWEST,
     cursor: str | None = None,
     limit: int = DEFAULT_LIMIT,
 ) -> PublicPage:
-    """The public Listings, newest publication first (then id), keyset-paginated. Public means the
-    same for every viewer, so `actor` changes nothing; `spec` holds no filter yet. `sort` must be
-    in `PUBLIC_SORTS` (ValueError otherwise); a bad `cursor` raises `InvalidCursor`."""
-    if sort not in PUBLIC_SORTS:
+    """The public Listings that satisfy the required criteria of `spec`, in the order of `sort`,
+    keyset-paginated. Public means the same for every viewer, so `actor` changes nothing.
+    `newest` is the first publication, latest first; `price_*` compares `asking_price` as stored;
+    `relevance` is the number of preference criteria satisfied, then newest. The id breaks every
+    tie. `sort` must be in `PUBLIC_SORTS`, and `relevance` needs a preference (ValueError
+    otherwise); a bad `cursor`, or one of another filter or sort, raises `InvalidCursor`."""
+    if sort not in PUBLIC_SORTS or (sort == SORT_RELEVANCE and not spec.preferred):
         raise ValueError(f"unknown sort {sort!r}")
-    tag = f"public:{sort}"
-    rows = _published()
+    order, tag = _ORDERS[sort], _search_tag(spec, sort)
+    rows = _ordered_by(_matching(spec), spec, sort)
     if cursor is not None:
-        published_at, last_id = decode_cursor(cursor, tag)
-        rows = rows.filter(
-            Q(published_at__lt=published_at) | Q(published_at=published_at, id__lt=last_id)
-        )
+        rows = rows.filter(_after(order, _decode_position(cursor, tag, order)))
     size = max(1, min(int(limit), MAX_LIMIT))
-    page = list(rows.order_by("-published_at", "-id")[: size + 1])
+    ordering = [f"-{name}" if descending else name for name, descending in order]
+    page = list(rows.order_by(*ordering)[: size + 1])
     more = len(page) > size
     page = page[:size]
-    next_cursor = encode_cursor(page[-1].published_at, page[-1].id, tag) if more else None
+    next_cursor = _encode_position(tag, order, page[-1]) if more else None
     return PublicPage(_entries(page), next_cursor)
 
 
