@@ -39,10 +39,12 @@ whose permission is not explicit.
 | `/api/v1/email-changes/confirm` | POST | public | `apps.presentation.api.profile.EmailChangeConfirmView` |
 | `/api/v1/email-verification-requests` | POST | public | `apps.presentation.api.verifications.VerificationRequestView` |
 | `/api/v1/email-verifications/confirm` | POST | public | `apps.presentation.api.verifications.ConfirmEmailView` |
+| `/api/v1/estimates` | POST | signed_in | `apps.presentation.api.estimates.EstimateView` |
 | `/api/v1/health` | GET, HEAD | public | `apps.presentation.api.health.WrappedAPIView` |
 | `/api/v1/listings` | POST | signed_in | `apps.presentation.api.listings.DraftCreateView` |
 | `/api/v1/listings/<str:listing_id>` | DELETE, GET, PATCH | signed_in | `apps.presentation.api.listings.ListingDetailView` |
 | `/api/v1/listings/<str:listing_id>/correction` | GET, POST | signed_in | `apps.presentation.api.listings.ListingCorrectionView` |
+| `/api/v1/listings/<str:listing_id>/estimate` | POST | signed_in | `apps.presentation.api.estimates.ListingEstimateView` |
 | `/api/v1/listings/<str:listing_id>/images` | PATCH, POST | signed_in | `apps.presentation.api.listing_images.ListingImagesView` |
 | `/api/v1/listings/<str:listing_id>/images/<str:image_id>` | DELETE | signed_in | `apps.presentation.api.listing_images.ListingImageDetailView` |
 | `/api/v1/listings/<str:listing_id>/images/<str:image_id>/file` | GET, HEAD | public | `apps.presentation.api.listing_images.ListingImageFileView` |

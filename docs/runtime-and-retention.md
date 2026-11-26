@@ -90,6 +90,9 @@ Story 2.13 adds `listings.draft_notice` and `listings.draft_expiry` (see `docs/l
 without activity and deletion 30 days later unless the Draft was opened or edited. They process at most 200 Drafts a run
 and isolate each Listing in its own savepoint.
 
+Story 4.3 adds `valuation.estimates` (see `docs/valuation.md`): estimates of deleted Listings, and estimates of
+entered attributes older than 90 days.
+
 A job must return an int row count; anything else counts as a failed job. Runs must not overlap: schedule a single
 instance (there is no advisory lock yet). Purges delete in one statement for now, with no batching.
 

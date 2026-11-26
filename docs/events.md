@@ -69,6 +69,9 @@ lost, something recomputes or the user can retry. A consequence that must not be
 erasure, a counted quota) is done by orchestration in the originating transaction (AD-23), not by an event.
 Audit records are written in the same transaction as the action. No external call occurs inside a transaction.
 
+`listing.deleted` (a Draft or sample Listing was removed) is subscribed by `valuation`, which deletes its stored
+estimates; its retention job repairs a lost event.
+
 ## Idempotency (AD-17)
 
 A service calls `kernel.idempotency.claim(scope, account_id, key, request_hash)` inside its transaction.

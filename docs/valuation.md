@@ -117,3 +117,35 @@ scenarios, not predictions or guaranteed returns. The computation arrives with S
 | affordable | 3% | 7% | 10% |
 
 A released file is never edited (a test pins its hash): add `forecast_v2.yaml` and raise `FORECAST_VERSION`.
+
+## Estimate requests (Story 4.3)
+
+| Route (signed in, `X-CSRFToken`) | Body |
+| --- | --- |
+| `POST /api/v1/estimates` | `{purpose, category, subtype, fields: {...}}`; `fields` takes only the model inputs |
+| `POST /api/v1/listings/{id}/estimate` | none; uses the saved Draft |
+
+Both answer `200` with `{status, estimated_value, currency, model_version, estimated_at, reason, message}`. `status` is
+`available` (`estimated_value` is a PKR decimal string rounded to 1 000; `reason`, `message` null) or `unavailable`
+(`estimated_value`, `model_version`, `estimated_at` null).
+
+| `reason` | When |
+| --- | --- |
+| `rent_not_supported` | purpose is not sale |
+| `type_not_supported` | not (house, house), (apartment, apartment) or (plot, residential_plot) |
+| `locality_missing`, `locality_not_covered` | no locality; not a Karachi locality the model knows |
+| `area_missing`, `marla_basis_unknown` | no area or unit; marla or kanal without a basis |
+| `temporarily_unavailable` | no registered model, executor full, timeout or failure |
+
+The first reason in that order wins. Errors: `400` (invalid or unaccepted values), `401` Visitor, `403` Suspended,
+Deactivated or administrator, `404` not the account's own Listing, `409` own Listing that is not a Draft, `429` more
+than 20 requests an hour per account (scope `estimates`; every attempt counts, both routes together).
+
+- Inference (and the hash-checked load) runs on the heavy slots of the runtime executor, with a 20 second limit that
+  only the cold first load approaches. `uv run pytest -m perf -s tests/perf/test_estimate_budget.py` checks p95 < 1 s.
+- Each computation is in the AI request log (`price_estimate`, `local`, model and version, latency, outcome), with no
+  content. Unsupported requests compute nothing and are not logged there.
+- Each result is a `PriceEstimate` row: account, Draft id (null for entered attributes), model version,
+  feature-schema version, value, and `inputs` (the non-private feature snapshot) with its SHA-256.
+- Removal: `listing.deleted` removes a Draft's estimates after commit; the retention job `valuation.estimates`
+  repairs missed ones and deletes estimates of entered attributes after 90 days.

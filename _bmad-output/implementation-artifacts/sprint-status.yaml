@@ -100,8 +100,8 @@ development_status:
   epic-4: in-progress
   4-1-synthetic-dataset-generator-and-model-training: review
   4-2-model-registration-feature-test-and-forecast-parameters: review
-  4-3-request-an-ai-price-estimate-and-supportability: in-progress
-  4-4-baseline-price-in-the-listing-form-limitation-note-and-about: backlog
+  4-3-request-an-ai-price-estimate-and-supportability: review
+  4-4-baseline-price-in-the-listing-form-limitation-note-and-about: in-progress
   4-5-estimate-on-publish-and-on-edit: backlog
   4-6-estimated-property-value-on-the-listing-page: backlog
   4-7-5-year-price-forecast: backlog
