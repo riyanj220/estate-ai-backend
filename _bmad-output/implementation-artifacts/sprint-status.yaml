@@ -89,7 +89,7 @@ development_status:
   epic-3: in-progress
   3-1-browse-published-listings-and-view-details: in-progress
   3-2-privacy-verification-gates-in-ci: review
-  3-3-filter-schema-and-search-selector: backlog
+  3-3-filter-schema-and-search-selector: in-progress
   3-4-search-fixture-and-performance-budget: backlog
   3-5-filter-panel-and-results-page: backlog
   3-6-listing-provenance-on-cards-and-detail: backlog
