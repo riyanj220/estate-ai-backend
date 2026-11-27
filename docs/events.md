@@ -75,6 +75,8 @@ the runtime executor (`docs/valuation.md`).
 `listing.deleted` (a Draft or sample Listing was removed) is subscribed by `valuation`, which deletes its stored
 estimates; its retention job repairs a lost event.
 
+`messaging.message_sent` (ids and the sequence number) has no subscriber yet; live delivery (Story 7.3) adds it.
+
 ## Idempotency (AD-17)
 
 A service calls `kernel.idempotency.claim(scope, account_id, key, request_hash)` inside its transaction.

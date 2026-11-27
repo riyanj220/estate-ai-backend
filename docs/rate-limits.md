@@ -20,6 +20,8 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | `ai_search_account` | 30 | 1 hour | account | search |
 | `ai_voice_visitor` | 10 | 1 minute | client | search (transcription) |
 | `ai_voice_account` | 30 | 1 hour | account | search (transcription) |
+| `message_send` | 60 | 1 minute | account | messaging |
+| `conversation_new` | 20 | 1 day | account | messaging |
 | `estimates` | 20 | 1 hour | account | valuation (FR-42) |
 | `verification_resend` | 5 | 1 hour | client | `POST /api/v1/email-verification-requests` (Story 1.16); 429 for every address alike |
 | `password_reset_request` | 5 | 1 hour | client | `POST /api/v1/password-reset-requests` (Story 1.18); 429 for every address alike; the per-account `password_reset_email` cap is silent; see `docs/password-reset.md` |

@@ -39,6 +39,9 @@ whose permission is not explicit.
 | `/api/v1/assistant/sessions/<str:session_id>` | GET | signed_in | `apps.presentation.api.assistant.AssistantSessionView` |
 | `/api/v1/assistant/sessions/<str:session_id>/description` | POST | signed_in | `apps.presentation.api.assistant.AssistantDescriptionView` |
 | `/api/v1/assistant/sessions/<str:session_id>/turns` | POST | signed_in | `apps.presentation.api.assistant.AssistantTurnsView` |
+| `/api/v1/conversations` | GET, POST | signed_in | `apps.presentation.api.conversations.ConversationsView` |
+| `/api/v1/conversations/<str:conversation_id>` | GET | signed_in | `apps.presentation.api.conversations.ConversationDetailView` |
+| `/api/v1/conversations/<str:conversation_id>/messages` | GET, POST | signed_in | `apps.presentation.api.conversations.ConversationMessagesView` |
 | `/api/v1/csrf` | GET | public | `apps.presentation.api.sessions.CsrfView` |
 | `/api/v1/email-changes/confirm` | POST | public | `apps.presentation.api.profile.EmailChangeConfirmView` |
 | `/api/v1/email-verification-requests` | POST | public | `apps.presentation.api.verifications.VerificationRequestView` |
