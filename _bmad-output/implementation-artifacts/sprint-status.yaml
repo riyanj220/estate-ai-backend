@@ -102,9 +102,9 @@ development_status:
   4-2-model-registration-feature-test-and-forecast-parameters: review
   4-3-request-an-ai-price-estimate-and-supportability: review
   4-4-baseline-price-in-the-listing-form-limitation-note-and-about: review
-  4-5-estimate-on-publish-and-on-edit: backlog
-  4-6-estimated-property-value-on-the-listing-page: backlog
-  4-7-5-year-price-forecast: backlog
+  4-5-estimate-on-publish-and-on-edit: in-progress
+  4-6-estimated-property-value-on-the-listing-page: in-progress
+  4-7-5-year-price-forecast: in-progress
   epic-4-retrospective: optional
 
   epic-5: backlog
