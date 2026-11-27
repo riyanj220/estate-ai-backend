@@ -92,12 +92,21 @@ class Client:
     def post(self, path, body=None, expect=200, headers=None):
         return self.call("POST", path, body, expect, headers)
 
-    def upload(self, path, image, method="POST", expect=None):
+    def upload(
+        self,
+        path,
+        image,
+        method="POST",
+        expect=None,
+        name="file",
+        filename="smoke.png",
+        content_type="image/png",
+    ):
         boundary = uuid.uuid4().hex
         data = (
             (
-                f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
-                f'filename="smoke.png"\r\nContent-Type: image/png\r\n\r\n'
+                f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; '
+                f'filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'
             ).encode()
             + image
             + f"\r\n--{boundary}--\r\n".encode()
@@ -433,6 +442,20 @@ class Smoke:
             client.get(f"/public/listings?{urllib.parse.urlencode(body['params'])}")
             statuses.append(body["status"])
         visitor.post("/public/search", {"query": " "}, expect=400)
+        heard = visitor.upload(  # silence: the stub answers its fixed text, a model may hear none
+            "/public/search/transcription",
+            b"RIFF$\x7d\x00\x00WAVEfmt "
+            + struct.pack("<IHHIIHH", 16, 1, 1, 16000, 32000, 2, 16)
+            + b"data"
+            + struct.pack("<I", 32000)
+            + b"\x00" * 32000,
+            expect=200,
+            name="audio",
+            filename="smoke.wav",
+            content_type="audio/wav",
+        ).json()
+        check(heard["status"] in ("transcribed", "fallback"), f"voice: {heard}")
+        statuses.append(f"voice {heard['status']}")
         return f"visitor and account: {', '.join(statuses)}"
 
     def browse(self):

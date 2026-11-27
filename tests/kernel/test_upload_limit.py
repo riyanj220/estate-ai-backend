@@ -296,3 +296,23 @@ def test_the_real_application_refuses_an_oversize_profile_put_with_the_envelope(
 def test_a_chunked_put_without_a_length_is_flagged_by_the_middleware():
     for path in PROFILE_IMAGES:
         assert run(None, path, "PUT") == {"flag": True, "length": "0"}
+
+
+VOICE = "/api/v1/public/search/transcription"
+
+
+def test_a_recording_is_capped_below_the_spool_to_disk_size(settings):
+    cap = settings.MAX_VOICE_BODY_BYTES
+    assert cap < settings.FILE_UPLOAD_MAX_MEMORY_SIZE  # so Django keeps it in memory
+    assert run(str(cap), VOICE) == {"flag": False, "length": str(cap)}
+    assert run(str(cap + 1), VOICE) == {"flag": True, "length": "0"}
+
+
+def test_the_real_application_refuses_an_oversize_recording_unread(settings):
+    import config.asgi as asgi
+
+    reads = []
+    over = scope(VOICE, length=settings.MAX_VOICE_BODY_BYTES + 1)
+    sent = async_to_sync(drive)(asgi.application, over, body_chunks([10]), reads)
+    assert sent[0]["status"] == 400 and reads == []
+    assert list(json.loads(sent[1]["body"])["error"]["fields"]) == ["audio"]

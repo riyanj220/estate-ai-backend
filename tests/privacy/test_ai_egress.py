@@ -142,6 +142,17 @@ def natural_language_search(actor, message):
     return result
 
 
+def voice_search(actor, message):
+    """Voice search (Story 6.3): the speech port gets the recording and nothing else, and the
+    confirmed transcript is redacted like a typed request."""
+    recording = b"RIFF\x00\x00\x00\x00WAVE" + b"\x00" * 32
+    stub.reply = message
+    heard = search.transcribe_query(actor, recording)
+    speech = stub.requests[-1]
+    assert (speech.port, speech.texts, speech.audio) == ("speech", (), recording)
+    return natural_language_search(actor, heard.transcript)
+
+
 ENTRY_POINTS = [
     pytest.param(llm_assistant_turn, id="assistant-turn-port"),
     pytest.param(llm_search_query, id="search-query-port"),
@@ -151,6 +162,7 @@ ENTRY_POINTS = [
     pytest.param(assistant_extraction, id="assistant-extraction"),
     pytest.param(assistant_description, id="assistant-description"),
     pytest.param(natural_language_search, id="natural-language-search"),
+    pytest.param(voice_search, id="voice-search"),
 ]
 
 

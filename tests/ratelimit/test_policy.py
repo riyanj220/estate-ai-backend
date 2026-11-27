@@ -19,6 +19,8 @@ EXPECTED = {
     "assistant_messages": (30, H, "account"),
     "ai_search_visitor": (10, M, "client"),
     "ai_search_account": (30, H, "account"),
+    "ai_voice_visitor": (10, M, "client"),
+    "ai_voice_account": (30, H, "account"),
     "estimates": (20, H, "account"),
     "sign_in": (5, 900, "client"),
     "verification_resend": (5, H, "client"),
