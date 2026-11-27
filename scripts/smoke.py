@@ -420,6 +420,21 @@ class Smoke:
             self.ctx["agency_listing"] = mine
         self.ctx["published"] = listing_id
 
+    def search(self):
+        """Search by description (Story 6.1). The stub understands nothing, so it must fall back to
+        the filters; with a real provider the filters it returns must work on the public list."""
+        visitor, buyer = Client(self.base), self.ctx["buyer"]
+        statuses = []
+        for client, who in ((visitor, "visitor"), (buyer, "buyer")):
+            query = "a house for sale with at least 3 bedrooms under 3 crore"
+            body = client.post("/public/search", {"query": query}).json()
+            check(body["status"] in ("interpreted", "fallback"), f"{who}: {body}")
+            check(body["status"] == "interpreted" or body["message"], f"{who}: no message")
+            client.get(f"/public/listings?{urllib.parse.urlencode(body['params'])}")
+            statuses.append(body["status"])
+        visitor.post("/public/search", {"query": " "}, expect=400)
+        return f"visitor and account: {', '.join(statuses)}"
+
     def browse(self):
         visitor, buyer = Client(self.base), self.ctx["buyer"]
         listing_id = self.ctx["published"]
@@ -670,6 +685,7 @@ class Smoke:
         self.flow("preview and estimates", self.preview_and_estimate, ["listing"])
         self.flow("publish around uploads", self.publish_around_uploads, ["image"])
         self.flow("browse/filter/detail/agency page", self.browse, ["published", "buyer"])
+        self.flow("search by description", self.search, ["buyer"])
         self.flow("favourites and ownership", self.favourites, ["published", "buyer"])
         self.flow(
             "edit/archive/republish/correct/sold", self.edit_and_lifecycle, ["published", "third"]

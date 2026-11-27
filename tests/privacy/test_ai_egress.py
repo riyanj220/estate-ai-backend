@@ -28,6 +28,7 @@ from apps.kernel.ai.stub import stub
 from apps.kernel.models import AiRequestLog
 from apps.listings import services
 from apps.listings.models import ListingPrivateAddress
+from apps.search import services as search
 from tests.listings.support import make_account, seed_cap, user
 
 pytestmark = [pytest.mark.guard, pytest.mark.django_db]
@@ -131,6 +132,16 @@ def assistant_description(actor, message):
     return result
 
 
+def natural_language_search(actor, message):
+    """Search (Story 6.1): a model that quotes the values back gets none of them into the answer."""
+    stub.reply = json.dumps({"purpose": "sale", "city": message, "unsupported": [message]})
+    result = search.interpret_query(actor, message[: search.MAX_QUERY])
+    read = result.read
+    assert read.params == {"purpose": "sale"}
+    assert leaks(" ".join((*read.unsupported, *read.notices))) == []
+    return result
+
+
 ENTRY_POINTS = [
     pytest.param(llm_assistant_turn, id="assistant-turn-port"),
     pytest.param(llm_search_query, id="search-query-port"),
@@ -139,6 +150,7 @@ ENTRY_POINTS = [
     pytest.param(assistant_turn, id="assistant-turn"),
     pytest.param(assistant_extraction, id="assistant-extraction"),
     pytest.param(assistant_description, id="assistant-description"),
+    pytest.param(natural_language_search, id="natural-language-search"),
 ]
 
 
