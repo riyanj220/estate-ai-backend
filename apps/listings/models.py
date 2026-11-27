@@ -230,6 +230,7 @@ class PropertyListing(models.Model):
     subtype = models.CharField(max_length=32)
     title = models.CharField(max_length=_TITLE.max_length, null=True)  # empty is null
     description = models.TextField(null=True)  # empty is null
+    video_tour_url = models.CharField(max_length=_def("video_tour_url").max_length, null=True)
     # registry field id -> {"origin": "manual"|"ai", "confirmed": bool}, set fields only
     provenance = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=timezone.now)
@@ -353,6 +354,9 @@ class ListingTerms(models.Model):
     utility_internet_included = models.BooleanField(null=True)  # rent only
     pets_allowed = models.BooleanField(null=True)  # rent only
     occupant_restrictions = models.CharField(max_length=32, null=True)  # rent only
+    # The deferred attributes (Story 11.3, `listings.fields.EXTRA_FIELDS`): registry id -> value,
+    # judged by the registry rules before they are stored; an unanswered one has no key.
+    extra_attributes = models.JSONField(default=dict)
     updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -580,6 +584,19 @@ class ListingImage(models.Model):
                 condition=models.Q(position__gte=0), name="listings_image_position_gte_0"
             ),
         ]
+
+
+class ListingFloorPlan(models.Model):
+    """The one floor plan of a Listing (Story 11.4): a `kernel` media asset like an image, kept
+    apart from `ListingImage` so that it is never a photo, a cover, part of the image count or
+    what publication's image rule sees. Written by `listings.services` only."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    listing = models.OneToOneField(
+        PropertyListing, on_delete=models.CASCADE, related_name="floor_plan"
+    )
+    asset_id = models.UUIDField(unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
 
 
 QUOTA_ACCOUNT_TYPES = ("individual", "agency")  # the identity enum values, never imported (AD-7)

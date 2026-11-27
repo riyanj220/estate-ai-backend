@@ -22,7 +22,11 @@ from apps.presentation.adminapi.reports import AccountRefSerializer
 from apps.presentation.api.actors import get_actor
 from apps.presentation.api.authentication import SessionAuthentication
 from apps.presentation.api.bodies import field_errors, single_field
-from apps.presentation.api.listings import PublicImageSerializer, _link
+from apps.presentation.api.listings import (
+    PublicFloorPlanSerializer,
+    PublicImageSerializer,
+    _link,
+)
 from apps.presentation.api.passwords import NoStoreMixin
 from apps.presentation.api.permissions import RequireAdmin
 from apps.presentation.api.private_reads import ReasonedReadMixin, ReasonedReadSerializer
@@ -69,6 +73,7 @@ class AdminListingDetailSerializer(AdminListingRowSerializer):
     locality = serializers.CharField(allow_null=True)
     media = PublicImageSerializer(many=True, help_text="Empty for a Draft.")
     image_count = serializers.IntegerField()
+    floor_plan = PublicFloorPlanSerializer(allow_null=True, help_text="Null for a Draft.")
     moderation_reason = serializers.CharField(allow_null=True)
     actions = serializers.ListField(
         child=serializers.ChoiceField(choices=_ACTIONS), help_text="What can be done now."
@@ -133,6 +138,7 @@ def _detail_response(actor, detail, *, draft: bool = False) -> Response:
             "locality": detail.locality,
             "media": [] if draft else view.media,
             "image_count": len(view.media),
+            "floor_plan": None if draft else view.floor_plan,
             "moderation_reason": detail.reason,
             "actions": detail.actions,
             "first_published_at": detail.first_published_at,

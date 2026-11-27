@@ -72,6 +72,8 @@ def facts_of(listing: ListingView) -> tuple[Fact, ...]:
         value = listing.fields.get(spec.id)
         if spec.derived or spec.field_class != "public" or spec.id == "description":
             continue
+        if spec.type == "url":  # a link is not a fact to put into text
+            continue
         if value is None or value == "":
             continue
         text = _text(spec, value)

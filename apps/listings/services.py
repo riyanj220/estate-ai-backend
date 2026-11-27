@@ -36,6 +36,8 @@ from apps.listings.fields import (
     COMMERCIAL_FIELDS,
     DERIVED,
     EDITABLE_FIELDS,
+    EXTRA,
+    EXTRA_FIELDS,
     LISTING,
     LOCATION,
     LOCATION_FIELDS,
@@ -53,6 +55,7 @@ from apps.listings.models import (
     ListingAmenity,
     ListingArea,
     ListingCommercial,
+    ListingFloorPlan,
     ListingImage,
     ListingLocation,
     ListingPlot,
@@ -70,6 +73,7 @@ from apps.listings.selectors import (
     IDLE_DAYS,
     LATE_AFTER_DAYS,
     REGRACE_DAYS,
+    FloorPlanView,
     ImageView,
     ListingView,
     activity_of,
@@ -79,6 +83,7 @@ from apps.listings.selectors import (
     canonical_uuid,
     clean_provenance,
     commercial_of,
+    extra_value,
     field_text,
     get_owned_listing,
     image_url,
@@ -206,12 +211,24 @@ def create_draft(actor: Actor, purpose, category, subtype) -> ListingView:
 
 def _stored(name: str, owner) -> object:
     """A stored column as the validated value type: the marla basis as its enum string."""
+    if STORAGE[name] == EXTRA:  # `owner` is the terms row
+        return extra_value(owner, name)
     return field_text(name, getattr(owner, name)) if name == "marla_basis" else getattr(owner, name)
 
 
 def _column(name: str, value) -> object:
     """A validated value as the column type (the marla basis string is NUMERIC(6,2))."""
     return Decimal(value) if name == "marla_basis" and value is not None else value
+
+
+def _set_extra(terms: ListingTerms, name: str, value) -> None:
+    """Store one deferred attribute: money as its string, a clear removes the key."""
+    stored = dict(terms.extra_attributes or {})
+    if value is None:
+        stored.pop(name, None)
+    else:
+        stored[name] = str(value) if isinstance(value, Decimal) else value
+    terms.extra_attributes = stored
 
 
 def _resolve_reference(kind: str, key: uuid.UUID) -> uuid.UUID | None:
@@ -410,6 +427,7 @@ def write_locked(
         owners = {
             LISTING: row,
             TERMS: terms,
+            EXTRA: terms,
             AREA: area,
             RESIDENTIAL: residential,
             PLOT: plot,
@@ -490,7 +508,10 @@ def write_locked(
         for name, value in changed.items():
             table = DERIVED[name] if name in DERIVED else STORAGE[name]
             if table != AMENITIES:  # the map is written as rows below
-                setattr(owners[table], name, _column(name, value))
+                if table == EXTRA:
+                    _set_extra(terms, name, value)
+                else:
+                    setattr(owners[table], name, _column(name, value))
             if name in DERIVED:
                 continue
             if value is None:
@@ -510,7 +531,7 @@ def write_locked(
                 "updated_at",
             ]
         )
-        if not stored_terms or any(name in TERMS_FIELDS for name in changed):
+        if not stored_terms or any(name in (*TERMS_FIELDS, *EXTRA_FIELDS) for name in changed):
             terms.updated_at = now
             terms.save()
         if any(name in AREA_FIELDS or name in DERIVED for name in changed):
@@ -763,6 +784,78 @@ def remove_image(actor: Actor, listing_id, image_id) -> None:
         _bump(row, actor, ListingImage.objects.filter(listing=row).count())
 
 
+def _floor_plan_changed(row: PropertyListing, actor: Actor, present: bool) -> None:
+    """One revision; the revision row records only whether there is a floor plan now."""
+    now = timezone.now()
+    row.revision += 1
+    row.updated_at = now
+    row.save(update_fields=["revision", "updated_at"])
+    ListingRevision.objects.create(
+        listing=row,
+        revision=row.revision,
+        origin=Origin.MANUAL.value,
+        actor_account_id=actor.account_id,
+        changes={"floor_plan": present},
+        created_at=now,
+    )
+
+
+def set_floor_plan(actor: Actor, listing_id, data: bytes) -> FloorPlanView:
+    """Add or replace the floor plan of one of the owner's editable Listings (Story 11.4).
+
+    The refusals, processing, locking and storage cap of `upload_image`; there is no count limit
+    because there is at most one: a replaced floor plan is deleted (its bytes given back) in the
+    same transaction, before the new one is counted. It is never a photo or a cover."""
+    key = _owned_editable(actor, listing_id)
+    listing = PropertyListing.objects.filter(id=key).first()
+    if listing is None:
+        raise DomainError("not_found")
+    if not lifecycle.owner_may_edit(listing):
+        raise DomainError("forbidden")
+    processed = media.process_upload(actor, data)
+    asset = None
+    try:
+        with transaction.atomic():
+            account, row = _lock_for_images(actor, key)
+            old = ListingFloorPlan.objects.select_for_update().filter(listing=row).first()
+            if old is not None:
+                old_asset = old.asset_id
+                old.delete()
+                media.delete_asset(actor, old_asset, missing_ok=True)
+            asset = media.store_processed(actor, processed, account_type=account.type, attach=True)
+            plan = ListingFloorPlan.objects.create(
+                listing=row, asset_id=asset.id, created_at=timezone.now()
+            )
+            _floor_plan_changed(row, actor, True)
+    except BaseException:
+        if asset is not None:
+            media.discard_file(asset.storage_key)
+        raise
+    return FloorPlanView(
+        id=plan.id,
+        content_type=asset.content_type,
+        width=asset.width,
+        height=asset.height,
+        bytes=asset.bytes,
+        url=image_url(key, plan.id),
+    )
+
+
+def remove_floor_plan(actor: Actor, listing_id) -> None:
+    """Remove the floor plan, giving its bytes back. Same refusals as `set_floor_plan`; no floor
+    plan is `not_found`."""
+    key = _owned_editable(actor, listing_id)
+    with transaction.atomic():
+        _, row = _lock_for_images(actor, key)
+        plan = ListingFloorPlan.objects.select_for_update().filter(listing=row).first()
+        if plan is None:
+            raise DomainError("not_found")
+        asset_id = plan.asset_id
+        plan.delete()
+        media.delete_asset(actor, asset_id, missing_ok=True)
+        _floor_plan_changed(row, actor, False)
+
+
 def set_image_order(actor: Actor, listing_id, base_revision, order, cover_id=None) -> ListingView:
     """Reorder a Draft's images and/or choose its cover in one revision-checked step (Story 2.10).
 
@@ -873,7 +966,10 @@ def _remove_rows(actor: Actor, row: PropertyListing) -> uuid.UUID:
     returned, files deleted after commit; a lost asset row is no obstacle) and delete the Listing
     and every row that belongs to it (the foreign keys cascade). Returns the Listing id; the
     caller writes the audit row (the id and a reason only, never content)."""
-    asset_ids = list(ListingImage.objects.filter(listing=row).values_list("asset_id", flat=True))
+    asset_ids = [
+        *ListingImage.objects.filter(listing=row).values_list("asset_id", flat=True),
+        *ListingFloorPlan.objects.filter(listing=row).values_list("asset_id", flat=True),
+    ]
     for asset_id in asset_ids:
         if actor.kind is ActorKind.USER:
             media.delete_asset(actor, asset_id, missing_ok=True)

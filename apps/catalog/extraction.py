@@ -6,7 +6,7 @@ and no length or range constraint. The registry's rules still judge every propos
 from apps.catalog import registry
 
 # Bumped when the shape of the extraction schema changes; sessions record it.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 # The description is written from confirmed details (Story 5.13), never picked out of chat.
 _NOT_EXTRACTED = frozenset({"description"})
 _JSON_TYPES = {"integer": "integer", "boolean": "boolean"}  # everything else is text

@@ -52,6 +52,8 @@ from apps.listings.fields import (
     COMMERCIAL_FIELDS,
     DERIVED,
     DERIVED_FIELDS,
+    EXTRA,
+    EXTRA_FIELDS,
     IDENTITY_FIELDS,
     LISTING,
     LISTING_FIELDS,
@@ -66,6 +68,7 @@ from apps.listings.models import (
     ListingAmenity,
     ListingArea,
     ListingCommercial,
+    ListingFloorPlan,
     ListingImage,
     ListingLocation,
     ListingPlot,
@@ -85,7 +88,15 @@ _SEARCH_CURSOR = re.compile(r"^[A-Za-z0-9_-]{1,300}$")
 _COLUMN_FIELDS = (*IDENTITY_FIELDS, *LISTING_FIELDS)
 # The detail tables joined into a read: the owner's resource also joins the PRIVATE address; the
 # public projection never does.
-PUBLIC_RELATED = ("terms", "area", "residential", "plot", "commercial", "location")
+PUBLIC_RELATED = (
+    "terms",
+    "area",
+    "residential",
+    "plot",
+    "commercial",
+    "location",
+    "floor_plan",
+)
 OWNER_RELATED = (*PUBLIC_RELATED, "private_address")
 MONEY_FORMAT = "{:.2f}"  # money is a decimal string with two decimals on the wire
 
@@ -107,6 +118,7 @@ class ListingView:
         default_factory=lambda: MappingProxyType({})
     )
     media: tuple = ()
+    floor_plan: "FloorPlanView | None" = None  # never part of `media` (Story 11.4)
     # Owner resource only (Story 2.17): moderation's flag and its short plain-text reason.
     restricted: bool = False
     restriction_reason: str | None = None
@@ -282,6 +294,53 @@ def field_text(name: str, value) -> str | int | bool | None:
     return value if isinstance(value, str) else str(value)
 
 
+def extra_value(terms: ListingTerms | None, name: str) -> object:
+    """A deferred attribute as the validated value type (money back from its string); None when
+    unanswered."""
+    value = (terms.extra_attributes or {}).get(name) if terms else None
+    if value is not None and registry.field(name).type == "money":
+        return Decimal(value)
+    return value
+
+
+@dataclass(frozen=True)
+class FloorPlanView:
+    """The floor plan as owner and public see it: an image served by the media endpoint."""
+
+    id: uuid.UUID
+    content_type: str
+    width: int
+    height: int
+    bytes: int
+    url: str
+
+
+def floor_plan_of(row: PropertyListing) -> ListingFloorPlan | None:
+    try:
+        return row.floor_plan
+    except ObjectDoesNotExist:
+        return None
+
+
+def floor_plans_of(rows) -> dict[uuid.UUID, FloorPlanView]:
+    """The floor plan of each of these Listings that has one (rows read with `floor_plan`
+    selected), in at most one more query. A lost asset row leaves it out."""
+    links = {row.id: link for row in rows if (link := floor_plan_of(row)) is not None}
+    assets = media.assets_by_id(link.asset_id for link in links.values())
+    return {
+        listing_id: FloorPlanView(
+            id=link.id,
+            content_type=asset.content_type,
+            width=asset.width,
+            height=asset.height,
+            bytes=asset.bytes,
+            url=image_url(listing_id, link.id),
+        )
+        for listing_id, link in links.items()
+        if (asset := assets.get(link.asset_id)) is not None
+    }
+
+
 def view_of(
     row: PropertyListing,
     terms: ListingTerms | None = None,
@@ -296,6 +355,7 @@ def view_of(
     public: bool | None = None,
     with_private: bool = False,
     amenities: Mapping[str, str] | None = None,
+    floor_plans: Mapping[uuid.UUID, FloorPlanView] | None = None,
 ) -> ListingView:
     terms = terms if terms is not None else terms_of(row)
     area = area if area is not None else area_of(row)
@@ -306,6 +366,8 @@ def view_of(
     fields = {name: getattr(row, name) for name in _COLUMN_FIELDS}
     for name in TERMS_FIELDS:
         fields[name] = field_text(name, getattr(terms, name) if terms else None)
+    for name in EXTRA_FIELDS:
+        fields[name] = field_text(name, extra_value(terms, name))
     for name in (*AREA_FIELDS, *DERIVED_FIELDS):
         fields[name] = field_text(name, getattr(area, name) if area else None)
     for name in RESIDENTIAL_FIELDS:
@@ -338,6 +400,7 @@ def view_of(
         fields=MappingProxyType(fields),
         provenance=MappingProxyType(provenance),
         media=images if images is not None else media_by_listing([row.id])[row.id],
+        floor_plan=(floor_plans if floor_plans is not None else floor_plans_of([row])).get(row.id),
         restricted=row.restricted,
         restriction_reason=lifecycle.shown_reason(row),
     )
@@ -469,10 +532,12 @@ def list_owned(
     images = media_by_listing(r.id for r in page)
     public = policy.public_ids(r.id for r in page)
     answered = amenities_by_listing(r.id for r in page)
+    plans = floor_plans_of(page)
     return ListingPage(
         tuple(
             view_of(
                 r,
+                floor_plans=plans,
                 images=images[r.id],
                 public=r.id in public,
                 with_private=True,
@@ -536,6 +601,7 @@ class PublicListingView:
     fields: Mapping[str, object]  # the other registry fields of class `public`; null if unknown
     media: tuple[PublicImageView, ...]
     registry_version: int
+    floor_plan: FloorPlanView | None = None
 
 
 # Fields shown at the top of the projection, not repeated in `fields`.
@@ -605,10 +671,18 @@ def public_view_of(
     *,
     images: tuple[ImageView, ...] | None = None,
     amenities: Mapping[str, str] | None = None,
+    floor_plans: Mapping[uuid.UUID, FloorPlanView] | None = None,
 ) -> PublicListingView:
     # Public callers pass only rows from `public_listings()`. The private address is never read.
     # `images` and `amenities` are the row's own, batch-loaded by a list (no query per row).
-    view = view_of(row, public=True, with_private=False, images=images, amenities=amenities)
+    view = view_of(
+        row,
+        public=True,
+        with_private=False,
+        images=images,
+        amenities=amenities,
+        floor_plans=floor_plans,
+    )
     return PublicListingView(
         id=row.id,
         purpose=row.purpose,
@@ -630,6 +704,7 @@ def public_view_of(
             for image in view.media
         ),
         registry_version=row.registry_version,
+        floor_plan=view.floor_plan,
     )
 
 
@@ -680,7 +755,11 @@ _NO_PRICE = {SORT_PRICE_ASC: Decimal("1e15"), SORT_PRICE_DESC: Decimal(-1)}
 _PATHS = {
     **{name: "" for name in IDENTITY_FIELDS},
     **{
-        name: "" if table == LISTING else f"{table}__"
+        name: ""
+        if table == LISTING
+        else "terms__extra_attributes__"  # a JSON key; only enums among them are searchable
+        if table == EXTRA
+        else f"{table}__"
         for name, table in {**STORAGE, **DERIVED}.items()
     },
 }
@@ -730,6 +809,7 @@ def _entries(rows: list) -> tuple[PublicEntry, ...]:
     cities = catalog.city_names(p.city for p in places)
     localities = catalog.locality_names(p.locality for p in places)
     advertisers = identity.public_advertisers(r.owner_account_id for r in rows)
+    plans = floor_plans_of(rows)
 
     def place(names, key):
         return PlaceView(key, names[key]) if key in names else None
@@ -739,7 +819,9 @@ def _entries(rows: list) -> tuple[PublicEntry, ...]:
         location = location_of(row)
         entries.append(
             PublicEntry(
-                listing=public_view_of(row, images=images[row.id], amenities=answered[row.id]),
+                listing=public_view_of(
+                    row, images=images[row.id], amenities=answered[row.id], floor_plans=plans
+                ),
                 advertiser=advertisers[row.owner_account_id],
                 published_on=row.published_at.astimezone(KARACHI).date(),
                 city=place(cities, location.city) if location else None,
@@ -1013,7 +1095,11 @@ def image_for_serving(
     public = policy.is_public(row)  # once: it decides access and the cache header
     if not (public or policy.is_owner(actor, row) or policy.admin_may_inspect(actor, row)):
         raise DomainError("not_found")
-    link = ListingImage.objects.filter(id=image_key, listing_id=listing_key).first()
+    link = (
+        ListingImage.objects.filter(id=image_key, listing_id=listing_key).first()
+        # the floor plan is served by the same endpoint, under the same access decision
+        or ListingFloorPlan.objects.filter(id=image_key, listing_id=listing_key).first()
+    )
     if link is None:
         raise DomainError("not_found")
     if not with_bytes:

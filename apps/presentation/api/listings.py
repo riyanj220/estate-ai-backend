@@ -180,6 +180,29 @@ class ImageSerializer(serializers.Serializer):
     )
 
 
+class FloorPlanSerializer(serializers.Serializer):
+    """The floor plan (never one of `media`): `url` is the media endpoint, as for an image."""
+
+    id = serializers.UUIDField()
+    content_type = serializers.ChoiceField(choices=CONTENT_TYPES)
+    width = serializers.IntegerField()
+    height = serializers.IntegerField()
+    bytes = serializers.IntegerField(help_text="Size of the stored (re-encoded) file.")
+    url = serializers.CharField()
+
+
+class PublicFloorPlanSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    content_type = serializers.ChoiceField(choices=CONTENT_TYPES)
+    width = serializers.IntegerField()
+    height = serializers.IntegerField()
+    url = serializers.CharField()
+
+
+def floor_plan_data(view, serializer=FloorPlanSerializer) -> dict | None:
+    return None if view is None else serializer(view).data
+
+
 class ListingSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     status = serializers.ChoiceField(choices=_choices(s.value for s in ListingStatus))
@@ -196,6 +219,9 @@ class ListingSerializer(serializers.Serializer):
     )
     media = ImageSerializer(
         many=True, help_text="The images in `position` order; empty when there are none."
+    )
+    floor_plan = FloorPlanSerializer(
+        allow_null=True, help_text="Not counted as a photo; null when there is none."
     )
     under_review = serializers.BooleanField(
         help_text=(
@@ -264,6 +290,7 @@ class PublicListingSerializer(serializers.Serializer):
     description = serializers.CharField(allow_null=True)
     fields = PublicFieldsSerializer()
     media = PublicImageSerializer(many=True, help_text="The images in `position` order.")
+    floor_plan = PublicFloorPlanSerializer(allow_null=True, help_text="Never a photo.")
     registry_version = serializers.IntegerField(min_value=1)
 
 
@@ -315,6 +342,7 @@ def public_values(view: selectors.PublicListingView) -> dict:
         "description": view.description,
         "fields": dict(view.fields),
         "media": [public_image_data(item) for item in view.media],
+        "floor_plan": floor_plan_data(view.floor_plan, PublicFloorPlanSerializer),
         "registry_version": view.registry_version,
     }
 
@@ -505,6 +533,7 @@ def listing_data(view: selectors.ListingView, under_review: set | None = None) -
             "fields": dict(view.fields),
             "provenance": {name: dict(entry) for name, entry in view.provenance.items()},
             "media": [image_data(item) for item in view.media],
+            "floor_plan": floor_plan_data(view.floor_plan),
             "restricted": view.restricted,
             "restriction_reason": view.restriction_reason,
             "under_review": view.id in under_review,
@@ -655,13 +684,13 @@ class ListingDetailView(NoStoreMixin, APIView):
             "stored one, `null` or `{}` clears it, a code that is left out is unanswered (never "
             "`none`), an unknown or inactive code, another state, a non-object or more than 40 "
             "entries is `invalid`; nearby facilities are seller-declared (no distance, no "
-            "verification). Installment, payment type, down payment and title or approval "
-            "document terms are not supported yet (`unknown_field`). Possession, balloting, "
+            "verification). The sale-only payment, installment, title, approval "
+            "and mortgage declarations and the `https://` `video_tour_url` (`invalid_url`, or "
+            "`contains_contact_details`) are accepted too. Possession, balloting, "
             "development, approval and plot file status are seller-declared (registry flag "
             "`seller_declared`): the owner's claim, never verified by EstateAI. A Plot File "
             "allows only `file_only` for `possession_status` and the other Subtypes refuse it "
-            "(`invalid_choice`). Ids the registry does not define (for example installment, "
-            "down payment, title document or mortgage attributes) are `unknown_field`. "
+            "(`invalid_choice`). Ids the registry does not define are `unknown_field`. "
             "Counts are JSON integers and yes/no "
             "answers are JSON `true`/`false`, never text; unanswered is `null`, never 0 or "
             "false. The registry says which apply to which Subtype (`not_applicable` "
@@ -673,6 +702,7 @@ class ListingDetailView(NoStoreMixin, APIView):
             "succeeded is also a 409: reload). An edit that changes nothing is `200` and keeps the "
             "revision. `400` carries codes keyed by registry field id (`invalid`, `too_short`, "
             "`too_long`, `invalid_price`, `invalid_area`, `invalid_range`, `invalid_floor`, "
+            "`invalid_url`, "
             "`invalid_date`, "
             "`invalid_choice`, `not_applicable`, `invalid_measure`, `out_of_range`, "
             "`locality_not_in_city`, "

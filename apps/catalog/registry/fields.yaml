@@ -1,7 +1,7 @@
 # The Field registry (AD-4). Every change needs a version bump and a new lock:
 #   uv run python scripts/registry_lock.py
 # Format and rules: docs/registry.md
-version: 11
+version: 12
 
 taxonomy:
   purposes: [sale, rent]
@@ -791,3 +791,101 @@ fields:
     class: public
     searchable: true
     valuation_input: true
+  - id: payment_type
+    type: enum
+    section: terms
+    requirement: optional
+    description: How the buyer can pay.
+    applicability: {purposes: [sale], categories: [], subtypes: []}
+    allowed_values: [cash, installments, cash_or_installments]
+    searchable: true
+    ai_extractable: true
+    class: public
+  - id: down_payment
+    type: money
+    section: terms
+    requirement: optional
+    description: Down payment in PKR.
+    applicability: {purposes: [sale], categories: [], subtypes: []}
+    min: "0"
+    max: "999999999999.99"
+    currency: PKR
+    ai_extractable: true
+    class: public
+  - id: total_installment_price
+    type: money
+    section: terms
+    requirement: optional
+    description: Total price in PKR when paid in installments.
+    applicability: {purposes: [sale], categories: [], subtypes: []}
+    min: "0"
+    max: "999999999999.99"
+    currency: PKR
+    ai_extractable: true
+    class: public
+  - id: monthly_installment
+    type: money
+    section: terms
+    requirement: optional
+    description: Monthly installment in PKR.
+    applicability: {purposes: [sale], categories: [], subtypes: []}
+    min: "0"
+    max: "999999999999.99"
+    currency: PKR
+    ai_extractable: true
+    class: public
+  - id: remaining_installments
+    type: integer
+    section: terms
+    requirement: optional
+    description: Number of installments still to be paid.
+    applicability: {purposes: [sale], categories: [], subtypes: []}
+    min: 0
+    max: 600
+    ai_extractable: true
+    class: public
+  - id: title_document_type
+    type: enum
+    section: terms
+    requirement: optional
+    description: Ownership or title document, as the seller states it.
+    applicability: {purposes: [sale], categories: [], subtypes: []}
+    allowed_values: [sale_deed, allotment_letter, transfer_letter, lease_deed, power_of_attorney, other]
+    searchable: true
+    seller_declared: true
+    class: public
+  - id: approval_information
+    type: text
+    section: terms
+    requirement: optional
+    description: Approvals the property has, as the seller states them.
+    applicability: {purposes: [sale], categories: [], subtypes: []}
+    max_length: 200
+    seller_declared: true
+    class: public
+  - id: approval_reference_number
+    type: text
+    section: terms
+    requirement: optional
+    description: Approval or reference number, as the seller states it.
+    applicability: {purposes: [sale], categories: [], subtypes: []}
+    max_length: 60
+    seller_declared: true
+    class: public
+  - id: mortgage_declaration
+    type: enum
+    section: terms
+    requirement: optional
+    description: Mortgage or dispute, as the seller declares it.
+    applicability: {purposes: [sale], categories: [], subtypes: []}
+    allowed_values: [none, mortgaged, disputed, mortgaged_and_disputed]
+    searchable: true
+    seller_declared: true
+    class: public
+  - id: video_tour_url
+    type: url
+    requirement: optional
+    description: An https link to a video or virtual tour. Shown only as a link.
+    applicability: {purposes: [], categories: [], subtypes: []}
+    max_length: 300
+    class: public

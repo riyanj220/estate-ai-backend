@@ -31,6 +31,7 @@ FIELD_TYPES = (
     "date",
     "reference",
     "amenities",
+    "url",
 )
 REQUIREMENTS = ("required_for_publication", "recommended", "optional")
 CLASSES = ("public", "private")
@@ -321,6 +322,10 @@ def _int_bound(entry: dict, key: str, low: int, high: int) -> int | None:
 
 def _text_rules(entry: dict) -> dict:
     present = _TEXT_KEYS & set(entry)
+    if entry["type"] == "url":  # a link (`listings.validation.check_url`): a length cap only
+        if present != {"max_length"}:
+            _fail("a url field needs max_length and takes no min_length")
+        return {"max_length": _int_bound(entry, "max_length", 1, TEXT_LENGTH_CEILING)}
     if entry["type"] != "text":
         if present:
             _fail("only a text field has min_length or max_length")

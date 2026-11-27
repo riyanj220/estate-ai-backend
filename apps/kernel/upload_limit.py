@@ -1,7 +1,8 @@
 """Cap on the request body of the image upload routes (Story 2.9).
 
 `POST /api/v1/listings/<id>/images` is limited here (6 MiB), and so are `PUT` on the two profile
-image routes (`/api/v1/me/profile/image`, `/api/v1/me/agency-profile/image`, Story 2.11); `PATCH` on
+image routes (`/api/v1/me/profile/image`, `/api/v1/me/agency-profile/image`, Story 2.11) and the
+floor plan route (`/api/v1/listings/<id>/floor-plan`, Story 11.4); `PATCH` on
 the Listing images route (the small JSON reorder body) gets a much smaller cap,
 `MAX_IMAGE_ORDER_BODY_BYTES` (64 KiB); `POST /api/v1/public/search/transcription` (voice search,
 Story 6.3) is capped at `MAX_VOICE_BODY_BYTES`, below the size at which Django would spool a body
@@ -26,6 +27,7 @@ from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.conf import settings
 
 ROUTE = re.compile(r"^/api/v1/listings/[^/]+/images/?$")
+FLOOR_PLAN_ROUTE = re.compile(r"^/api/v1/listings/[^/]+/floor-plan/?$")
 PROFILE_ROUTE = re.compile(r"^/api/v1/me/(?:agency-)?profile/image/?$")
 VOICE_PATH = "/api/v1/public/search/transcription"
 
@@ -35,7 +37,7 @@ def is_upload(method: str, path: str) -> bool:
         return True
     if method == "POST" and path == VOICE_PATH:
         return True
-    return method == "PUT" and PROFILE_ROUTE.match(path) is not None
+    return method == "PUT" and any(r.match(path) for r in (PROFILE_ROUTE, FLOOR_PLAN_ROUTE))
 
 
 def cap_for(method: str, path: str = "") -> int:

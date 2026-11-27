@@ -19,6 +19,9 @@ COMMERCIAL = "commercial"  # a column of ListingCommercial (Shop and Office deta
 LOCATION = "location"  # a column of ListingLocation (city, locality and the public location text)
 # a column of ListingPrivateAddress: the owner's exact address, class `private` (never public)
 ADDRESS = "address"
+# a key of `ListingTerms.extra_attributes` (AD-4: the deferred attributes, Story 11.3): validated
+# by the registry like any column; money is stored as its two-decimal string
+EXTRA = "extra"
 # the `amenities` map: rows of ListingAmenity (one per answered catalogue code), not a column
 AMENITIES = "amenities"
 
@@ -115,6 +118,16 @@ STORAGE = MappingProxyType(
         "latitude": ADDRESS,
         "longitude": ADDRESS,
         "amenities": AMENITIES,
+        "payment_type": EXTRA,
+        "down_payment": EXTRA,
+        "total_installment_price": EXTRA,
+        "monthly_installment": EXTRA,
+        "remaining_installments": EXTRA,
+        "title_document_type": EXTRA,
+        "approval_information": EXTRA,
+        "approval_reference_number": EXTRA,
+        "mortgage_declaration": EXTRA,
+        "video_tour_url": LISTING,
     }
 )
 
@@ -131,6 +144,7 @@ PLOT_FIELDS = tuple(name for name, table in STORAGE.items() if table == PLOT)
 COMMERCIAL_FIELDS = tuple(name for name, table in STORAGE.items() if table == COMMERCIAL)
 LOCATION_FIELDS = tuple(name for name, table in STORAGE.items() if table == LOCATION)
 ADDRESS_FIELDS = tuple(name for name, table in STORAGE.items() if table == ADDRESS)
+EXTRA_FIELDS = tuple(name for name, table in STORAGE.items() if table == EXTRA)
 AMENITIES_FIELD = "amenities"  # the one field stored as rows of ListingAmenity
 DERIVED_FIELDS = tuple(DERIVED)
 WIRE_FIELDS = (

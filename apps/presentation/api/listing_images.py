@@ -22,6 +22,7 @@ from apps.presentation.api.bodies import ConflictWithCurrent, exact_fields, fiel
 from apps.presentation.api.caching import cache_publicly
 from apps.presentation.api.listings import (
     CONTENT_TYPES,
+    FloorPlanSerializer,
     ImageSerializer,
     ListingConflictSerializer,
     ListingSerializer,
@@ -228,6 +229,58 @@ class ListingImageDetailView(NoStoreMixin, APIView):
             services.remove_image(get_actor(request), listing_id, image_id)
         except services.FieldsInvalid as exc:
             raise field_errors(exc.fields) from None
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ListingFloorPlanView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+    parser_classes = [MultiPartParser]
+    throttle_classes = [PolicyThrottle]
+
+    @property
+    def rate_limit_scope(self):
+        method = getattr(getattr(self, "request", None), "method", None)
+        return "image_order" if method == "DELETE" else "image_upload"
+
+    @extend_schema(
+        operation_id="set_listing_floor_plan",
+        summary="Add or replace the floor plan of one of the own editable Listings",
+        description=(
+            "Needs `X-CSRFToken` and the same `multipart/form-data` body as an image upload "
+            "(one part, `file`), with the same checks, re-encoding, refusals, storage cap and "
+            "upload limit. A Listing has at most one floor plan: a new one replaces it. It is "
+            "not one of `media`: never a photo, a cover or part of the image limit. The "
+            "Listing `revision` rises by one. Never cached."
+        ),
+        request={"multipart/form-data": ImageUploadSerializer},
+        responses={
+            200: OpenApiResponse(FloorPlanSerializer, description="The stored floor plan"),
+            409: OpenApiResponse(description="`storage_cap_exceeded`"),
+            503: OpenApiResponse(description="`busy`: image processing is at capacity; retry"),
+        },
+    )
+    def put(self, request, listing_id):
+        actor = get_actor(request)
+        services.require_image_access(actor, listing_id)
+        data = _upload_bytes(request)
+        try:
+            view = services.set_floor_plan(actor, listing_id, data)
+        except ImageRejected as exc:
+            raise field_errors({"file": exc.reason}) from None
+        return Response(FloorPlanSerializer(view).data)
+
+    @extend_schema(
+        operation_id="delete_listing_floor_plan",
+        summary="Remove the floor plan of one of the own editable Listings",
+        description=(
+            "Needs `X-CSRFToken`. Deletes the floor plan and its file, gives its bytes back and "
+            "raises the Listing `revision` by one. `404 not_found` when there is none, and the "
+            "same refusals as removing an image. Never cached."
+        ),
+        responses={204: OpenApiResponse(description="Removed")},
+    )
+    def delete(self, request, listing_id):
+        services.remove_floor_plan(get_actor(request), listing_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

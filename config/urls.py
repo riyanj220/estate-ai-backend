@@ -107,6 +107,7 @@ from apps.presentation.api.favourites import (
 from apps.presentation.api.handlers import bad_request, forbidden, not_found, server_error
 from apps.presentation.api.health import health
 from apps.presentation.api.listing_images import (
+    ListingFloorPlanView,
     ListingImageDetailView,
     ListingImageFileView,
     ListingImagesView,
@@ -516,6 +517,11 @@ urlpatterns = [
         "api/v1/listings/<str:listing_id>/status",
         ListingStatusView.as_view(),
         name="listing-status",
+    ),
+    path(
+        "api/v1/listings/<str:listing_id>/floor-plan",
+        ListingFloorPlanView.as_view(),
+        name="listing-floor-plan",
     ),
     path(
         "api/v1/listings/<str:listing_id>/images",

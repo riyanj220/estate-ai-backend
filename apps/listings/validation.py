@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from urllib.parse import unquote, urlsplit
 
 from apps.catalog import registry
 from apps.catalog.selectors import parse_uuid
@@ -120,6 +121,42 @@ def check_text(
         # the private address fields exist to hold an address; phone and email stay refused
         refused = any(f.kind is not ContactKind.ADDRESS for f in find_contact_details(text))
     if refused:
+        return None, "contains_contact_details"
+    return text, None
+
+
+_HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}", re.ASCII)
+# hosts whose links are a way to message someone: contact details by another name
+_CHAT_HOSTS = ("wa.me", "whatsapp.com", "t.me", "telegram.me", "m.me")
+
+
+def check_url(definition: registry.FieldDef, value) -> tuple[str | None, str | None]:
+    """(the link or None to clear, code). Only `https://` followed by a named host: no user
+    part, port, IP address, space or non-ASCII character. A chat link, or a link whose text
+    holds a phone number, email address or street address, is `contains_contact_details`.
+    The server never opens the link; clients show it as a link only."""
+    if not isinstance(value, str):
+        return None, "invalid"
+    if len(value) > RAW_TEXT_LIMIT:
+        return None, "too_long"
+    text = value.strip()
+    if not text:
+        return None, None
+    if len(text) > definition.max_length:
+        return None, "too_long"
+    if not text.isascii() or not text.isprintable() or any(c in text for c in " \\<>\"'`"):
+        return None, "invalid_url"
+    if not text.startswith("https://"):
+        return None, "invalid_url"
+    try:
+        host = urlsplit(text).netloc.lower()
+    except ValueError:
+        return None, "invalid_url"
+    if _HOST.fullmatch(host) is None:  # also refuses `user@host` and `host:port`
+        return None, "invalid_url"
+    if any(host == chat or host.endswith(f".{chat}") for chat in _CHAT_HOSTS):
+        return None, "contains_contact_details"
+    if reject_contact_details(unquote(text)) is not None:
         return None, "contains_contact_details"
     return text, None
 
@@ -312,6 +349,8 @@ def _check_one(definition, value, purpose, subtype):
         return check_boolean(value)
     if definition.type == "date":
         return check_date(definition, value)
+    if definition.type == "url":
+        return check_url(definition, value)
     return None, "invalid"  # a type that has no editor yet
 
 
