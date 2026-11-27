@@ -1,4 +1,5 @@
-"""Image validation and re-encoding (AD-15). The only module that imports Pillow.
+"""Image validation and re-encoding (AD-15). The one module that decodes untrusted images
+(`kernel.sample_art`, the only other Pillow user, only draws development placeholders).
 
 `process_image(data)` accepts the raw bytes of an upload and returns a freshly encoded JPEG, PNG or
 WebP. The output is never the input: the image is decoded, rotated by its EXIF orientation, copied

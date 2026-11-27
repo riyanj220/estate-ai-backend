@@ -1190,6 +1190,15 @@ def expire_idle_draft(actor: Actor, listing_id, now: datetime) -> str:
         return "extended"
 
 
+def remove_sample_favourites(actor: Actor, account_id) -> int:
+    """Sample data only (system actor, `forbidden` otherwise): delete every favourite of a sample
+    account (saves of other accounts' Listings have no cascade). Any other account: 0."""
+    _require_system(actor)
+    if not is_sample_account(account_id):
+        return 0
+    return SavedListing.objects.filter(account_id=account_id).delete()[0]
+
+
 def remove_sample_listing(actor: Actor, listing_id) -> bool:
     """Sample data only (system actor, `forbidden` otherwise): delete a Listing of any status with
     its images (usage given back, files deleted after commit) and every row of it, and write the

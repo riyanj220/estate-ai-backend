@@ -1,4 +1,4 @@
-"""Create, remove or recreate the sample accounts and Listings (Story 2.16). Development only.
+"""Create, remove or recreate the sample marketplace (Stories 2.16 and 11.1). Development only.
 
     python manage.py seed_sample_data [--reset] [--reseed] [--yes] [--password-stdin] [--listings N]
 
@@ -7,7 +7,8 @@ account is created) comes from a hidden prompt on a terminal, or one line of sta
 `--password-stdin`; with neither it is generated and printed once, as soon as the accounts exist.
 `--reset` and `--reseed` print what they will remove and need `--yes`. Output is plain
 counts: never a password beyond that one line, an address or a private value. The behaviour lives
-in `apps.listings.sample_data`; this is the thin wrapper.
+in `apps.governance.sample_data` (which builds on `apps.listings.sample_data`); this is the thin
+wrapper.
 """
 
 import getpass
@@ -15,6 +16,7 @@ import sys
 
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.governance import sample_data as marketplace
 from apps.identity.passwords import PASSWORD_MAX
 from apps.kernel.errors import DomainError
 from apps.listings import sample_data
@@ -22,7 +24,7 @@ from apps.listings import sample_data
 
 class Command(BaseCommand):
     help = (
-        "Create (default), --reset or --reseed the sample accounts and published Listings. "
+        "Create (default), --reset or --reseed the sample marketplace. "
         "Development settings only; refuses in production."
     )
 
@@ -99,20 +101,24 @@ class Command(BaseCommand):
         try:
             sample_data.require_allowed()
             if reset or reseed:
-                will = sample_data.preview_reset()
+                will = marketplace.preview_reset()
                 self.stdout.write(
                     f"will remove: {will.accounts_removed} accounts, "
                     f"{will.listings_removed} listings, {will.events_removed} publication events"
                 )
+                self.stdout.write(
+                    "will also remove: "
+                    + ", ".join(f"{count} {label}" for label, count in will.activity.items())
+                )
                 if not options["yes"]:
                     raise CommandError("Refused: --reset and --reseed need --yes.")
             if reset:
-                report = sample_data.reset()
+                report = marketplace.reset()
             else:
                 needs = reseed or sample_data.accounts_missing() > 0
                 password = self._password(options["password_stdin"]) if needs else None
                 given = given or password is not None
-                run = sample_data.reseed if reseed else sample_data.seed
+                run = marketplace.reseed if reseed else marketplace.seed
                 try:
                     report = run(options["listings"], password, self._announce)
                 except Exception:
@@ -127,10 +133,13 @@ class Command(BaseCommand):
             ("accounts created", report.accounts_created),
             ("listings created", report.listings_created),
             ("images created", report.images_created),
+            ("floor plans created", report.floor_plans_created),
             ("accounts removed", report.accounts_removed),
             ("listings removed", report.listings_removed),
             ("publication events removed", report.events_removed),
         ):
             self.stdout.write(f"{label}: {value}")
+        for label, value in report.activity.items():
+            self.stdout.write(f"{label} {'deleted' if reset else 'created'}: {value}")
         if given and not reset and report.accounts_existing:
             self.stdout.write("notice: existing sample accounts keep their password; use --reseed.")

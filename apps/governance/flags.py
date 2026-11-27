@@ -157,11 +157,16 @@ def _reported_listings() -> dict[uuid.UUID, int]:
     return found
 
 
-def _sync_suspicious() -> int:
+def _sync_suspicious(only=None) -> int:
+    """Make the `suspicious` rows equal to the rule, over everything or over the ids in `only`."""
     found = _reported_listings()
+    rows = ListingFlag.objects.filter(kind="suspicious")
+    if only is not None:
+        found = {key: count for key, count in found.items() if key in only}
+        rows = rows.filter(listing_id__in=only)
     known = listings.existing_listing_ids(_SYSTEM, found)
     found = {key: count for key, count in found.items() if key in known}
-    for row in ListingFlag.objects.filter(kind="suspicious"):
+    for row in rows:
         if row.listing_id not in found:
             row.delete()
         elif row.reporter_count != found[row.listing_id]:
@@ -176,6 +181,13 @@ def _sync_suspicious() -> int:
         )
         added += created
     return added
+
+
+def check_suspicious(listing_ids) -> int:
+    """The suspicious rule for these Listings only (the sample data, which must not touch the
+    flags of other accounts). Returns the number added."""
+    with transaction.atomic():
+        return _sync_suspicious(set(listing_ids))
 
 
 def run_flags(actor: Actor) -> dict[str, int]:
