@@ -354,7 +354,7 @@ class PublicAdvertiser:
 def public_advertisers(account_ids) -> dict[uuid.UUID, PublicAdvertiser]:
     """`PublicAdvertiser` of each of these owner accounts, by account id, in two queries whatever
     their number. The caller has already decided that their Listings are public. `verified` is
-    false for everyone until an Agency can be granted Verification (Epic 8)."""
+    true only for an Agency an administrator verified (Story 8.4)."""
     rows = list(
         Account.objects.filter(id__in=set(account_ids)).values_list(
             "id",
@@ -379,6 +379,29 @@ def public_advertisers(account_ids) -> dict[uuid.UUID, PublicAdvertiser]:
             verified=verification == "verified",
         )
     return found
+
+
+@dataclass(frozen=True)
+class AgencyFacts:
+    """What Verification review needs of an Agency account (Story 8.4). No contact data."""
+
+    agency_name: str
+    agency_id: uuid.UUID  # the PUBLIC profile id
+    state: AccountState
+    verified: bool
+
+
+def agency_facts(account_ids) -> dict[uuid.UUID, AgencyFacts]:
+    """`AgencyFacts` of each of these accounts that is an Agency with a profile, by account id."""
+    rows = AgencyProfile.objects.select_related("account").filter(
+        account_id__in=set(account_ids), account__account_type=AccountType.AGENCY
+    )
+    return {
+        row.account_id: AgencyFacts(
+            row.agency_name, row.id, row.account.state, row.verification_status == "verified"
+        )
+        for row in rows
+    }
 
 
 @dataclass(frozen=True)

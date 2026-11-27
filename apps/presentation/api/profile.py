@@ -68,7 +68,7 @@ class AgencyProfileSerializer(serializers.Serializer):
         help_text="The address of the newest unused, unexpired email-change request, or null.",
     )
     verification_status = serializers.CharField(
-        help_text="Read-only Agency Verification status (`unverified` until a later story)."
+        help_text="Read-only: `verified` after an administrator approval, else `unverified`."
     )
     image = ProfileImageSerializer(
         allow_null=True,

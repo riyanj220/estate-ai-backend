@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     "apps.assistant",
     "apps.search",
     "apps.messaging",
+    "apps.governance",
     # Last: its subscribers run after identity's, which end the sessions they react to.
     "apps.presentation.realtime",
 ]
@@ -53,7 +54,11 @@ RUNTIME_DB_USER = env("RUNTIME_USER", "runtime")
 
 # Tables the runtime role may read and insert but not delete, truncate or update (the audit table,
 # Story 1.10), except for the columns named in RUNTIME_COLUMN_UPDATES below.
-RUNTIME_APPEND_ONLY_TABLES: list[str] = ["kernel_auditrecord", "listings_publicationevent"]
+RUNTIME_APPEND_ONLY_TABLES: list[str] = [
+    "kernel_auditrecord",
+    "listings_publicationevent",
+    "governance_verificationdecision",  # Story 8.4: decision history
+]
 # The only columns of those tables the runtime role may still UPDATE (Story 2.19: the one-time
 # correction marks its counted publication event and moves its identity fingerprint).
 RUNTIME_COLUMN_UPDATES: dict[str, list[str]] = {
@@ -205,6 +210,14 @@ SPECTACULAR_SETTINGS = {
         "ListingStatusEnum": ["draft", "published", "archived", "sold", "rented", "removed"],
         "FieldRequirementEnum": ["required_for_publication", "recommended", "optional"],
         "EstimateStatusEnum": ["available", "unavailable"],
+        "VerificationRequestStatusEnum": [
+            "pending",
+            "verified",
+            "rejected",
+            "revoked",
+            "withdrawn",
+        ],
+        "VerificationActionEnum": ["approved", "rejected", "revoked", "withdrawn"],
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",

@@ -23,6 +23,7 @@ from apps.identity.services.admin import (
     remove_admin,
     reset_admin_password,
 )
+from apps.identity.services.agency_verification import set_agency_verification
 from apps.identity.services.email_changes import (
     EmailChangeDelivery,
     confirm_email_change,
@@ -126,6 +127,7 @@ __all__ = [
     "require_profile_image_access",
     "reset_admin_password",
     "selectors",
+    "set_agency_verification",
     "set_profile_image",
     "sign_in",
     "sign_out",

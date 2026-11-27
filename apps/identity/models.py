@@ -75,7 +75,9 @@ class IndividualProfile(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
-AGENCY_VERIFICATION_STATUSES = ["unverified"]  # the verification-evidence story extends this
+# The public flag only (Stories 8.3/8.4). Pending, rejected and so on live with the request in
+# `governance`, which changes this value through `services.set_agency_verification`.
+AGENCY_VERIFICATION_STATUSES = ["unverified", "verified"]
 
 
 class AgencyProfile(models.Model):

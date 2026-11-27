@@ -11,10 +11,22 @@ from apps.presentation.adminapi.quota import (
     QuotaPolicyView,
     QuotaUsageView,
 )
+from apps.presentation.adminapi.verification import (
+    VerificationApproveView,
+    VerificationQueueView,
+    VerificationReadView,
+    VerificationRejectView,
+    VerificationRevokeView,
+)
 from apps.presentation.api.agency_dashboard import (
     AgencyDashboardListingsView,
     AgencyDashboardView,
     ListingViewBeaconView,
+)
+from apps.presentation.api.agency_verification import (
+    AgencyVerificationRequestView,
+    AgencyVerificationView,
+    AgencyVerificationWithdrawView,
 )
 from apps.presentation.api.assistant import (
     AssistantDescriptionView,
@@ -153,6 +165,46 @@ urlpatterns = [
         "api/v1/admin/accounts/<str:account_id>/reactivate",
         AccountReactivateView.as_view(),
         name="admin-account-reactivate",
+    ),
+    path(
+        "api/v1/admin/verification-requests",
+        VerificationQueueView.as_view(),
+        name="admin-verification-requests",
+    ),
+    path(
+        "api/v1/admin/verification-requests/<str:request_id>/read",
+        VerificationReadView.as_view(),
+        name="admin-verification-read",
+    ),
+    path(
+        "api/v1/admin/verification-requests/<str:request_id>/approve",
+        VerificationApproveView.as_view(),
+        name="admin-verification-approve",
+    ),
+    path(
+        "api/v1/admin/verification-requests/<str:request_id>/reject",
+        VerificationRejectView.as_view(),
+        name="admin-verification-reject",
+    ),
+    path(
+        "api/v1/admin/verification-requests/<str:request_id>/revoke",
+        VerificationRevokeView.as_view(),
+        name="admin-verification-revoke",
+    ),
+    path(
+        "api/v1/me/agency-verification",
+        AgencyVerificationView.as_view(),
+        name="me-agency-verification",
+    ),
+    path(
+        "api/v1/me/agency-verification/requests",
+        AgencyVerificationRequestView.as_view(),
+        name="me-agency-verification-requests",
+    ),
+    path(
+        "api/v1/me/agency-verification/withdraw",
+        AgencyVerificationWithdrawView.as_view(),
+        name="me-agency-verification-withdraw",
     ),
     path("api/v1/me", MeView.as_view(), name="me"),
     path("api/v1/me/password", ChangePasswordView.as_view(), name="me-password"),
