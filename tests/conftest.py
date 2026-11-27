@@ -55,3 +55,14 @@ def _reseed_flushed_policies(request):
             seed = importlib.import_module("apps.listings.migrations.0013_quota_policy_and_events")
             seed.seed_policies(apps, None)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_provider_network(monkeypatch):
+    """No test reaches an AI provider: a test of the transport replaces this with a fake."""
+    from apps.kernel.ai import transport
+
+    def refuse(host, timeout):
+        raise AssertionError("a test tried to open a provider connection")
+
+    monkeypatch.setattr(transport, "_connect", refuse)
