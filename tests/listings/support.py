@@ -276,3 +276,16 @@ def ready_draft(account, values=HOUSE, extra=None, images=1):
     services.apply_updates(user(account), view.id, 1, data)
     add_images(view.id, images)
     return selectors.get_owned_listing(user(account), view.id)
+
+
+def publish_ready(account_id, key=None):
+    """A Published Listing of the account (an `active` one), through the real publication path;
+    returns its id."""
+    from types import SimpleNamespace
+
+    from apps.listings import publication
+
+    account = SimpleNamespace(id=account_id)
+    view = ready_draft(account)
+    publication.publish(user(account), view.id, view.revision, key or f"key-{view.id}")
+    return view.id

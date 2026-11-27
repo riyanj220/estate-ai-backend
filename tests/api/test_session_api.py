@@ -130,6 +130,7 @@ def test_sign_in_returns_the_summary_and_a_hardened_cookie(db):
             "edit_drafts",
             "send_messages",
             "read_conversations",
+            "report",
         ],
         "suspension_reason": None,
     }

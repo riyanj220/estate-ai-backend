@@ -474,6 +474,7 @@ def test_summary_carries_profile_name_and_matrix_capabilities(db):
         "edit_drafts",
         "send_messages",
         "read_conversations",
+        "report",
     )
     assert selectors.get_actor_summary("junk") is None
     assert selectors.get_actor_summary(uuid.uuid4()) is None

@@ -72,6 +72,7 @@ def test_pending_is_everything_except_the_activated_capabilities():
         C.EDIT_DRAFTS,
         C.SEND_MESSAGES,
         C.READ_CONVERSATIONS,
+        C.REPORT,
     }
 
 

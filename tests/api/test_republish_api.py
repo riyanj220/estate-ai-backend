@@ -31,6 +31,7 @@ ENVELOPE = {"code", "message", "fields", "request_id"}
 WIRE = {
     *("id", "status", "visibility", "revision", "registry_version"),
     *("fields", "provenance", "media", "restricted", "restriction_reason"),
+    "under_review",
 }
 
 

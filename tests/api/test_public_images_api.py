@@ -91,7 +91,11 @@ def test_the_http_matrix(status, restricted, owner_state):
     }
     reference = Client().get(file_url(listing["id"], "00000000-0000-4000-8000-000000000000"))
     for name, client in viewers.items():
-        allowed = public or (name == "owner" and owner_state != "deactivated")
+        allowed = (
+            public
+            or (name == "owner" and owner_state != "deactivated")
+            or (name == "admin" and status != "draft")  # moderation review (Story 9.3)
+        )
         get = client.get(image["url"])
         head = client.head(image["url"])
         assert get.status_code == head.status_code == (200 if allowed else 404), name

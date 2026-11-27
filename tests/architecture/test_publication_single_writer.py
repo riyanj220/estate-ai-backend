@@ -7,7 +7,9 @@ pinned to ONE status write, of `PUBLISHED`, reached only from those two function
 (`PublicationEvent` writes: see `tests/listings/test_quota.py`.) Story 2.17: `listings/status.py`
 may also write exactly archived, sold and rented (a literal, or a lookup in its `_WRITABLE`
 table, whose values are pinned below), never published or removed; `removed` is written by nobody in
-`apps`."""
+`apps`. Story 9.4: `listings/moderation.py` is the one writer of `removed` (and may write exactly
+`removed` and `archived`) and of the moderation columns; the publication module has a second path
+to published, `restore_after_moderation`, pinned below."""
 
 import ast
 import re
@@ -23,6 +25,9 @@ DEFINES = {"apps/listings/lifecycle.py"}  # the enum itself
 STATUS_WRITER = "apps/listings/status.py"
 STATUS_WRITES = {"archived", "sold", "rented"}  # all that `status.py` may ever write
 STATUS_TABLE = "_WRITABLE"
+MODERATION_WRITER = "apps/listings/moderation.py"
+MODERATION_WRITES = {"ARCHIVED", "REMOVED"}  # all that `moderation.py` may ever write
+MODERATION_COLUMNS = {"restricted", "restriction_reason", "removal_reason"}
 # `apply_updates` sets column values by registry field id; a test below pins that no registry
 # field (editable or derived) is named `status`.
 COMPUTED_SETATTR_OK = {"apps/listings/services.py"}
@@ -97,7 +102,8 @@ def _table_mutations(tree: ast.AST):
             yield node.lineno
 
 
-REMOVED_OWNERS = {"apps/listings/lifecycle.py", "apps/listings/policy.py"}  # the enum, the view set
+# the enum, the owner-visible set, and the moderation writer
+REMOVED_OWNERS = {"apps/listings/lifecycle.py", "apps/listings/policy.py", MODERATION_WRITER}
 
 
 def removed_mentions(tree: ast.AST):
@@ -180,6 +186,18 @@ def _indirect_writes(tree: ast.AST, computed_setattr: bool = True):
                 yield node.lineno
 
 
+def _is_moderation_move(node: ast.AST) -> bool:
+    """`ListingStatus.ARCHIVED|REMOVED` (`.value` optional), written out in full."""
+    if isinstance(node, ast.Attribute) and node.attr == "value":
+        node = node.value
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr in MODERATION_WRITES
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "ListingStatus"
+    )
+
+
 def violations(root: Path, files) -> list[str]:
     found = []
     for path in sorted(files):
@@ -199,6 +217,14 @@ def violations(root: Path, files) -> list[str]:
                 f"{relative}:{value.lineno}"
                 for value in _table_values(tree)
                 if not _is_allowed_move(value)
+            )
+            continue
+        if relative == MODERATION_WRITER:
+            found.extend(f"{relative}:{line}" for line in _indirect_writes(tree))
+            found.extend(
+                f"{relative}:{line}"
+                for line, value in _status_writes(tree)
+                if not _is_moderation_move(value)
             )
             continue
         in_listings = relative.startswith("apps/listings/")
@@ -359,6 +385,87 @@ def test_the_publication_module_writes_only_published_and_only_publish_and_repub
         if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_run"
     }
     assert callers == {"publish", "republish"}
+
+
+def _functions_writing_status(tree: ast.AST) -> set[str]:
+    return {
+        fn.name for fn in tree.body if isinstance(fn, ast.FunctionDef) and list(_status_writes(fn))
+    }
+
+
+def test_published_is_written_by_the_publication_run_and_the_restore_only():
+    tree = ast.parse((ROOT / WRITER).read_text())
+    assert _functions_writing_status(tree) == {"_run", "restore_after_moderation"}
+    restore = next(n for n in tree.body if getattr(n, "name", "") == "restore_after_moderation")
+    # an administrator, a Listing open to restoring (decided under the locks), an uncounted event
+    source = ast.unparse(restore)
+    assert source.index("require_admin(actor)") < source.index("transaction.atomic()")
+    assert "locked_for_moderation(actor, listing_id, lifecycle.RESTORE)" in source
+    assert "kind=KIND_RESTORE, counted=False" in source
+
+
+def test_only_the_governance_moderation_service_restores():
+    callers = set()
+    for path in (ROOT / "apps").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            name = getattr(node, "attr", getattr(node, "id", ""))
+            if name == "restore_after_moderation" and not isinstance(node, ast.FunctionDef):
+                callers.add(path.relative_to(ROOT).as_posix())
+    assert callers == {"apps/governance/moderation.py"}
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "row.status = ListingStatus.PUBLISHED.value",
+        "row.status = ListingStatus.SOLD.value",
+        "row.status = 'removed'",
+        "row.status = target",
+        "PropertyListing.objects.filter(id=1).update(**changes)",
+        "setattr(row, name, value)",
+    ],
+)
+def test_the_moderation_module_guard_can_fail(tmp_path, code):
+    listings = tmp_path / "apps" / "listings"
+    listings.mkdir(parents=True)
+    (listings / "moderation.py").write_text(code + "\n")
+    assert violations(tmp_path, tmp_path.rglob("*.py")) == ["apps/listings/moderation.py:1"]
+
+
+def test_the_real_moderation_module_writes_removed_and_archived():
+    tree = ast.parse((ROOT / MODERATION_WRITER).read_text())
+    assert {ast.unparse(value) for _, value in _status_writes(tree)} == {
+        "ListingStatus.ARCHIVED.value",
+        "ListingStatus.REMOVED.value",
+    }
+
+
+def moderation_column_writes(tree: ast.AST):
+    """(line, column, value) of every write of a moderation column."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Attribute) and target.attr in MODERATION_COLUMNS:
+                    yield node.lineno, target.attr, node.value
+        elif isinstance(node, ast.Call):
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name in WRITES or name == "PropertyListing":
+                for keyword in node.keywords:
+                    if keyword.arg in MODERATION_COLUMNS:
+                        yield node.lineno, keyword.arg, keyword.value
+
+
+def test_only_moderation_writes_the_moderation_columns():
+    for path in (ROOT / "apps").rglob("*.py"):
+        relative = path.relative_to(ROOT).as_posix()
+        if "/migrations/" in relative or relative == MODERATION_WRITER:
+            continue
+        writes = list(moderation_column_writes(ast.parse(path.read_text())))
+        if relative == WRITER:  # the restore only clears why it was removed
+            assert [(c, ast.unparse(v)) for _, c, v in writes] == [("removal_reason", "None")]
+        else:
+            assert writes == [], relative
 
 
 def test_a_republish_outside_the_publication_module_cannot_set_published(tmp_path):

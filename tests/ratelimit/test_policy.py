@@ -24,6 +24,7 @@ EXPECTED = {
     "message_send": (60, 60, "account"),
     "conversation_new": (20, 24 * H, "account"),
     "listing_view": (300, H, "client"),
+    "report_new": (10, 24 * H, "account"),
     "estimates": (20, H, "account"),
     "sign_in": (5, 900, "client"),
     "verification_resend": (5, H, "client"),

@@ -20,7 +20,7 @@ from django.contrib.auth.hashers import make_password
 from django.test import Client
 from django.utils import timezone
 
-from apps.governance.models import VerificationRequest
+from apps.governance.models import Report, VerificationRequest
 from apps.identity import selectors as identity
 from apps.identity import services
 from apps.identity.models import Account, AgencyProfile, IndividualProfile
@@ -176,6 +176,18 @@ def seed(canaries):
         submitted_at=timezone.now(),
     )
     contexts += [{"request_id": verification.id}]
+    # a Report: its description and reporter are private
+    report = Report.objects.create(
+        target_id=public[0].id,
+        reporter_account_id=public[1].owner_account_id,
+        subject_account_id=public[0].owner_account_id,
+        reason="other",
+        description=canaries.address("Canarycomplaint about this listing"),
+        snapshot={"title": "t"},
+        created_at=timezone.now(),
+        updated_at=timezone.now(),
+    )
+    contexts += [{"report_id": report.id}]
     return {
         "contexts": contexts,
         "public": [str(x.id) for x in public],

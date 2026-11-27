@@ -457,6 +457,17 @@ def test_runtime_can_write_email_change_tokens_but_not_ddl(runtime_conn, django_
             cursor.execute("DELETE FROM identity_account WHERE email = 'change.probe@example.com'")
 
 
+def test_runtime_governance_history_is_append_only(runtime_conn, django_db_blocker):
+    for sql in (
+        "DELETE FROM governance_reporttransition",
+        "TRUNCATE governance_reporttransition",
+        "DELETE FROM governance_moderationaction",
+        "UPDATE governance_moderationaction SET reason = 'x'",
+    ):
+        with pytest.raises(errors.InsufficientPrivilege):
+            runtime_conn.execute(sql)
+
+
 def test_runtime_verification_decisions_are_append_only(runtime_conn, django_db_blocker):
     for sql in (
         "UPDATE governance_verificationdecision SET reason = 'x'",

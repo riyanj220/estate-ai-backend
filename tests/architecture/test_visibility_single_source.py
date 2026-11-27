@@ -18,10 +18,12 @@ ALLOWED = {
     "apps/listings/lifecycle.py",  # defines the status and its owner-facing label
     "apps/listings/publication.py",  # the one writer of the published status (AD-7)
     "apps/listings/models.py",  # defines the `restricted` column
+    "apps/listings/moderation.py",  # the one writer of `restricted` (Story 9.4)
 }
 # The owner resource serializer may NAME the `restricted` column to expose it to the owner
-# (Story 2.17); it may never filter on it or name the published status.
-OWNER_FLAG_FILES = {"apps/presentation/api/listings.py"}
+# (Story 2.17), and the administrator one to expose it for review (Story 9.3); neither may filter
+# on it or name the published status.
+OWNER_FLAG_FILES = {"apps/presentation/api/listings.py", "apps/presentation/adminapi/listings.py"}
 GUARDED_NAMES = {"PUBLISHED", "restricted"}
 GUARDED_MODELS = {"PropertyListing", "ListingImage"}
 # a string that spells the predicate: a quoted status, `status = published`, `restricted =`/`is`

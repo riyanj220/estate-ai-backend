@@ -94,8 +94,11 @@ def test_the_matrix(status, restricted, owner_state, viewer):
             selectors.public_listing(actor, view.id)
         assert caught.value.code == "not_found"
 
+    # Story 9.3: an administrator also gets the images of a non-Draft Listing, and nothing else
+    image_allowed = allowed or (viewer == "admin" and status != "draft")
+    assert policy.admin_may_inspect(actor, row) is (viewer == "admin" and status != "draft")
     for with_bytes in (True, False):
-        if allowed:
+        if image_allowed:
             served = selectors.image_for_serving(actor, view.id, image.id, with_bytes=with_bytes)
             assert served.public is public
             assert served.size > 0 and bool(served.data) is with_bytes

@@ -50,6 +50,7 @@ WIRE_KEYS = {
     "media",
     "restricted",
     "restriction_reason",
+    "under_review",
 }
 NEW_FIELDS = {
     "title": None,
@@ -366,6 +367,7 @@ def test_listing_resource_is_exactly_the_wire_shape():
         "fields",
         "provenance",
         "media",
+        "under_review",
         "restricted",
         "restriction_reason",
     ]
