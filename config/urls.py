@@ -11,6 +11,11 @@ from apps.presentation.adminapi.quota import (
     QuotaPolicyView,
     QuotaUsageView,
 )
+from apps.presentation.api.agency_dashboard import (
+    AgencyDashboardListingsView,
+    AgencyDashboardView,
+    ListingViewBeaconView,
+)
 from apps.presentation.api.assistant import (
     AssistantDescriptionView,
     AssistantSessionsView,
@@ -314,6 +319,11 @@ urlpatterns = [
         name="public-listing",
     ),
     path(
+        "api/v1/public/listings/<str:listing_id>/views",
+        ListingViewBeaconView.as_view(),
+        name="public-listing-views",
+    ),
+    path(
         "api/v1/public/agencies/<str:agency_id>",
         PublicAgencyView.as_view(),
         name="public-agency",
@@ -336,6 +346,12 @@ urlpatterns = [
         "api/v1/me/publication-allowance",
         PublicationAllowanceView.as_view(),
         name="me-publication-allowance",
+    ),
+    path("api/v1/me/agency-dashboard", AgencyDashboardView.as_view(), name="me-agency-dashboard"),
+    path(
+        "api/v1/me/agency-dashboard/listings",
+        AgencyDashboardListingsView.as_view(),
+        name="me-agency-dashboard-listings",
     ),
     path("api/v1/schema", PublicSchemaView.as_view(), name="schema"),
 ]

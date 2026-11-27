@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from django.db.models import F, Q
+from django.db.models import Count, F, Q
 
 from apps.identity import selectors as identity
 from apps.identity.capabilities import Capability
@@ -231,3 +231,22 @@ def messages_after(actor: Actor, conversation_id, after: int = 0) -> MessagePage
     return MessagePage(
         tuple(message_view(actor, m) for m in found[:MESSAGE_PAGE]), len(found) > MESSAGE_PAGE
     )
+
+
+def inquiries_received(actor: Actor) -> int:
+    """Conversations others started about the caller's Listings (Story 8.1)."""
+    require_reader(actor)
+    return Conversation.objects.filter(owner_account_id=actor.account_id).count()
+
+
+def inquiries_by_listing(actor: Actor, listing_ids) -> dict[uuid.UUID, int]:
+    """The same, per Listing, in one query; a Listing without any is 0."""
+    require_reader(actor)
+    ids = list(listing_ids)
+    counted = dict(
+        Conversation.objects.filter(owner_account_id=actor.account_id, listing_id__in=ids)
+        .values_list("listing_id")
+        .annotate(total=Count("id"))
+        .order_by()
+    )
+    return {key: counted.get(key, 0) for key in ids}

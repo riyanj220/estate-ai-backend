@@ -15,6 +15,7 @@ from django.db import transaction
 
 from apps.kernel.actor import Actor
 from apps.listings import selectors, services
+from apps.listings.models import ListingViewBucket
 
 logger = logging.getLogger("estate.retention")
 
@@ -70,3 +71,9 @@ def draft_expiry(now: datetime, dry_run: bool) -> int:
             else sum(1 for done in _each(ids, now, services.expire_idle_draft) if done == "deleted")
         )
     return total
+
+
+def view_buckets(now: datetime, dry_run: bool) -> int:
+    """Delete the expired view-counting buckets (Story 8.2)."""
+    expired = ListingViewBucket.objects.filter(expires_at__lte=now)
+    return expired.count() if dry_run else expired.delete()[0]

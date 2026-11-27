@@ -56,3 +56,4 @@ class ListingsConfig(AppConfig):
         )
         retention.register("listings.draft_notice", draft_retention.draft_notice)
         retention.register("listings.draft_expiry", draft_retention.draft_expiry)
+        retention.register("listings.view_buckets", draft_retention.view_buckets)

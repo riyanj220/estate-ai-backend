@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ImproperlyConfigured
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -960,6 +960,41 @@ def remove_favourite(actor: Actor, listing_id) -> None:
         ).delete()
     if not removed:
         raise DomainError("not_found")
+
+
+VIEW_WINDOW = timedelta(minutes=30)
+# The bucket row is taken (new, or expired) or left alone: one statement, so no race counts twice.
+_TAKE_BUCKET = """
+INSERT INTO listings_listingviewbucket (key_hash, expires_at) VALUES (%s, %s)
+ON CONFLICT (key_hash) DO UPDATE SET expires_at = EXCLUDED.expires_at
+WHERE listings_listingviewbucket.expires_at <= %s
+RETURNING key_hash
+"""
+_ADD_VIEW = """
+INSERT INTO listings_listingviewcount (listing_id, views) VALUES (%s, 1)
+ON CONFLICT (listing_id) DO UPDATE SET views = listings_listingviewcount.views + 1
+"""
+
+
+def record_view(actor: Actor, listing_id, browser: str, now: datetime | None = None) -> None:
+    """Count one view of a publicly visible Listing (Story 8.2); anything else is `not_found`.
+    The owner and administrators are not counted, and one `browser` counts once per Listing in
+    `VIEW_WINDOW`. `browser` is only hashed, never stored. Whether the caller is a bot is the
+    API's judgement."""
+    key = canonical_uuid(listing_id)
+    owner = None
+    if key is not None:
+        owner = public_listings().filter(id=key).values_list("owner_account_id", flat=True).first()
+    if owner is None:
+        raise DomainError("not_found")
+    if actor.kind is ActorKind.ADMIN or actor.account_id == owner:
+        return
+    now = now or timezone.now()
+    bucket = ratelimit.derive_key("listing_view", str(key), browser)
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(_TAKE_BUCKET, [bucket, now + VIEW_WINDOW, now])
+        if cursor.fetchone() is not None:
+            cursor.execute(_ADD_VIEW, [key])
 
 
 def _require_system(actor: Actor) -> None:

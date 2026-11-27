@@ -691,3 +691,22 @@ class SavedListing(models.Model):
                 fields=["account_id", "-created_at", "-listing"], name="listings_saved_list_idx"
             )
         ]
+
+
+class ListingViewCount(models.Model):
+    """The total detail views of a Listing (Story 8.2): one number, nothing about who viewed.
+    Written only by `listings.services.record_view`; shown to the owning Agency only."""
+
+    listing = models.OneToOneField(
+        PropertyListing, on_delete=models.CASCADE, related_name="view_count"
+    )
+    views = models.PositiveBigIntegerField(default=0)
+
+
+class ListingViewBucket(models.Model):
+    """Counts one browser once per Listing in a short window (Story 8.2). `key_hash` is an HMAC
+    under SECRET_KEY: it names no account, address or Listing, and the row is purged by the
+    `listings.view_buckets` retention job once expired."""
+
+    key_hash = models.CharField(max_length=64, primary_key=True)
+    expires_at = models.DateTimeField(db_index=True)
