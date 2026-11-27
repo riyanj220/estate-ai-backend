@@ -1948,10 +1948,11 @@ paths:
         private address, coordinates, a phone number, the revision, the provenance
         or the status. `media` lists the images in the public shape; their `url` is
         the media endpoint, which serves a Draft''s image to its owner only. `estimate`
-        is always `null` until the valuation feature exists. Another account''s, an
-        administrator''s, an unknown and a malformed id are all `404 not_found`. A
-        Visitor gets `401`. Opening the preview counts as opening the Draft (it postpones
-        the idle-Draft notice). Never cached.'
+        is the latest AI Price Estimate requested for the Listing, or `null` when
+        there is none or the saved details changed since; reading it computes nothing.
+        Another account''s, an administrator''s, an unknown and a malformed id are
+        all `404 not_found`. A Visitor gets `401`. Opening the preview counts as opening
+        the Draft (it postpones the idle-Draft notice). Never cached.'
       summary: Preview what the public will see of one of the signed-in account's
         own Listings
       parameters:
@@ -7665,9 +7666,8 @@ components:
       - results
     ListingPreview:
       type: object
-      description: |-
-        What the public will see of the owner's own Listing, plus an `estimate` that is always
-        null until the valuation feature exists.
+      description: What the public will see of the owner's own Listing, plus its latest
+        AI Price Estimate.
       properties:
         id:
           type: string
@@ -7695,11 +7695,11 @@ components:
           type: integer
           minimum: 1
         estimate:
-          type: object
-          additionalProperties: {}
-          readOnly: true
+          allOf:
+          - $ref: '#/components/schemas/PreviewEstimate'
           nullable: true
-          description: Always null for now; reserved for the valuation estimate.
+          description: The latest estimate requested for this Listing; null when there
+            is none or the saved details it was computed from have changed since.
       required:
       - category
       - description
@@ -8032,6 +8032,26 @@ components:
         * `possession_ready` - possession_ready
         * `possession_pending` - possession_pending
         * `file_only` - file_only
+    PreviewEstimate:
+      type: object
+      description: A stored AI Price Estimate of the previewed Listing.
+      properties:
+        estimated_value:
+          type: string
+          description: Estimated Property Value in PKR, a decimal string.
+        currency:
+          type: string
+          description: Always `PKR`.
+        model_version:
+          type: integer
+        estimated_at:
+          type: string
+          format: date-time
+      required:
+      - currency
+      - estimated_at
+      - estimated_value
+      - model_version
     PriceBasisEnum:
       enum:
       - total

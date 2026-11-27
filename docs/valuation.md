@@ -149,3 +149,10 @@ than 20 requests an hour per account (scope `estimates`; every attempt counts, b
   feature-schema version, value, and `inputs` (the non-private feature snapshot) with its SHA-256.
 - Removal: `listing.deleted` removes a Draft's estimates after commit; the retention job `valuation.estimates`
   repairs missed ones and deletes estimates of entered attributes after 90 days.
+
+The Draft preview (`GET /api/v1/listings/{id}/preview`, Story 4.4) carries `estimate`: `{estimated_value, currency,
+model_version, estimated_at}` of the newest stored estimate of that Listing, or null when there is none or the saved
+model inputs changed since. Reading it computes nothing. Publication never depends on an estimate.
+
+No user-facing string may say "demo" or "demonstration" (SM-4c, `tests/architecture/test_no_demo_wording.py`; the
+frontend has its own scan).
