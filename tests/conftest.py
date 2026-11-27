@@ -40,8 +40,19 @@ def _reseed_flushed_policies(request):
                 module = importlib.import_module(f"{package.__name__}.{info.name}")
                 if info.name.split("_")[1:2] == ["seed"] and hasattr(module, "seed"):
                     module.seed(apps, schema)
-        from apps.catalog.models import Amenity
+        from apps.catalog.models import Amenity, City, Locality
 
+        missing = not City.objects.filter(name="Karachi").exists()
+        # ordinary tests only (rolled back with them): migration tests start from empty tables
+        if missing and not transactional and not Locality.objects.exists():
+            import importlib  # Karachi and its localities are migration-seeded too
+
+            for name, function in (
+                ("0002_seed_karachi", "seed_karachi"),
+                ("0004_seed_karachi_localities", "seed_karachi_localities"),
+            ):
+                module = importlib.import_module(f"apps.catalog.migrations.{name}")
+                getattr(module, function)(apps, None)
         if not Amenity.objects.exists():  # the amenity catalogue is migration-seeded the same way
             import importlib
 

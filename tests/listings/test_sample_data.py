@@ -1011,7 +1011,6 @@ def test_a_missing_locality_fails_loudly_and_creates_nothing(monkeypatch):
     assert Account.objects.count() == 0 and PropertyListing.objects.count() == 0
 
 
-@pytest.mark.django_db(transaction=True)
 def test_seeding_with_background_estimates_on_runs_them_in_the_calling_thread(
     settings, monkeypatch
 ):
