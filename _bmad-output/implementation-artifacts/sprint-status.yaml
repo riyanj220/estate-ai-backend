@@ -149,12 +149,12 @@ development_status:
   epic-8-retrospective: optional
 
   epic-9: in-progress
-  9-1-report-a-listing: in-progress
-  9-2-review-reports: in-progress
-  9-3-moderation-listing-review: backlog
-  9-4-moderation-actions: backlog
-  9-5-report-a-conversation-or-message: backlog
-  9-6-suspicious-and-duplicate-listing-flags: backlog
+  9-1-report-a-listing: review
+  9-2-review-reports: review
+  9-3-moderation-listing-review: review
+  9-4-moderation-actions: review
+  9-5-report-a-conversation-or-message: in-progress
+  9-6-suspicious-and-duplicate-listing-flags: in-progress
   epic-9-retrospective: optional
 
   epic-10: backlog

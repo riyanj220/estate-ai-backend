@@ -17,6 +17,17 @@ A view with no explicit permission is denied (403). Declare one of `AllowPublic`
 `RequireAdmin` from `apps/presentation/api/permissions.py` on the view. Views read the caller with
 `get_actor(request)` rather than assuming `request.actor` exists.
 
+## Reports (Epic 9)
+
+| Caller | Report a Listing | Read a Report | Review queue and moderation |
+| --- | --- | --- | --- |
+| Visitor | 401 `unauthenticated` | 401 | 401 |
+| Email-unverified, Active | public Listing of another account: allowed; own: 403; not public: 404 | own only; another's: 404 | 404 |
+| Suspended | 403 `forbidden` | own only | 404 |
+| Administrator | 403 `forbidden` | 404 on the reporter route; review through the admin routes | allowed |
+
+The reported Listing's owner never sees who reported it.
+
 ## Routes
 
 Generated from the URL configuration; do not edit by hand. Regenerate with `uv run python scripts/authz_matrix.py`.
@@ -30,10 +41,23 @@ whose permission is not explicit.
 | `/api/v1/admin/accounts/<str:account_id>/reactivate` | POST | admin | `apps.presentation.adminapi.accounts.AccountReactivateView` |
 | `/api/v1/admin/accounts/<str:account_id>/suspend` | POST | admin | `apps.presentation.adminapi.accounts.AccountSuspendView` |
 | `/api/v1/admin/accounts/lookup` | POST | admin | `apps.presentation.adminapi.accounts.AccountLookupView` |
+| `/api/v1/admin/listings` | GET | admin | `apps.presentation.adminapi.listings.AdminListingsView` |
+| `/api/v1/admin/listings/<str:listing_id>` | GET | admin | `apps.presentation.adminapi.listings.AdminListingView` |
+| `/api/v1/admin/listings/<str:listing_id>/archive` | POST | admin | `apps.presentation.adminapi.listings.ArchiveRemovedListingView` |
+| `/api/v1/admin/listings/<str:listing_id>/lift-restriction` | POST | admin | `apps.presentation.adminapi.listings.LiftRestrictionView` |
+| `/api/v1/admin/listings/<str:listing_id>/read` | POST | admin | `apps.presentation.adminapi.listings.AdminDraftReadView` |
+| `/api/v1/admin/listings/<str:listing_id>/remove` | POST | admin | `apps.presentation.adminapi.listings.RemoveListingView` |
+| `/api/v1/admin/listings/<str:listing_id>/restore` | POST | admin | `apps.presentation.adminapi.listings.RestoreListingView` |
+| `/api/v1/admin/listings/<str:listing_id>/restrict` | POST | admin | `apps.presentation.adminapi.listings.RestrictListingView` |
 | `/api/v1/admin/me` | GET | admin | `apps.presentation.adminapi.me.AdminMeView` |
 | `/api/v1/admin/quota-policy` | GET | admin | `apps.presentation.adminapi.quota.QuotaPolicyView` |
 | `/api/v1/admin/quota-policy/<str:account_type>` | PUT | admin | `apps.presentation.adminapi.quota.QuotaPolicyDetailView` |
 | `/api/v1/admin/quota-usage` | GET | admin | `apps.presentation.adminapi.quota.QuotaUsageView` |
+| `/api/v1/admin/reports` | GET | admin | `apps.presentation.adminapi.reports.ReportQueueView` |
+| `/api/v1/admin/reports/<str:report_id>` | GET | admin | `apps.presentation.adminapi.reports.ReportDetailView` |
+| `/api/v1/admin/reports/<str:report_id>/dismiss` | POST | admin | `apps.presentation.adminapi.reports.ReportDismissView` |
+| `/api/v1/admin/reports/<str:report_id>/resolve` | POST | admin | `apps.presentation.adminapi.reports.ReportResolveView` |
+| `/api/v1/admin/reports/<str:report_id>/start` | POST | admin | `apps.presentation.adminapi.reports.ReportStartView` |
 | `/api/v1/admin/verification-requests` | GET | admin | `apps.presentation.adminapi.verification.VerificationQueueView` |
 | `/api/v1/admin/verification-requests/<str:request_id>/approve` | POST | admin | `apps.presentation.adminapi.verification.VerificationApproveView` |
 | `/api/v1/admin/verification-requests/<str:request_id>/read` | POST | admin | `apps.presentation.adminapi.verification.VerificationReadView` |
@@ -65,6 +89,7 @@ whose permission is not explicit.
 | `/api/v1/listings/<str:listing_id>/images/<str:image_id>/file` | GET, HEAD | public | `apps.presentation.api.listing_images.ListingImageFileView` |
 | `/api/v1/listings/<str:listing_id>/preview` | GET | signed_in | `apps.presentation.api.listings.ListingPreviewView` |
 | `/api/v1/listings/<str:listing_id>/publish` | POST | signed_in | `apps.presentation.api.listings.ListingPublishView` |
+| `/api/v1/listings/<str:listing_id>/reports` | POST | signed_in | `apps.presentation.api.reports.ListingReportsView` |
 | `/api/v1/listings/<str:listing_id>/republish` | POST | signed_in | `apps.presentation.api.listings.ListingRepublishView` |
 | `/api/v1/listings/<str:listing_id>/status` | POST | signed_in | `apps.presentation.api.listings.ListingStatusView` |
 | `/api/v1/me` | GET | signed_in | `apps.presentation.api.sessions.MeView` |
@@ -87,6 +112,7 @@ whose permission is not explicit.
 | `/api/v1/me/profile/image` | DELETE, PUT | signed_in | `apps.presentation.api.profile_images.ProfileImageView` |
 | `/api/v1/me/profile/image/file` | GET, HEAD | public | `apps.presentation.api.profile_images.ProfileImageFileView` |
 | `/api/v1/me/publication-allowance` | GET | signed_in | `apps.presentation.api.listings.PublicationAllowanceView` |
+| `/api/v1/me/reports/<str:report_id>` | GET | signed_in | `apps.presentation.api.reports.OwnReportView` |
 | `/api/v1/notifications` | GET | signed_in | `apps.presentation.api.notifications.NotificationListView` |
 | `/api/v1/notifications/<str:notification_id>/read` | POST | signed_in | `apps.presentation.api.notifications.MarkReadView` |
 | `/api/v1/notifications/read-all` | POST | signed_in | `apps.presentation.api.notifications.MarkAllReadView` |

@@ -17,9 +17,9 @@ until the account is Active again.
 
 `published` is set only by `listings.publication` (`publish` for a Draft, Story 2.15, and `republish` for an Archived Listing, Story 2.18, `POST /api/v1/listings/{id}/republish`; a republished Listing is public again at once under this same rule when its owner is Active and it is not restricted, `tests/listings/test_republication.py`). `publish` (Story 2.15, `POST /api/v1/listings/{id}/publish`): a
 published Listing becomes public at once under this rule when its owner is Active (`tests/listings/test_publication.py`
-checks `public_listing` for an Active owner and `not_found` once the owner is Email-unverified). Moderation (a later
-epic) sets `restricted`; until then tests and fixtures write it through the model (see
-`tests/listings/support.py: set_listing_visibility`, `set_account_state`).
+checks `public_listing` for an Active owner and `not_found` once the owner is Email-unverified). Moderation
+(Story 9.4, `listings.moderation`) is the only writer of `restricted` and of the `removed` status; tests may also write
+them through the model (`tests/listings/support.py: set_listing_visibility`, `set_account_state`).
 
 ## The two implementations (nothing else decides)
 
@@ -81,8 +81,9 @@ sees the public shape of a non-public Listing; everyone else keeps `not_found`. 
 
 `image_for_serving` asks `can_view`. See `docs/media.md`: a public Listing's images go to anyone with `Cache-Control:
 public, max-age=60` and no cookie or `Vary: Cookie`; any other image goes only to the owner with `private, no-store`;
-everyone else gets the identical `404`. An administrator may fetch images of a public Listing like any Visitor, but gets
-404 for a non-public one. `HEAD` decides exactly like `GET`.
+everyone else gets the identical `404`. An administrator also gets the images of any non-Draft Listing for moderation review
+(`policy.admin_may_inspect`, Story 9.3; `private, no-store`), never a Draft's. `can_view` itself is unchanged.
+`HEAD` decides exactly like `GET`.
 
 ## Public discovery (Story 3.1)
 

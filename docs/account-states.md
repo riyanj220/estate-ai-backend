@@ -72,6 +72,8 @@ archive), so the table above is unchanged.
 | mark sold or rented (published) | yes | yes | no (`403`) | no |
 | edit a Published or Archived Listing, change its images | yes | yes | no (`403`) | no |
 
+The `report` capability is live since Story 9.1 (`governance.reports.report_listing`).
+
 Republishing an Archived Listing (Story 2.18, `publication.republish`) is the `publish` row: only an Active owner may (`403 email_not_verified` and `403 publishing_unavailable` otherwise), and a restricted Listing cannot be republished (`403`).
 
 The one-time correction of locality and area (Story 2.19, `publication.correct`) follows the edit row: email_unverified and

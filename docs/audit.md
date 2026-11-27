@@ -74,7 +74,8 @@ it). Interim reason rule: a reason containing `@` or a run of seven or more digi
 this. Target names follow the same pattern as audit target types (lowercase snake_case, at most 48
 characters). Reason text is stored permanently, so never put contact details in it.
 
-Registered targets: `account` (Story 2.21, the administrator account lookup: `identity.selectors.admin_read_account`).
+Registered targets: `account` (Story 2.21, the administrator account lookup: `identity.selectors.admin_read_account`),
+`verification_request` (Story 8.4) and `listing_draft` (Story 9.3, `listings.selectors.admin_read_draft_listing`).
 The lookup is by email, so `account_id_for_admin_lookup` first resolves the id (and returns nothing else); an unknown or
 administrator address is `not_found` and writes no record. `ReasonedReadSerializer` also refuses a reason with line breaks
 or contact details (`400`).

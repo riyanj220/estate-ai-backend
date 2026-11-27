@@ -23,6 +23,7 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | `message_send` | 60 | 1 minute | account | messaging |
 | `conversation_new` | 20 | 1 day | account | messaging |
 | `listing_view` | 300 | 1 hour | client | view beacons (Story 8.2); over the limit nothing is counted, answered `204` |
+| `report_new` | 10 | 1 day | account | Reports (Story 9.1) |
 | `estimates` | 20 | 1 hour | account | valuation (FR-42) |
 | `verification_resend` | 5 | 1 hour | client | `POST /api/v1/email-verification-requests` (Story 1.16); 429 for every address alike |
 | `password_reset_request` | 5 | 1 hour | client | `POST /api/v1/password-reset-requests` (Story 1.18); 429 for every address alike; the per-account `password_reset_email` cap is silent; see `docs/password-reset.md` |

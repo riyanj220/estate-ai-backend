@@ -65,7 +65,10 @@ password reset completed) and `account.email_changed` (an email change was confi
 service after the audit record and so exist only if the change commits. The old-address mail notices stay. Story 2.21 adds
 `account.suspended` and `account.reactivated` (empty payloads: the reason is read from the session summary, never carried
 here). Stories 8.3 and 8.4 (`governance`) add `verification.approved`,
-`verification.rejected` and `verification.revoked` (empty payloads). Later features register their own kinds.
+`verification.rejected` and `verification.revoked` (empty payloads). Epic 9 adds `report.resolved` and
+`report.dismissed` to the reporter (empty payloads), and `listing.restricted`, `listing.removed`,
+`listing.restriction_lifted`, `listing.restored` and `listing.removal_archived` to the owner (`listing_id` and the
+administrator's one-line `reason`). Later features register their own kinds.
 
 ## Reading and clearing
 

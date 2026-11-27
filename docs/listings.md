@@ -6,7 +6,7 @@ description and price, Story 2.3 the area and its unit, Story 2.4 the House and 
 ## Model (`listings.models`, written only by `listings.services`)
 
 - `PropertyListing`: `id` (UUID), `owner_account_id` (a plain indexed UUID column, no foreign key into `identity`),
-  `status` (`draft`, `published`, `archived`, `sold`, `rented` or `removed`; the code-defined enum `listings.lifecycle.ListingStatus`, with a CHECK; only `listings.publication.publish` sets `published` (Story 2.15), only `listings.status.change_status` sets `archived`, `sold` and `rented` (Story 2.17), nobody sets `removed` yet (moderation does later); visibility fixtures may still write any of them through the model), `restricted` (boolean, default false; set by moderation in a later epic, fixtures only until then), `restriction_reason` (nullable text of at most 200 characters, the reason for a restricted or removed Listing: written only by moderation later and by test fixtures now; owner resource only, never in a public shape), `revision` (starts at 1),
+  `status` (`draft`, `published`, `archived`, `sold`, `rented` or `removed`; the code-defined enum `listings.lifecycle.ListingStatus`, with a CHECK; only `listings.publication.publish` sets `published` (Story 2.15), only `listings.status.change_status` sets `archived`, `sold` and `rented` (Story 2.17), only `listings.moderation` sets `removed` (Story 9.4) and `publication.restore_after_moderation` returns it to `published`; visibility fixtures may still write any of them through the model), `restricted` (boolean, default false; set by `listings.moderation` only), `restriction_reason` (nullable text of at most 200 characters, the reason for a restricted or removed Listing: written only by `listings.moderation`; `removal_reason` is shown instead while the Listing is Removed; owner resource only, never in a public shape), `revision` (starts at 1),
   `registry_version`, the registry fields `purpose`, `category`, `subtype` as columns with CHECK constraints generated
   from the taxonomy (including that the Subtype belongs to the Category), `title` and `description` (nullable, empty is
   `null`, length CHECKs from the registry), `provenance` (JSON, registry field id to `{"origin", "confirmed"}`, set
@@ -975,3 +975,13 @@ browser once per 30 minutes, `ListingViewBucket` holds an HMAC of Listing, clien
 expires; the `listings.view_buckets` retention job purges it. No cookie is set. Not counted: the owner, administrators,
 self-declared bots, an empty `User-Agent`, and more than 300 beacons an hour from one network. Two people behind one
 address with the same browser count once in a window. The totals are indicative, not fraud-proof.
+
+## Moderation (Epic 9)
+
+`listings.lifecycle.moderation_actions` is the administrator column of FR-75: published: restrict (or lift) and remove;
+archived: restrict or lift; removed: restore, move to archived, and lift if restricted; Draft, sold, rented: view only.
+`listings.moderation` writes restrict, lift, remove and archive; `publication.restore_after_moderation` writes restore
+(one uncounted `restore` event, no quota, no `listing.published`). Each bumps `revision` and is audited.
+`governance.moderation.moderate` is the only caller: it records a `ModerationAction` (actor, reason, time, outcome) and
+notifies the owner. Reasons are 5 to 120 characters without contact details. Reports never change a Listing; the
+owner resource's `under_review` is composed in presentation from Reports in `reviewing`.
