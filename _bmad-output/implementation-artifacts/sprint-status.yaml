@@ -126,8 +126,8 @@ development_status:
   epic-5-retrospective: optional
 
   epic-6: in-progress
-  6-1-natural-language-text-search: in-progress
-  6-2-interpretation-transparency-and-unknown-data: in-progress
+  6-1-natural-language-text-search: review
+  6-2-interpretation-transparency-and-unknown-data: review
   6-3-voice-search: backlog
   6-4-search-availability-and-abuse-control: backlog
   epic-6-retrospective: optional

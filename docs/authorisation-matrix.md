@@ -84,6 +84,7 @@ whose permission is not explicit.
 | `/api/v1/public/listings` | GET | public | `apps.presentation.api.public_listings.PublicListingsView` |
 | `/api/v1/public/listings/<str:listing_id>` | GET | public | `apps.presentation.api.public_listings.PublicListingDetailView` |
 | `/api/v1/public/listings/<str:listing_id>/estimate` | GET | public | `apps.presentation.api.estimates.PublicListingEstimateView` |
+| `/api/v1/public/search` | POST | public | `apps.presentation.api.search.PublicSearchView` |
 | `/api/v1/reference/amenities` | GET | public | `apps.presentation.api.reference.AmenityView` |
 | `/api/v1/reference/cities` | GET | public | `apps.presentation.api.reference.CityView` |
 | `/api/v1/reference/cities/<str:city_id>/localities` | GET | public | `apps.presentation.api.reference.LocalityView` |
