@@ -16,6 +16,7 @@ from apps.kernel.actor import Actor
 from apps.kernel.ai import gateway
 from apps.kernel.ai.redaction import KnownValues, redact
 from apps.kernel.ai.stub import stub
+from apps.kernel.ai.transport import ProviderError
 from apps.kernel.errors import DomainError
 from apps.listings import services as listing_services
 from tests.listings.support import make_account, seed_cap, user
@@ -110,6 +111,16 @@ def test_a_failed_rebuild_keeps_the_old_index(indexed):
     with pytest.raises(CommandError, match="Index unchanged"):
         call_command("rebuild_knowledge_index")
     assert KnowledgeChunk.objects.count() == len(PASSAGES)
+
+
+def test_a_rate_limited_rebuild_suggests_a_pause(indexed):
+    stub.fail_with = ProviderError("quota", 429)
+    with pytest.raises(CommandError, match=r"HTTP 429.*--pause"):
+        call_command("rebuild_knowledge_index")
+    stub.fail_with = ProviderError("server", 503)
+    with pytest.raises(CommandError) as other:
+        call_command("rebuild_knowledge_index")
+    assert "--pause" not in str(other.value)
 
 
 @pytest.mark.django_db

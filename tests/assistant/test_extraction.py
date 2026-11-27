@@ -57,7 +57,8 @@ def test_a_sentence_fills_the_draft_as_unconfirmed_ai_values_in_one_call():
     assert view.fields["purpose"] == "sale" and view.fields["street"] is None
     assert view.provenance["asking_price"] == {"origin": "ai", "confirmed": False}
     applied = {a["field"]: a["value"] for a in body["turn"]["applied"]}
-    assert set(applied) == set(EXTRACTED) and applied["asking_price"] == "60000000.00"
+    assert set(applied) == {*EXTRACTED, "city", "locality"}  # "DHA Phase 6" is in the catalogue
+    assert applied["asking_price"] == "60000000.00" and applied["locality"] == "DHA Phase 6"
     assert body["turn"]["rejected"] == [] and body["turn"]["notices"] == []
     # 5.10: nothing given is asked again; the title is next
     assert body["next_step"]["fields_asked"] == ["title"]
