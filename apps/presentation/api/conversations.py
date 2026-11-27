@@ -34,6 +34,9 @@ class ConversationSerializer(serializers.Serializer):
     last_seq = serializers.IntegerField()
     last_message_at = serializers.DateTimeField()
     created_at = serializers.DateTimeField()
+    unread_count = serializers.IntegerField(
+        min_value=0, help_text="Messages of the other participant that the caller has not read."
+    )
 
 
 class MessageSerializer(serializers.Serializer):
@@ -50,6 +53,17 @@ class MessageSerializer(serializers.Serializer):
 
 class ConversationListSerializer(serializers.Serializer):
     results = ConversationSerializer(many=True)
+    next = serializers.CharField(
+        allow_null=True, help_text="The `cursor` of the following inbox page."
+    )
+
+
+class UnreadConversationsSerializer(serializers.Serializer):
+    unread = serializers.IntegerField(min_value=0)
+
+
+class ReadBodySerializer(serializers.Serializer):
+    seq = serializers.IntegerField(min_value=0, help_text="The newest Message seen.")
 
 
 class MessagePageSerializer(serializers.Serializer):
@@ -85,6 +99,7 @@ def conversation_data(view: selectors.ConversationView) -> dict:
         "last_seq": view.last_seq,
         "last_message_at": view.last_message_at,
         "created_at": view.created_at,
+        "unread_count": view.unread_count,
     }
 
 
@@ -114,10 +129,18 @@ class ConversationsView(NoStoreMixin, APIView):
     permission_classes = [RequireSignedIn]
 
     @extend_schema(
-        operation_id="find_conversation",
-        summary="The caller's own inquiry about a Listing",
-        description="`results` holds at most one Conversation. Never cached.",
-        parameters=[OpenApiParameter("listing_id", str, required=True)],
+        operation_id="list_conversations",
+        summary="The caller's inbox, or its own inquiry about a Listing",
+        description=(
+            "Without `listing_id`: every Conversation the caller takes part in, latest activity "
+            f"first, {selectors.INBOX_PAGE} a page (`cursor` = the previous `next`). With "
+            "`listing_id`: `results` holds at most the one Conversation the caller started about "
+            "that Listing. No Message text. Never cached."
+        ),
+        parameters=[
+            OpenApiParameter("listing_id", str, required=False),
+            OpenApiParameter("cursor", str, required=False),
+        ],
         responses={
             200: ConversationListSerializer,
             **_refusals(s400="`validation_error`", s401="`unauthenticated`", s404="`not_found`"),
@@ -125,11 +148,20 @@ class ConversationsView(NoStoreMixin, APIView):
     )
     def get(self, request):
         listing_id = request.query_params.get("listing_id")
-        if not listing_id:
+        following = None
+        if listing_id is None:
+            try:
+                page = selectors.inbox(get_actor(request), request.query_params.get("cursor"))
+            except selectors.InvalidCursor:
+                raise field_errors({"cursor": "invalid"}) from None
+            found, following = page.items, page.next
+        elif not listing_id:
             raise field_errors({"listing_id": "required"})
-        found = selectors.own_inquiry(get_actor(request), listing_id)
-        results = [] if found is None else [conversation_data(found)]
-        return Response(ConversationListSerializer({"results": results}).data)
+        else:
+            own = selectors.own_inquiry(get_actor(request), listing_id)
+            found = () if own is None else (own,)
+        results = [conversation_data(view) for view in found]
+        return Response(ConversationListSerializer({"results": results, "next": following}).data)
 
     @extend_schema(
         operation_id="start_conversation",
@@ -175,6 +207,52 @@ class ConversationsView(NoStoreMixin, APIView):
             ).data,
             status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
         )
+
+
+class UnreadConversationsView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="get_unread_conversation_count",
+        summary="How many of the caller's Conversations have unread Messages",
+        responses={
+            200: UnreadConversationsSerializer,
+            **_refusals(s401="`unauthenticated`", s404="`not_found`"),
+        },
+    )
+    def get(self, request):
+        return Response({"unread": selectors.unread_conversations(get_actor(request))})
+
+
+class ConversationReadView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="mark_conversation_read",
+        summary="The caller has read a Conversation up to a Message",
+        description=(
+            "Needs `X-CSRFToken`. Participants only. The mark never goes back, nor past the "
+            "newest Message. A suspended participant may mark too."
+        ),
+        request=ReadBodySerializer,
+        responses={
+            204: None,
+            **_refusals(
+                s400="`validation_error`",
+                s401="`unauthenticated`",
+                s403="a missing CSRF token",
+                s404="`not_found`",
+            ),
+        },
+    )
+    def post(self, request, conversation_id):
+        seq = exact_fields(request.data, ("seq",)).get("seq")
+        if seq is None:
+            raise field_errors({"seq": "required"})
+        if type(seq) is not int or not 0 <= seq <= 2_000_000_000:
+            raise field_errors({"seq": "invalid"})
+        services.mark_read(get_actor(request), conversation_id, seq)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ConversationDetailView(NoStoreMixin, APIView):

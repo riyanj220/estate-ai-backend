@@ -20,7 +20,9 @@ from apps.presentation.api.assistant import (
 from apps.presentation.api.conversations import (
     ConversationDetailView,
     ConversationMessagesView,
+    ConversationReadView,
     ConversationsView,
+    UnreadConversationsView,
 )
 from apps.presentation.api.estimates import (
     EstimateView,
@@ -279,6 +281,11 @@ urlpatterns = [
     ),
     path("api/v1/conversations", ConversationsView.as_view(), name="conversations"),
     path(
+        "api/v1/conversations/unread-count",
+        UnreadConversationsView.as_view(),
+        name="conversations-unread",
+    ),
+    path(
         "api/v1/conversations/<str:conversation_id>",
         ConversationDetailView.as_view(),
         name="conversation",
@@ -287,6 +294,11 @@ urlpatterns = [
         "api/v1/conversations/<str:conversation_id>/messages",
         ConversationMessagesView.as_view(),
         name="conversation-messages",
+    ),
+    path(
+        "api/v1/conversations/<str:conversation_id>/read",
+        ConversationReadView.as_view(),
+        name="conversation-read",
     ),
     path("api/v1/public/filters", PublicFiltersView.as_view(), name="public-filters"),
     path("api/v1/public/search", PublicSearchView.as_view(), name="public-search"),

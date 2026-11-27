@@ -311,12 +311,32 @@ class Participant:
 
 
 def participant(account_id) -> Participant:
-    key = parse_id(account_id)
-    account = Account.objects.filter(id=key).first() if key else None
-    if account is None or account.state is AccountState.DEACTIVATED:
-        return Participant(None, deactivated=True)
-    summary = summarise(account)
-    return Participant(summary.agency_name or summary.full_name or None, deactivated=False)
+    return participants([account_id])[account_id]
+
+
+def participants(account_ids) -> dict:
+    """`Participant` of each of these ids, keyed as given, in three queries for any number."""
+    keys = {given: parse_id(given) for given in account_ids}
+    wanted = [key for key in keys.values() if key]
+    states = {
+        account.id: account.state
+        for account in Account.objects.filter(id__in=wanted)
+        if account.state is not AccountState.DEACTIVATED
+    }
+    names = dict(
+        IndividualProfile.objects.filter(account_id__in=states).values_list(
+            "account_id", "full_name"
+        )
+    )
+    names.update(
+        AgencyProfile.objects.filter(account_id__in=states).values_list("account_id", "agency_name")
+    )
+    return {
+        given: Participant(names.get(key) or None, deactivated=False)
+        if key in states
+        else Participant(None, deactivated=True)
+        for given, key in keys.items()
+    }
 
 
 @dataclass(frozen=True)

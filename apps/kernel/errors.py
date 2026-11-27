@@ -25,7 +25,11 @@ CATALOGUE: dict[str, ErrorCode] = _catalogue(
     ErrorCode("email_not_verified", 403, "Verify your email address to publish."),
     ErrorCode("publishing_unavailable", 403, "Your account cannot publish right now."),
     ErrorCode("messaging_email_unverified", 403, "Verify your email address to send messages."),
-    ErrorCode("messaging_unavailable", 403, "Your account cannot send messages right now."),
+    ErrorCode(
+        "messaging_unavailable",
+        403,
+        "Your account is suspended, so you cannot send messages. You can still read them.",
+    ),
     ErrorCode("not_found", 404, "The requested resource was not found."),
     ErrorCode("method_not_allowed", 405, "This method is not allowed for this resource."),
     ErrorCode("not_acceptable", 406, "The requested response format is not available."),

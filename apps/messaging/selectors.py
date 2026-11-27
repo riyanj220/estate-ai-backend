@@ -1,9 +1,12 @@
 """Read path for Conversations (FR-51). Only the two participants may read; everyone else, an
 administrator included, gets `not_found` (a Visitor `unauthenticated`)."""
 
+import base64
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+
+from django.db.models import F, Q
 
 from apps.identity import selectors as identity
 from apps.identity.capabilities import Capability
@@ -15,6 +18,7 @@ from apps.listings import selectors as listings
 from apps.messaging.models import Conversation, Message
 
 MESSAGE_PAGE = 200
+INBOX_PAGE = 20
 
 ROLE_INITIATOR = "initiator"
 ROLE_OWNER = "owner"
@@ -41,6 +45,17 @@ class ConversationView:
     last_seq: int
     last_message_at: datetime
     created_at: datetime
+    unread_count: int  # Messages from the other participant above the caller's read mark
+
+
+@dataclass(frozen=True)
+class InboxPage:
+    items: tuple[ConversationView, ...]
+    next: str | None  # the cursor of the following page
+
+
+class InvalidCursor(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -83,30 +98,97 @@ def counterpart_id(row: Conversation, account_id: uuid.UUID) -> uuid.UUID:
 
 
 def view_of(actor: Actor, row: Conversation) -> ConversationView:
-    other = identity.participant(counterpart_id(row, actor.account_id))
-    header = listings.listing_header(row.listing_id)
-    if not can(actor, Capability.SEND_MESSAGES):
-        own = identity.get_account(actor.account_id)
-        unverified = own is not None and own.state is AccountState.EMAIL_UNVERIFIED
-        reason = EMAIL_UNVERIFIED if unverified else ACCOUNT_RESTRICTED
-    elif other.deactivated:
-        reason = COUNTERPART_GONE
-    elif header.availability != listings.AVAILABLE:
-        reason = LISTING_GONE
-    else:
-        reason = None
-    return ConversationView(
-        id=row.id,
-        listing_id=row.listing_id,
-        listing_availability=header.availability,
-        listing_title=header.title,
-        role=ROLE_INITIATOR if actor.account_id == row.initiator_account_id else ROLE_OWNER,
-        counterpart_name=other.name,
-        read_only_reason=reason,
-        last_seq=row.last_seq,
-        last_message_at=row.last_message_at,
-        created_at=row.created_at,
+    return views_of(actor, [row])[0]
+
+
+def _own_refusal(actor: Actor) -> str | None:
+    """Why the caller's own account may not send, if it may not."""
+    if can(actor, Capability.SEND_MESSAGES):
+        return None
+    own = identity.get_account(actor.account_id)
+    unverified = own is not None and own.state is AccountState.EMAIL_UNVERIFIED
+    return EMAIL_UNVERIFIED if unverified else ACCOUNT_RESTRICTED
+
+
+def views_of(actor: Actor, rows: list[Conversation]) -> list[ConversationView]:
+    """The rows as the caller sees them, in the same number of queries for one or many."""
+    if not rows:
+        return []
+    own = _own_refusal(actor)
+    others = identity.participants({counterpart_id(row, actor.account_id) for row in rows})
+    headers = listings.listing_headers({row.listing_id for row in rows})
+    views = []
+    for row in rows:
+        other = others[counterpart_id(row, actor.account_id)]
+        header = headers[row.listing_id]
+        mine = actor.account_id == row.initiator_account_id
+        if own is not None:
+            reason = own
+        elif other.deactivated:
+            reason = COUNTERPART_GONE
+        elif header.availability != listings.AVAILABLE:
+            reason = LISTING_GONE
+        else:
+            reason = None
+        views.append(
+            ConversationView(
+                id=row.id,
+                listing_id=row.listing_id,
+                listing_availability=header.availability,
+                listing_title=header.title,
+                role=ROLE_INITIATOR if mine else ROLE_OWNER,
+                counterpart_name=other.name,
+                read_only_reason=reason,
+                last_seq=row.last_seq,
+                last_message_at=row.last_message_at,
+                created_at=row.created_at,
+                unread_count=max(
+                    0, row.last_seq - (row.initiator_read_seq if mine else row.owner_read_seq)
+                ),
+            )
+        )
+    return views
+
+
+def _encode_cursor(row: Conversation) -> str:
+    return base64.urlsafe_b64encode(f"{row.last_message_at.isoformat()}|{row.id}".encode()).decode()
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
+    try:
+        if len(cursor) > 200:
+            raise ValueError
+        at, _, key = base64.urlsafe_b64decode(cursor.encode("ascii")).decode().partition("|")
+        position = datetime.fromisoformat(at), uuid.UUID(key)
+    except ValueError:  # covers bad base64 and bad text
+        raise InvalidCursor from None
+    if position[0].tzinfo is None:
+        raise InvalidCursor
+    return position
+
+
+def inbox(actor: Actor, cursor: str | None = None) -> InboxPage:
+    """The caller's Conversations, as either participant, latest activity first (FR-50)."""
+    require_reader(actor)
+    rows = Conversation.objects.filter(
+        Q(initiator_account_id=actor.account_id) | Q(owner_account_id=actor.account_id)
     )
+    if cursor:
+        at, key = _decode_cursor(cursor)
+        rows = rows.filter(Q(last_message_at__lt=at) | Q(last_message_at=at, id__lt=key))
+    found = list(rows.order_by("-last_message_at", "-id")[: INBOX_PAGE + 1])
+    page = found[:INBOX_PAGE]
+    following = _encode_cursor(page[-1]) if len(found) > INBOX_PAGE else None
+    return InboxPage(tuple(views_of(actor, page)), following)
+
+
+def unread_conversations(actor: Actor) -> int:
+    """How many of the caller's Conversations hold something unread."""
+    require_reader(actor)
+    return Conversation.objects.filter(
+        Q(initiator_account_id=actor.account_id, last_seq__gt=F("initiator_read_seq"))
+        | Q(owner_account_id=actor.account_id, last_seq__gt=F("owner_read_seq"))
+    ).count()
 
 
 def message_view(actor: Actor, row: Message) -> MessageView:

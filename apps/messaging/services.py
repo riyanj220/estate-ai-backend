@@ -10,6 +10,8 @@ import uuid
 from dataclasses import dataclass
 
 from django.db import transaction
+from django.db.models import F, Value
+from django.db.models.functions import Greatest, Least
 from django.utils import timezone
 
 from apps.identity.capabilities import Access, Capability, matrix_access
@@ -128,9 +130,7 @@ def _store(actor: Actor, row: Conversation, text: str, key: str) -> Message:
     now = timezone.now()
     row.last_seq += 1
     row.last_message_at = now
-    mine = (
-        "initiator_read_seq" if actor.account_id == row.initiator_account_id else "owner_read_seq"
-    )
+    mine = _read_field(actor, row)
     setattr(row, mine, row.last_seq)  # one has read what one wrote, and what came before it
     row.save(update_fields=["last_seq", "last_message_at", mine])
     message = Message.objects.create(
@@ -151,6 +151,23 @@ def _store(actor: Actor, row: Conversation, text: str, key: str) -> Message:
         )
     )
     return message
+
+
+def _read_field(actor: Actor, row: Conversation) -> str:
+    """The column holding the caller's read mark."""
+    if actor.account_id == row.initiator_account_id:
+        return "initiator_read_seq"
+    return "owner_read_seq"
+
+
+def mark_read(actor: Actor, conversation_id, seq: int) -> None:
+    """The caller has read its Conversation up to `seq` (FR-50). The mark never goes back and
+    never passes the newest Message. Anyone else gets `not_found`."""
+    row = selectors.participating(actor, conversation_id)
+    field = _read_field(actor, row)
+    Conversation.objects.filter(id=row.id).update(
+        **{field: Greatest(F(field), Least(Value(seq), F("last_seq")))}
+    )
 
 
 def start_conversation(actor: Actor, listing_id, body, idempotency_key) -> SendResult:

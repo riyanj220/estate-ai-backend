@@ -573,20 +573,30 @@ class ListingHeader:
 
 
 def listing_header(listing_id) -> ListingHeader:
-    key = canonical_uuid(listing_id)
-    if key is not None:
-        row = public_listings().filter(id=key).values_list("title").first()
-        if row is not None:
-            return ListingHeader(AVAILABLE, row[0])
-    row = (
-        PropertyListing.objects.filter(id=key).values_list("status", "restricted").first()
-        if key is not None
-        else None
-    )
+    return listing_headers([listing_id])[listing_id]
+
+
+def listing_headers(listing_ids) -> dict:
+    """`ListingHeader` of each of these ids, keyed as given, in two queries whatever their
+    number."""
+    keys = {given: canonical_uuid(given) for given in listing_ids}
+    wanted = [key for key in keys.values() if key is not None]
+    titles = dict(public_listings().filter(id__in=wanted).values_list("id", "title"))
+    hidden = {
+        row_id: (status, restricted)
+        for row_id, status, restricted in PropertyListing.objects.filter(
+            id__in=[key for key in wanted if key not in titles]
+        ).values_list("id", "status", "restricted")
+    }
     closed = {ListingStatus.SOLD.value: "sold", ListingStatus.RENTED.value: "rented"}
-    if row is None or row[1]:
-        return ListingHeader("unavailable")
-    return ListingHeader(closed.get(row[0], "unavailable"))
+
+    def header(key) -> ListingHeader:
+        if key in titles:
+            return ListingHeader(AVAILABLE, titles[key])
+        status, restricted = hidden.get(key, (None, False))
+        return ListingHeader("unavailable" if restricted else closed.get(status, "unavailable"))
+
+    return {given: header(key) for given, key in keys.items()}
 
 
 def public_view_of(
