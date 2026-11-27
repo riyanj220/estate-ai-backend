@@ -159,6 +159,9 @@ def seed(canaries):
         {"notification_id": uuid.UUID(int=1)},
         {"account_type": "individual"},
         {"session_id": uuid.UUID(int=1)},
+        {"locality_id": uuid.UUID(int=1)},
+        {"code": "no_such_amenity"},
+        {"name": "ai_gateway"},
     ]
     # a Conversation between two canary accounts: no viewer is a participant
     conversation = Conversation.objects.create(
