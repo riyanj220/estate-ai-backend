@@ -206,7 +206,9 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
     `conflict` while another turn is in flight or the session is full, `idempotency_key_reused`
     for a repeated `client_turn_id` with another message, and `throttled` over the message limit.
 
-    A repeat of an answered turn returns it without calling the model. The extracted fields are
+    A repeat of an answered turn returns it, with the notice it was first answered with, and calls
+    no model (Story 5.14); `next_step` and `summary` show the Draft as it is now. A turn that was
+    not answered stored nothing, so its repeat is processed. The extracted fields are
     written against the revision read BEFORE the model call, in the same transaction as the turn."""
     session = owned_session(actor, session_id)
     listing = listings.require_draft(actor, session.listing_id)
@@ -216,7 +218,11 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
     turn, is_new = _claim(session, key, safe.value)
     if not is_new:
         return TurnResult(
-            "success", "", turn_view(turn), planner.next_step(listing), facts_of(listing)
+            "success",
+            turn.result.get("message", ""),
+            turn_view(turn),
+            planner.next_step(listing),
+            facts_of(listing),
         )
     pending = AssistantTurn.objects.filter(pk=turn.pk, reply_text="")
     answered = False
@@ -240,6 +246,7 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
         turn.sources = [
             {"title": p.title, "source": p.source, "version": p.version} for p in knowledge.passages
         ]
+        notice = "" if knowledge.ok else knowledge.message
         with transaction.atomic():  # the Draft changes only if the turn is kept
             nearby = extracting.stated_nearby(parsed.nearby, safe.value)
             written = extracting.apply(actor, listing, parsed.fields, values, nearby)
@@ -249,7 +256,7 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
             if parsed.clarify:
                 notices.append(_clean_reply(parsed.clarify, values))
             notices.append(extracting.unmatched_notice(parsed.unmatched, safe.value))
-            turn.result = written.as_json([n for n in notices if n])
+            turn.result = written.as_json([n for n in notices if n]) | {"message": notice}
             if not pending.update(
                 reply_text=turn.reply_text, sources=turn.sources, result=turn.result
             ):
@@ -258,7 +265,6 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
     finally:
         if not answered:
             pending.delete()
-    notice = "" if knowledge.ok else knowledge.message
     after = listings.require_draft(actor, session.listing_id)
     return TurnResult("success", notice, turn_view(turn), planner.next_step(after), facts_of(after))
 

@@ -139,7 +139,9 @@ def _call(feature: str, adapter, started: float, timeout: float, fn) -> AiResult
             "ai_call_failed",
             extra={"event": "ai_call_failed", "exception_class": type(exc).__name__},
         )
-        return _fallback(feature, adapter, started, "error")
+        # an adapter may give up on its own socket just before the wait above does
+        outcome = "timeout" if getattr(exc, "category", None) == "timeout" else "error"
+        return _fallback(feature, adapter, started, outcome)
     _log(feature, adapter, started, "success")
     return AiResult("success", value)
 
