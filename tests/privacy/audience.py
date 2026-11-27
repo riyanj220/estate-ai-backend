@@ -15,6 +15,10 @@ ME = "/api/v1/me"  # the caller's own data by construction
 # OWNER: the service refuses everyone but the owning account. A route that shows one account
 # anything about another is OTHER_ACCOUNT, and its response schema is then walked like a public one.
 SIGNED_IN = {
+    # a participant sees the other's name and the Listing's header
+    "/api/v1/conversations": OTHER_ACCOUNT,
+    "/api/v1/conversations/<str:conversation_id>": OTHER_ACCOUNT,
+    "/api/v1/conversations/<str:conversation_id>/messages": OTHER_ACCOUNT,
     "/api/v1/assistant/sessions": OWNER,
     "/api/v1/assistant/sessions/<str:session_id>": OWNER,
     "/api/v1/assistant/sessions/<str:session_id>/description": OWNER,

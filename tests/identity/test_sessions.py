@@ -467,7 +467,14 @@ def test_summary_carries_profile_name_and_matrix_capabilities(db):
     view = make(verified=True)
     summary = selectors.get_actor_summary(view.id)
     assert (summary.full_name, summary.email, summary.account_type) == ("", EMAIL, "individual")
-    assert summary.capabilities == ("sign_in", "browse", "view_drafts", "edit_drafts")
+    assert summary.capabilities == (
+        "sign_in",
+        "browse",
+        "view_drafts",
+        "edit_drafts",
+        "send_messages",
+        "read_conversations",
+    )
     assert selectors.get_actor_summary("junk") is None
     assert selectors.get_actor_summary(uuid.uuid4()) is None
 
@@ -488,6 +495,7 @@ def test_suspended_individual_capabilities(db):
         "sign_in",
         "browse",
         "view_drafts",
+        "read_conversations",
     )
 
 

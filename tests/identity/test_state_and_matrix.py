@@ -65,7 +65,14 @@ def test_every_cell_matches_fr74(state, capability):
 
 def test_pending_is_everything_except_the_activated_capabilities():
     # Story 2.1 activated view_drafts and edit_drafts; later stories remove the rest.
-    assert PENDING_CAPABILITIES == set(C) - {C.SIGN_IN, C.BROWSE, C.VIEW_DRAFTS, C.EDIT_DRAFTS}
+    assert PENDING_CAPABILITIES == set(C) - {
+        C.SIGN_IN,
+        C.BROWSE,
+        C.VIEW_DRAFTS,
+        C.EDIT_DRAFTS,
+        C.SEND_MESSAGES,
+        C.READ_CONVERSATIONS,
+    }
 
 
 def make(**fields):
@@ -188,3 +195,19 @@ def test_draft_capabilities_are_live_and_follow_fr74(db, state, view, edit):
 def test_administrators_never_hold_the_draft_capabilities(db):
     admin = Actor.admin(admin_account(email_verified_at=timezone.now()).id)
     assert not can(admin, C.VIEW_DRAFTS) and not can(admin, C.EDIT_DRAFTS)
+
+
+@pytest.mark.parametrize(
+    ("state", "send", "read"),
+    [
+        (S.EMAIL_UNVERIFIED, False, True),
+        (S.ACTIVE, True, True),
+        (S.SUSPENDED, False, True),
+        (S.DEACTIVATED, False, False),
+    ],
+)
+def test_messaging_cells_are_live(db, state, send, read):
+    # Story 7.1 removed both from PENDING_CAPABILITIES.
+    actor = Actor.user(account_in(state).id, "r")
+    assert can(actor, C.SEND_MESSAGES) is send
+    assert can(actor, C.READ_CONVERSATIONS) is read

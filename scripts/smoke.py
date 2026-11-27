@@ -458,6 +458,30 @@ class Smoke:
         statuses.append(f"voice {heard['status']}")
         return f"visitor and account: {', '.join(statuses)}"
 
+    def inquiry(self):
+        """Message seller (Story 7.1): send, retry, reply, and nobody else reads it."""
+        owner, buyer = self.ctx["owner"], self.ctx["buyer"]
+        listing_id = self.ctx["published"]
+        body = {"listing_id": listing_id, "body": "Is it still available?"}
+        key = {"Idempotency-Key": str(uuid.uuid4())}
+        sent = buyer.post("/conversations", body, (200, 201), key).json()
+        conversation = sent["conversation"]["id"]
+        again = buyer.post("/conversations", body, 200, key).json()
+        check(again["message"]["id"] == sent["message"]["id"], "a retry made a second message")
+        owner.post("/conversations", body, 409, {"Idempotency-Key": str(uuid.uuid4())})
+        path = f"/conversations/{conversation}/messages"
+        owner.post(path, {"body": "Yes it is."}, 201, {"Idempotency-Key": str(uuid.uuid4())})
+        seen = buyer.get(path).json()["results"]
+        check([m["mine"] for m in seen][-2:] == [True, False], f"history: {seen}")
+        found = buyer.get(f"/conversations?listing_id={listing_id}").json()["results"]
+        check([c["id"] for c in found] == [conversation], "the inquiry was not found again")
+        check("+92300" not in json.dumps([found, seen]), "a phone number in a payload")
+        Client(self.base).get(path, expect=401)
+        stranger = self.ctx.get("agency")
+        if stranger:
+            stranger.get(path, expect=404)
+        return f"{len(seen)} messages"
+
     def browse(self):
         visitor, buyer = Client(self.base), self.ctx["buyer"]
         listing_id = self.ctx["published"]
@@ -709,6 +733,7 @@ class Smoke:
         self.flow("publish around uploads", self.publish_around_uploads, ["image"])
         self.flow("browse/filter/detail/agency page", self.browse, ["published", "buyer"])
         self.flow("search by description", self.search, ["buyer"])
+        self.flow("inquiry and reply", self.inquiry, ["published", "buyer"])
         self.flow("favourites and ownership", self.favourites, ["published", "buyer"])
         self.flow(
             "edit/archive/republish/correct/sold", self.edit_and_lifecycle, ["published", "third"]

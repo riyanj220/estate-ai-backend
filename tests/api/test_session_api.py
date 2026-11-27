@@ -123,7 +123,14 @@ def test_sign_in_returns_the_summary_and_a_hardened_cookie(db):
         "email": EMAIL,
         "full_name": "",
         "agency_name": "",
-        "capabilities": ["sign_in", "browse", "view_drafts", "edit_drafts"],
+        "capabilities": [
+            "sign_in",
+            "browse",
+            "view_drafts",
+            "edit_drafts",
+            "send_messages",
+            "read_conversations",
+        ],
         "suspension_reason": None,
     }
     cookie = client.cookies[COOKIE]
@@ -336,7 +343,7 @@ def test_me_reflects_suspension_without_ending_the_session(db):
     body = client.get(ME).json()
     assert (body["state"], body["capabilities"]) == (
         "suspended",
-        ["sign_in", "browse", "view_drafts"],
+        ["sign_in", "browse", "view_drafts", "read_conversations"],
     )
 
 

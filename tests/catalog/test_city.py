@@ -241,7 +241,8 @@ def test_migration_path_seeds_exactly_one_karachi():
     executor = MigrationExecutor(conn)
     try:
         executor.migrate([("catalog", "0001_initial")])
-        City.objects.all().delete()
+        with conn.cursor() as cursor:  # not the ORM: its cascade names tables not there yet
+            cursor.execute("DELETE FROM catalog_city")
         executor = MigrationExecutor(conn)
         executor.migrate([("catalog", "0002_seed_karachi")])
         rows = list(City.objects.all())

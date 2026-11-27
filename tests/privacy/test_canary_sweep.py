@@ -26,6 +26,7 @@ from apps.kernel.actor import Actor
 from apps.kernel.request_logging import REQUEST_LOGGER
 from apps.listings import sample_data
 from apps.listings.models import ListingImage, ListingPrivateAddress, PropertyListing, SavedListing
+from apps.messaging.models import Conversation
 from tests.listings.support import (
     PASSWORD,
     make_account,
@@ -155,6 +156,13 @@ def seed(canaries):
         {"account_type": "individual"},
         {"session_id": uuid.UUID(int=1)},
     ]
+    # a Conversation between two canary accounts: no viewer is a participant
+    conversation = Conversation.objects.create(
+        listing_id=public[0].id,
+        initiator_account_id=public[1].owner_account_id,
+        owner_account_id=public[0].owner_account_id,
+    )
+    contexts += [{"conversation_id": conversation.id}]
     return {
         "contexts": contexts,
         "public": [str(x.id) for x in public],
