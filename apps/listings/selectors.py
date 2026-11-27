@@ -559,6 +559,36 @@ def public_fields(values: Mapping[str, object], definition=None) -> dict[str, ob
     return shown
 
 
+AVAILABLE = "available"
+HEADER_AVAILABILITY = (AVAILABLE, "sold", "rented", "unavailable")
+
+
+@dataclass(frozen=True)
+class ListingHeader:
+    """What a participant of a Conversation may see of its Listing now (FR-48): the title only
+    while it is publicly visible, otherwise just whether it was sold or rented."""
+
+    availability: str
+    title: str | None = None
+
+
+def listing_header(listing_id) -> ListingHeader:
+    key = canonical_uuid(listing_id)
+    if key is not None:
+        row = public_listings().filter(id=key).values_list("title").first()
+        if row is not None:
+            return ListingHeader(AVAILABLE, row[0])
+    row = (
+        PropertyListing.objects.filter(id=key).values_list("status", "restricted").first()
+        if key is not None
+        else None
+    )
+    closed = {ListingStatus.SOLD.value: "sold", ListingStatus.RENTED.value: "rented"}
+    if row is None or row[1]:
+        return ListingHeader("unavailable")
+    return ListingHeader(closed.get(row[0], "unavailable"))
+
+
 def public_view_of(
     row: PropertyListing,
     *,

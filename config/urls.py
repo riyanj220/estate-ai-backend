@@ -17,6 +17,11 @@ from apps.presentation.api.assistant import (
     AssistantSessionView,
     AssistantTurnsView,
 )
+from apps.presentation.api.conversations import (
+    ConversationDetailView,
+    ConversationMessagesView,
+    ConversationsView,
+)
 from apps.presentation.api.estimates import (
     EstimateView,
     ListingEstimateView,
@@ -271,6 +276,17 @@ urlpatterns = [
         "api/v1/listings/<str:listing_id>/estimate",
         ListingEstimateView.as_view(),
         name="listing-estimate",
+    ),
+    path("api/v1/conversations", ConversationsView.as_view(), name="conversations"),
+    path(
+        "api/v1/conversations/<str:conversation_id>",
+        ConversationDetailView.as_view(),
+        name="conversation",
+    ),
+    path(
+        "api/v1/conversations/<str:conversation_id>/messages",
+        ConversationMessagesView.as_view(),
+        name="conversation-messages",
     ),
     path("api/v1/public/filters", PublicFiltersView.as_view(), name="public-filters"),
     path("api/v1/public/search", PublicSearchView.as_view(), name="public-search"),

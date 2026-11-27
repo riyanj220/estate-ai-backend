@@ -90,6 +90,11 @@ def _check_keys(value: Any) -> None:
             _check_keys(item)
 
 
+def is_key(value: str) -> bool:
+    """Whether `value` has the shape an idempotency key must have."""
+    return bool(_KEY.fullmatch(value))
+
+
 def request_fingerprint(mapping: dict[str, Any]) -> str:
     """SHA-256 over canonical JSON (sorted keys, no whitespace) of the request values.
 

@@ -302,6 +302,24 @@ def logo_url(agency_id: uuid.UUID) -> str:
 
 
 @dataclass(frozen=True)
+class Participant:
+    """All one side of a Conversation sees of the other: the name they go by (the Agency name or
+    the full name), or nothing once the account is Deactivated. No id, email or phone."""
+
+    name: str | None
+    deactivated: bool
+
+
+def participant(account_id) -> Participant:
+    key = parse_id(account_id)
+    account = Account.objects.filter(id=key).first() if key else None
+    if account is None or account.state is AccountState.DEACTIVATED:
+        return Participant(None, deactivated=True)
+    summary = summarise(account)
+    return Participant(summary.agency_name or summary.full_name or None, deactivated=False)
+
+
+@dataclass(frozen=True)
 class PublicAdvertiser:
     """All the public may know of a Listing's owner (FR-39): the type and, for an Agency, its
     public name, logo address and verification. No account id, name of a person or contact."""
