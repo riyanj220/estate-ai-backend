@@ -40,6 +40,7 @@ from apps.identity.capabilities import Capability
 from apps.identity.policy import can
 from apps.kernel import media, notifications
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
+from apps.kernel.ai.redaction import KnownValues
 from apps.kernel.errors import DomainError
 from apps.listings import policy
 from apps.listings.area import basis_text
@@ -1096,3 +1097,14 @@ def listing_ids_owned_by(owner_account_ids) -> list[uuid.UUID]:
         .order_by("created_at", "id")
         .values_list("id", flat=True)
     )
+
+
+def known_private_addresses(owner_account_id: uuid.UUID) -> KnownValues:
+    """The owner's Private addresses, only for AI redaction (`kernel.ai.known_values`)."""
+    rows = ListingPrivateAddress.objects.filter(listing__owner_account_id=owner_account_id)
+    addresses = []
+    for street, house_number in rows.values_list("street", "house_number"):
+        addresses += [value for value in (street, house_number) if value]
+        if street and house_number:
+            addresses.append(f"{house_number} {street}")
+    return KnownValues(addresses=tuple(addresses))

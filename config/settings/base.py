@@ -81,6 +81,12 @@ RUNTIME_EXECUTOR_RESERVED_WORKERS = env_int("RUNTIME_EXECUTOR_RESERVED_WORKERS",
 VALUATION_BACKGROUND_ESTIMATES = True
 validate_limits(RUNTIME_EXECUTOR_MAX_WORKERS, RUNTIME_EXECUTOR_RESERVED_WORKERS)
 
+# AI gateway (AD-8, AD-25). Only the recorded stub exists so far: no network, no keys.
+AI_PROVIDER = env("AI_PROVIDER", "stub")
+# Provider requests allowed per UTC day; at least half is kept for signed-in Listing creation.
+AI_DAILY_BUDGET = env_int("AI_DAILY_BUDGET", 1000)
+AI_RESERVED_PERCENT = env_int("AI_RESERVED_PERCENT", 50)
+
 # Mail (Story 1.13). Delivery is off the request thread unless MAIL_SEND_INLINE (tests).
 DEFAULT_FROM_EMAIL = env("MAIL_FROM", "EstateAI <no-reply@localhost>")
 MAIL_SEND_INLINE = False

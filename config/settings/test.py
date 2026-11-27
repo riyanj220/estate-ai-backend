@@ -58,3 +58,8 @@ atexit.register(shutil.rmtree, MEDIA_ROOT, ignore_errors=True)
 
 # Same thread, same transaction: a worker thread would not see a test's uncommitted rows.
 VALUATION_BACKGROUND_ESTIMATES = False
+
+# Tests never call a provider, whatever a developer's environment says.
+AI_PROVIDER = "stub"
+AI_DAILY_BUDGET = 1000
+AI_RESERVED_PERCENT = 50

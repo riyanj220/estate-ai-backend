@@ -102,6 +102,21 @@ class AiRequestLog(models.Model):
         ]
 
 
+class AiBudgetLedger(models.Model):
+    """AI calls counted per provider and UTC day (AD-25). Written only by `kernel.ai.budget`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=48)
+    day = models.DateField()
+    used = models.PositiveIntegerField()
+    open_used = models.PositiveIntegerField()  # the part used outside the reserved partition
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["provider", "day"], name="ai_budget_provider_day_uniq")
+        ]
+
+
 class AuditRecord(models.Model):
     """One security-relevant action. Append-only for the runtime role (never updated or purged).
 

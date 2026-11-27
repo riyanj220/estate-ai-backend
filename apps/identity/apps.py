@@ -16,7 +16,9 @@ class IdentityConfig(AppConfig):
             verification,
         )
         from apps.identity.models import AccountType
+        from apps.identity.selectors import known_private_values
         from apps.kernel import audit, notifications, retention
+        from apps.kernel.ai import known_values
         from apps.kernel.privacy.reads import register_private_target
 
         # Metadata holds enumerated values only: never email, phone, hash or the suspension reason.
@@ -62,6 +64,7 @@ class IdentityConfig(AppConfig):
 
         register_private_target("account", "An account's email, name and state")
 
+        known_values.register("identity", known_private_values)
         subscribers.register()
         retention.register("identity.email_verification_tokens", verification.purge_expired)
         retention.register("identity.password_reset_tokens", password_reset.purge_expired)

@@ -254,6 +254,52 @@ def find_contact_details(text: str) -> tuple[Finding, ...]:
     return tuple(findings)
 
 
+# --- exact known values (AI redaction) -------------------------------------------------------
+
+_KNOWN_GAP = r"[ \t\r\n\-./_(),*]{0,3}"
+KNOWN_VALUE_MIN_CHARS = 4  # shorter values ("5", "A1") would scrub ordinary text
+KNOWN_PHONE_MIN_DIGITS = 7
+
+
+def _known_phone(value: str) -> re.Pattern | None:
+    """The number with or without its country or trunk prefix, however it is grouped."""
+    digits = "".join(c for c in _normalise(value)[0] if c.isdigit()).removeprefix("00")
+    if digits.startswith("92") and len(digits) == 12:
+        digits = digits[2:]
+    elif digits.startswith("0"):
+        digits = digits[1:]
+    if len(digits) < KNOWN_PHONE_MIN_DIGITS:
+        return None
+    prefix = rf"(?:(?:\+|00)?{_KNOWN_GAP}92{_KNOWN_GAP}|\+|00|0{_KNOWN_GAP})?"
+    return re.compile(rf"(?<!\d)\(?{prefix}{_KNOWN_GAP.join(digits)}(?!\d)")
+
+
+def _known_words(value: str) -> re.Pattern | None:
+    """The value's words in order, ignoring case, spacing and punctuation."""
+    words = re.findall(r"[^\W_]+", _normalise(value)[0])
+    if sum(map(len, words)) < KNOWN_VALUE_MIN_CHARS:
+        return None
+    body = r"[\W_]{0,4}".join(map(re.escape, words))
+    return re.compile(rf"{_ALNUM_EDGE[0]}{body}{_ALNUM_EDGE[1]}")
+
+
+def find_known_values(text: str, kind: ContactKind, values) -> tuple[Finding, ...]:
+    """Occurrences in `text` of the exact `values` (one account's own), as `kind` findings."""
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValueError("text is too long")
+    normal, origin = _normalise(text)
+    build = _known_phone if kind is ContactKind.PHONE else _known_words
+    findings = []
+    for value in values:
+        pattern = build(value) if value else None
+        if pattern is None:
+            continue
+        for match in pattern.finditer(normal):
+            start, end = match.span()
+            findings.append(Finding(kind, origin[start], origin[end - 1] + 1))
+    return tuple(findings)
+
+
 def reject_contact_details(text: str) -> str | None:
     """None for clean text, else an explanation naming the kinds found, never the matches."""
     kinds = {finding.kind for finding in find_contact_details(text)}

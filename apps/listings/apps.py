@@ -9,9 +9,13 @@ class ListingsConfig(AppConfig):
     def ready(self):
         from apps.catalog import registry
         from apps.kernel import audit, notifications, retention
+        from apps.kernel.ai import known_values
         from apps.listings import lifecycle
         from apps.listings import retention as draft_retention
         from apps.listings.models import QUOTA_ACCOUNT_TYPES
+        from apps.listings.selectors import known_private_addresses
+
+        known_values.register("listings", known_private_addresses)
 
         # Metadata holds the three enumerated registry values only: no free text, no address.
         audit.register_action(

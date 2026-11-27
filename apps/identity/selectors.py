@@ -26,6 +26,7 @@ from apps.identity.policy import capabilities_for
 from apps.identity.state import AccountState
 from apps.kernel import media, storage
 from apps.kernel.actor import Actor, require_admin
+from apps.kernel.ai.redaction import KnownValues
 from apps.kernel.errors import DomainError
 from apps.kernel.privacy.reads import record_private_read
 
@@ -527,6 +528,25 @@ def get_agency_profile(actor_account_id) -> AgencyProfileView:
     if profile is None:
         raise DomainError("forbidden")
     return agency_profile_view(account, profile)
+
+
+def known_private_values(account_id: uuid.UUID) -> KnownValues:
+    """The account's own contact values, only for AI redaction (`kernel.ai.known_values`)."""
+    emails = [
+        *Account.objects.filter(id=account_id).values_list("email", flat=True),
+        *EmailChangeToken.objects.filter(account_id=account_id).values_list("new_email", flat=True),
+    ]
+    phones = list(
+        IndividualProfile.objects.filter(account_id=account_id).values_list("phone", flat=True)
+    )
+    addresses = []
+    for phone, address in AgencyProfile.objects.filter(account_id=account_id).values_list(
+        "business_phone", "office_address"
+    ):
+        phones.append(phone)
+        # The whole address and each comma-separated part, since people retype only the street.
+        addresses += [address, *(part for part in address.split(",") if " " in part.strip())]
+    return KnownValues(tuple(phones), tuple(emails), tuple(addresses))
 
 
 def city_is_active(city_id) -> bool:
