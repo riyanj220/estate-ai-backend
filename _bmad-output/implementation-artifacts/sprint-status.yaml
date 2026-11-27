@@ -132,13 +132,13 @@ development_status:
   6-4-search-availability-and-abuse-control: review
   epic-6-retrospective: optional
 
-  epic-7: in-progress
+  epic-7: done
   7-1-start-an-inquiry: review
   7-2-websocket-consumer-authentication-and-event-schema: review
   7-3-live-delivery-and-frontend-connection: review
   7-4-chat-latency-under-load: review
-  7-5-inbox-history-and-unread-state: in-progress
-  7-6-conversation-continuity-and-restrictions: in-progress
+  7-5-inbox-history-and-unread-state: review
+  7-6-conversation-continuity-and-restrictions: review
   epic-7-retrospective: optional
 
   epic-8: backlog
