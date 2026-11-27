@@ -454,6 +454,19 @@ def _make_listing(index: int, owner: Actor, city, localities: dict, report: Repo
     report.listings_created += 1
 
 
+@contextlib.contextmanager
+def _estimates_in_this_thread():
+    """Publishing starts a price estimate on the runtime executor, and those estimates hold the
+    heavy slots the next image upload needs (`busy`). A one-process tool has nobody waiting, so
+    here each estimate runs in the calling thread."""
+    before = settings.VALUATION_BACKGROUND_ESTIMATES
+    settings.VALUATION_BACKGROUND_ESTIMATES = False
+    try:
+        yield
+    finally:
+        settings.VALUATION_BACKGROUND_ESTIMATES = before
+
+
 def seed(
     listings_wanted: int = DEFAULT_LISTINGS, password: str | None = None, announce=None
 ) -> Report:
@@ -468,14 +481,15 @@ def seed(
     localities = _locality_ids(city)
     owners = _ensure_accounts(report, password, city, announce)
     existing = [selectors.titles_owned_by(owner.account_id) for owner in owners]
-    for index in range(wanted):
-        position = index % len(owners)
-        found = existing[position].get(row_for(index)["title"])
-        if found is not None and found[1] != "draft":
-            continue  # already there
-        if found is not None:  # a Draft left by an interrupted run: start that Listing again
-            listings.delete_draft(owners[position], found[0])
-        _make_listing(index, owners[position], city, localities, report)
+    with _estimates_in_this_thread():
+        for index in range(wanted):
+            position = index % len(owners)
+            found = existing[position].get(row_for(index)["title"])
+            if found is not None and found[1] != "draft":
+                continue  # already there
+            if found is not None:  # a Draft left by an interrupted run: start that Listing again
+                listings.delete_draft(owners[position], found[0])
+            _make_listing(index, owners[position], city, localities, report)
     return report
 
 

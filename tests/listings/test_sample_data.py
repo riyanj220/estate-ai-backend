@@ -1009,3 +1009,22 @@ def test_a_missing_locality_fails_loudly_and_creates_nothing(monkeypatch):
     with pytest.raises(sample_data.SeedRefused, match="Clifton"):
         sample_data.seed(3, PASSWORD)
     assert Account.objects.count() == 0 and PropertyListing.objects.count() == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_seeding_with_background_estimates_on_runs_them_in_the_calling_thread(
+    settings, monkeypatch
+):
+    """With them on the executor, estimates hold the heavy slots and a later upload is `busy`."""
+    settings.VALUATION_BACKGROUND_ESTIMATES = True
+    seen = []
+    real = services.upload_image
+
+    def upload(*args, **kwargs):
+        seen.append(settings.VALUATION_BACKGROUND_ESTIMATES)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(services, "upload_image", upload)
+    sample_data.seed(3, PASSWORD)
+    assert seen and not any(seen)
+    assert settings.VALUATION_BACKGROUND_ESTIMATES is True
