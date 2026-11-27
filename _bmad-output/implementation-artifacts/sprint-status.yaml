@@ -107,10 +107,10 @@ development_status:
   4-7-5-year-price-forecast: review
   epic-4-retrospective: optional
 
-  epic-5: backlog
-  5-1-ai-ports-redaction-and-recorded-stub-adapter: backlog
-  5-2-gateway-controls-limits-flags-request-log-and-budget: backlog
-  5-3-external-service-notice: backlog
+  epic-5: in-progress
+  5-1-ai-ports-redaction-and-recorded-stub-adapter: in-progress
+  5-2-gateway-controls-limits-flags-request-log-and-budget: in-progress
+  5-3-external-service-notice: in-progress
   5-4-provider-adapters-and-availability-trial: backlog
   5-5-knowledge-base-index-and-embedding-runtime: backlog
   5-6-knowledge-base-content: backlog
