@@ -73,6 +73,7 @@ def test_pending_is_everything_except_the_activated_capabilities():
         C.SEND_MESSAGES,
         C.READ_CONVERSATIONS,
         C.REPORT,
+        C.REQUEST_DEACTIVATION,
     }
 
 
@@ -212,3 +213,13 @@ def test_messaging_cells_are_live(db, state, send, read):
     actor = Actor.user(account_in(state).id, "r")
     assert can(actor, C.SEND_MESSAGES) is send
     assert can(actor, C.READ_CONVERSATIONS) is read
+
+
+@pytest.mark.parametrize(
+    ("state", "allowed"),
+    [(S.EMAIL_UNVERIFIED, True), (S.ACTIVE, True), (S.SUSPENDED, True), (S.DEACTIVATED, False)],
+)
+def test_the_deactivation_request_cell_is_live(db, state, allowed):
+    # Story 10.1 removed it from PENDING_CAPABILITIES.
+    actor = Actor.user(account_in(state).id, "r")
+    assert can(actor, C.REQUEST_DEACTIVATION) is allowed
