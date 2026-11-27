@@ -157,7 +157,7 @@ development_status:
   9-6-suspicious-and-duplicate-listing-flags: review
   epic-9-retrospective: optional
 
-  epic-10: in-progress
+  epic-10: done
   10-1-request-account-deactivation-or-deletion: review
   10-2-decide-and-execute-account-deactivation: review
   10-3-erasure-by-messaging-assistant-and-governance: review
@@ -168,9 +168,9 @@ development_status:
   10-8-administrator-dashboard: review
   10-9-support-requests: review
   10-10-administrator-second-factor: review
-  10-11-retention-jobs-for-kernel-data: backlog
-  10-12-retention-jobs-for-app-owned-data: backlog
-  10-13-audit-purge-with-its-own-database-role: backlog
+  10-11-retention-jobs-for-kernel-data: review
+  10-12-retention-jobs-for-app-owned-data: review
+  10-13-audit-purge-with-its-own-database-role: review
   epic-10-retrospective: optional
 
   epic-11: backlog

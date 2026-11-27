@@ -30,6 +30,9 @@ Mailpit UI: http://127.0.0.1:8025 shows every email the app sends locally (see `
 | --- | --- | --- |
 | `migrator` | owns the database, runs DDL, may create test databases | `migrate`, tests |
 | `runtime` | SELECT, INSERT, UPDATE, DELETE and sequence usage only; no DDL | the `default` connection in local and prod |
+| `purger` | SELECT and DELETE on the history tables of `PURGE_ROLE_TABLES`, nothing else | `run_retention`, `purge_audit_records` (the `purge` connection) |
+
+A database made before the `purger` role needs it added once: see `docs/audit.md`.
 
 Roles are created by `docker/postgres/create_roles.sh` (compose init, and CI against a service container).
 The compose init script only runs on an empty volume; to rotate a password or re-apply roles on an existing

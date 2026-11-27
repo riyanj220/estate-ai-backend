@@ -27,7 +27,7 @@ Rules:
 - Registering the same action twice with the same schema is a no-op; a different schema errors.
 - `kernel_auditrecord` is listed in `RUNTIME_APPEND_ONLY_TABLES`: the runtime role has INSERT and
   SELECT only; PostgreSQL refuses UPDATE, DELETE and TRUNCATE. `run_retention` never touches it;
-  the retention rule is decided later.
+  only the operator command `purge_audit_records` removes old records (below).
 - Append-only rests on role grants: the runtime role cannot UPDATE, DELETE or TRUNCATE. The
   migrator and superuser roles remain trusted and can change the table. The database also enforces
   that `actor_kind` is one of visitor, user, admin, system, and that `actor_id` is null exactly for
@@ -37,6 +37,33 @@ Rules:
   `kernel.privacy.reads` writes a reason.
 - Stories 1.12 (account state changes) and 1.18 (password change) write their audit records through
   this writer and register their own actions.
+
+## Audit purge and the purge role (Story 10.13)
+
+```bash
+uv run python manage.py purge_audit_records --dry-run   # count only; needs no purge role
+uv run python manage.py purge_audit_records             # delete records older than 24 months
+```
+
+The real run connects as `purger` (`PURGE_USER`, `PURGE_PASSWORD`; the connection alias `purge`, defined only when
+the password is set, so keep it out of the serving process's environment in production). The role may SELECT and
+DELETE on `settings.PURGE_ROLE_TABLES` and nothing else: no INSERT, UPDATE, TRUNCATE or DDL. `run_retention` uses
+the same role for the other append-only history (publication events, moderation records, Reports and Verification
+history). The 24-month age rule is enforced by the commands, not by the database.
+
+The role is created by `docker/postgres/create_roles.sh` (needs the superuser; skipped without `PURGE_PASSWORD`);
+`migrate` and `grant_runtime_privileges` grant its table rights. A new volume and CI get it automatically. To add it
+to an existing local database:
+
+```bash
+grep -q '^PURGE_PASSWORD=' .env || python3 -c "import secrets; print('PURGE_PASSWORD=' + secrets.token_urlsafe(32))" >> .env
+docker compose up -d db
+docker compose exec db bash /docker-entrypoint-initdb.d/10-create-roles.sh
+uv run python manage.py grant_runtime_privileges
+```
+
+Until then the tests of the real role are skipped locally (CI fails without it), and a run that has something to
+delete with it fails with `PurgeRoleNotConfigured`; dry runs work.
 
 ## Reasoned private reads
 

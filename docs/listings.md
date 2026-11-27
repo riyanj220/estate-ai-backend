@@ -706,8 +706,9 @@ that migration and `listings.quota_admin` (Story 2.20, below).
 
 `listings.PublicationEvent` is the history `listings.publication.publish` writes (Story 2.15; kinds `initial`, `republish_counted`,
 `republish_free`, `restore`, `seed`; `counted` only for the first two, by CHECK; no foreign keys, so history outlives a
-Listing; idempotency key unique per account). Application code deletes a row in one place only, `publication.remove_seed_events`
-(kind `seed` only, system actor, privileged connection; the sample-data reset), and updates two columns only
+Listing; idempotency key unique per account). Application code deletes a row in two places only, `publication.remove_seed_events`
+(kind `seed` only, system actor, privileged connection; the sample-data reset) and `publication.purge_old_events`
+(retention after 24 months, purge role, Story 10.12), and updates two columns only
 (`publication.correct`). The runtime role has INSERT and SELECT (`RUNTIME_APPEND_ONLY_TABLES`) plus UPDATE on exactly `correction_used` and `identity_fingerprint`
 (`RUNTIME_COLUMN_UPDATES`, Story 2.19: the one-time correction, `publication.correct`; guard
 `tests/architecture/test_publication_event_updates.py`). Only `listings/publication.py` writes it (an AST guard in

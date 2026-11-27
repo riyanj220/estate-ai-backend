@@ -113,3 +113,29 @@ The schedule (cron or a platform scheduler) is decided at deployment; nothing he
 
 Story 5.8 adds `assistant.history`: Assistant sessions and turns of deleted Listings (also removed at once on
 `listing.deleted`).
+
+### Stories 10.11 and 10.12: periods and jobs
+
+| Data (PRD 8.3) | Kept | Job |
+|---|---|---|
+| Idempotency records | 7 days | `kernel.idempotency` |
+| Rate-limit counters | until the window ends | `kernel.ratelimit` |
+| AI request log | 90 days | `kernel.ai_request_log` |
+| Notifications | 90 days after being read (180 days at most) | `kernel.notifications` |
+| Publication events (with fingerprint) | 24 months | `listings.publication_events` * |
+| View-counting buckets | until expired | `listings.view_buckets` |
+| Assistant history | 90 days after first Publication | `assistant.published_history` |
+| Reports, evidence, review history | 24 months after resolution; open ones kept | `governance.reports` * |
+| Verification requests and evidence | 24 months after the decision; an approval in force keeps its row, its registration number and note are emptied | `governance.verification` * |
+| Moderation records | 24 months | `governance.moderation_records` * |
+| Support requests | 12 months after closure; open ones kept | `governance.support_requests` |
+| Decided account closure requests | 24 months after the decision | `governance.closure_requests` |
+| Audit records | 24 months | not a job: `purge_audit_records` (`docs/audit.md`) * |
+
+\* deleted as the `purger` database role (`docs/audit.md`), through `retention.delete_with_purge_role`; set
+`PURGE_PASSWORD` where retention is scheduled. Months are calendar months (`retention.months_ago`).
+
+**Application logs (30 days).** The application stores no logs: it writes structured JSON to stdout only
+(`LOGGING` in `config/settings/base.py`), so there is nothing for `run_retention` to purge. Whatever captures stdout
+at deployment (journald, Docker's log driver, a hosting platform) must be configured to keep at most 30 days, for
+example `MaxRetentionSec=30day` for journald.
