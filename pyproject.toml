@@ -162,6 +162,13 @@ forbidden_modules = ["django.http", "django.shortcuts", "django.views", "django.
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
+name = "Provider SDKs and HTTP clients are imported only inside kernel"
+type = "forbidden"
+source_modules = ["apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.governance", "apps.presentation"]
+forbidden_modules = ["aiohttp", "anthropic", "google", "groq", "httpx", "langchain", "langchain_core", "langchain_google_genai", "langchain_groq", "openai", "requests", "urllib3"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
 name = "Pillow is imported only inside kernel"
 type = "forbidden"
 source_modules = ["apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.governance", "apps.presentation"]
