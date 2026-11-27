@@ -82,6 +82,7 @@ from apps.presentation.api.reference import AmenityView, CityView, LocalityView
 from apps.presentation.api.registrations import AgencyRegistrationView, IndividualRegistrationView
 from apps.presentation.api.registry import RegistryView
 from apps.presentation.api.schema import PublicSchemaView
+from apps.presentation.api.search import PublicSearchView
 from apps.presentation.api.sessions import AdminSessionView, CsrfView, MeView, SessionView
 from apps.presentation.api.verifications import ConfirmEmailView, VerificationRequestView
 
@@ -272,6 +273,7 @@ urlpatterns = [
         name="listing-estimate",
     ),
     path("api/v1/public/filters", PublicFiltersView.as_view(), name="public-filters"),
+    path("api/v1/public/search", PublicSearchView.as_view(), name="public-search"),
     path("api/v1/public/listings", PublicListingsView.as_view(), name="public-listings"),
     path(
         "api/v1/public/listings/<str:listing_id>",

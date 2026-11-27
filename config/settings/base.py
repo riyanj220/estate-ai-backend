@@ -20,6 +20,7 @@ INSTALLED_APPS = [
     "apps.listings",
     "apps.valuation",
     "apps.assistant",
+    "apps.search",
 ]
 
 MIDDLEWARE = [
