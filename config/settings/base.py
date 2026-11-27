@@ -22,6 +22,8 @@ INSTALLED_APPS = [
     "apps.assistant",
     "apps.search",
     "apps.messaging",
+    # Last: its subscribers run after identity's, which end the sessions they react to.
+    "apps.presentation.realtime",
 ]
 
 MIDDLEWARE = [
@@ -83,6 +85,17 @@ RUNTIME_EXECUTOR_RESERVED_WORKERS = env_int("RUNTIME_EXECUTOR_RESERVED_WORKERS",
 # Estimates after publication and edits run on the executor, so no request waits for them.
 VALUATION_BACKGROUND_ESTIMATES = True
 validate_limits(RUNTIME_EXECUTOR_MAX_WORKERS, RUNTIME_EXECUTOR_RESERVED_WORKERS)
+
+# Live delivery (AD-13, AD-14). The in-memory channel layer is only correct with ONE server
+# process (one Daphne, one worker): a second one would silently miss events.
+CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+WS_MAX_CONNECTIONS_PER_ACCOUNT = 5
+WS_IDLE_SECONDS = 900  # no event for this long closes the socket; the client reconnects
+WS_RECHECK_SECONDS = 30  # how often an open socket's session and account are checked again
+# The socket is receive-only, so clients never need to send anything (ping/pong aside). These
+# bound what Daphne buffers; `scripts/dev_server.sh` passes the same numbers to the daphne CLI.
+DAPHNE_WEBSOCKET_MAX_FRAME_SIZE = 1024
+DAPHNE_WEBSOCKET_MAX_MESSAGE_SIZE = 1024
 
 # AI gateway (AD-8, AD-25). `stub` (default) uses no network and no key; `gemini` calls Google.
 AI_PROVIDER = env("AI_PROVIDER", "stub")

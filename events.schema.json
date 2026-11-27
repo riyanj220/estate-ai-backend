@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EstateAI WebSocket events",
+  "description": "Server to client only, over /ws. Authenticated by the session cookie; the Origin must be a configured one. A client frame closes the socket. Close codes: 4401 session ended, 4403 client sent a frame, 4408 idle, 4429 too many connections.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Ready"
+    },
+    {
+      "$ref": "#/$defs/MessageCreated"
+    }
+  ],
+  "$defs": {
+    "Ready": {
+      "type": "object",
+      "description": "Sent once, when events start flowing. Read what came before it over REST.",
+      "properties": {
+        "type": {
+          "const": "ready"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "MessageCreated": {
+      "type": "object",
+      "description": "A Message was saved in a Conversation the account takes part in. Fetch it with GET /api/v1/conversations/{conversation_id}/messages?after={last seq held}.",
+      "properties": {
+        "type": {
+          "const": "message.created"
+        },
+        "conversation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "message_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "type",
+        "conversation_id",
+        "message_id",
+        "seq"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

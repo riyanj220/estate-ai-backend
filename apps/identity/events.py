@@ -51,6 +51,21 @@ def emit_session_ended(
 
 
 @dataclass(frozen=True)
+class AccountSuspended(DomainEvent):
+    """An account was suspended. Its sessions stay; live delivery to it stops (Story 7.3)."""
+
+    name: ClassVar[str] = "account.suspended"
+    account_id: UUID
+
+
+def emit_suspended(account_id: UUID) -> None:
+    """Schedule `account.suspended` for after the surrounding transaction commits."""
+    if not isinstance(account_id, UUID):
+        raise ValueError("account_id must be a UUID")
+    emit(AccountSuspended(account_id=account_id))
+
+
+@dataclass(frozen=True)
 class AccountRegistered(DomainEvent):
     """A new account was registered and awaits email verification (Story 1.16 sends the link)."""
 

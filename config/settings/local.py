@@ -16,12 +16,16 @@ load_dotenv()
 
 from .base import *  # noqa: E402, F403
 from .base import (  # noqa: E402
+    INSTALLED_APPS,
     MIGRATOR_DB_USER,
     RUNTIME_DB_USER,
     build_database,
 )
 
 DEBUG = True
+# Makes `manage.py runserver` serve ASGI (HTTP and the WebSocket) with Daphne. Plain Django
+# runserver is WSGI and cannot serve `/ws`.
+INSTALLED_APPS = ["daphne", *INSTALLED_APPS]
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 ALLOWED_HOSTS = validate_hosts(
     "DJANGO_ALLOWED_HOSTS",

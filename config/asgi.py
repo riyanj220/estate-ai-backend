@@ -9,7 +9,10 @@ if "DJANGO_SETTINGS_MODULE" not in os.environ:
 
 django_application = get_asgi_application()
 
+from channels.routing import ProtocolTypeRouter  # noqa: E402
+
 from apps.kernel.upload_limit import BodyLimitASGI  # noqa: E402
+from apps.presentation.realtime.routing import websocket_application  # noqa: E402
 
 
 def _refusal(field: str, code: str):
@@ -44,5 +47,11 @@ def _voice_too_large():
     return _refusal("audio", "audio_too_large")
 
 
-# Bounds the buffering of an image upload, a reorder body or a recording before Django reads it.
-application = BodyLimitASGI(django_application, _too_large, _order_too_large, _voice_too_large)
+# HTTP: bounds the buffering of an image upload, a reorder body or a recording before Django reads
+# it. WebSocket: the receive-only live channel (AD-13).
+application = ProtocolTypeRouter(
+    {
+        "http": BodyLimitASGI(django_application, _too_large, _order_too_large, _voice_too_large),
+        "websocket": websocket_application,
+    }
+)

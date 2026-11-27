@@ -11,6 +11,7 @@ from datetime import datetime
 from django.db import transaction
 from django.utils import timezone
 
+from apps.identity.events import emit_suspended
 from apps.identity.models import Account, AccountType
 from apps.identity.selectors import parse_id
 from apps.identity.services.profile import FieldsInvalid
@@ -99,6 +100,7 @@ def suspend_account(actor: Actor, account_id, reason) -> SuspensionView:
             ]
         )
         audit.record(actor, "account.suspended", "account", account.id)
+        emit_suspended(account.id)
         notifications.notify(account.id, "account.suspended", {})  # last: see docs
         return _view(account)
 

@@ -15,6 +15,7 @@ dependencies = [
     "scikit-learn>=1.7,<2",
     "numpy>=2,<3",
     "threadpoolctl>=3.8.0",
+    "channels>=4.3,<5",
 ]
 
 [dependency-groups]
