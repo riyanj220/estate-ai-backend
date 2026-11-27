@@ -63,6 +63,8 @@ whose permission is not explicit.
 | `/api/v1/listings/<str:listing_id>/republish` | POST | signed_in | `apps.presentation.api.listings.ListingRepublishView` |
 | `/api/v1/listings/<str:listing_id>/status` | POST | signed_in | `apps.presentation.api.listings.ListingStatusView` |
 | `/api/v1/me` | GET | signed_in | `apps.presentation.api.sessions.MeView` |
+| `/api/v1/me/agency-dashboard` | GET | signed_in | `apps.presentation.api.agency_dashboard.AgencyDashboardView` |
+| `/api/v1/me/agency-dashboard/listings` | GET | signed_in | `apps.presentation.api.agency_dashboard.AgencyDashboardListingsView` |
 | `/api/v1/me/agency-profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.AgencyProfileDetailView` |
 | `/api/v1/me/agency-profile/image` | DELETE, PUT | signed_in | `apps.presentation.api.profile_images.AgencyProfileImageView` |
 | `/api/v1/me/agency-profile/image/file` | GET, HEAD | public | `apps.presentation.api.profile_images.AgencyProfileImageFileView` |
@@ -89,6 +91,7 @@ whose permission is not explicit.
 | `/api/v1/public/listings` | GET | public | `apps.presentation.api.public_listings.PublicListingsView` |
 | `/api/v1/public/listings/<str:listing_id>` | GET | public | `apps.presentation.api.public_listings.PublicListingDetailView` |
 | `/api/v1/public/listings/<str:listing_id>/estimate` | GET | public | `apps.presentation.api.estimates.PublicListingEstimateView` |
+| `/api/v1/public/listings/<str:listing_id>/views` | POST | public | `apps.presentation.api.agency_dashboard.ListingViewBeaconView` |
 | `/api/v1/public/search` | POST | public | `apps.presentation.api.search.PublicSearchView` |
 | `/api/v1/public/search/transcription` | POST | public | `apps.presentation.api.search.PublicSearchTranscriptionView` |
 | `/api/v1/reference/amenities` | GET | public | `apps.presentation.api.reference.AmenityView` |

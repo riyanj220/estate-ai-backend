@@ -95,6 +95,8 @@ Story 2.13 adds `listings.draft_notice` and `listings.draft_expiry` (see `docs/l
 without activity and deletion 30 days later unless the Draft was opened or edited. They process at most 200 Drafts a run
 and isolate each Listing in its own savepoint.
 
+Story 8.2 adds `listings.view_buckets`: the 30-minute view-counting buckets, deleted once expired.
+
 Story 4.3 adds `valuation.estimates` (see `docs/valuation.md`): estimates of deleted Listings, and estimates of
 entered attributes older than 90 days.
 

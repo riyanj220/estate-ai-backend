@@ -964,3 +964,14 @@ reseed creates new accounts, so keys cannot clash either way. See `docs/sample-d
 - Deleting a Listing (a Draft, or sample data) deletes its favourites (foreign key cascade). A Published Listing is
   never deleted, so archived, sold and removed ones keep theirs. Removing favourites on account deactivation belongs
   to the deactivation story.
+
+## Agency dashboard and view statistics (Stories 8.1, 8.2)
+
+`GET /me/agency-dashboard` (totals) and `GET /me/agency-dashboard/listings` (filtered, with views and inquiries) are for
+Agency accounts only. An inquiry is a Conversation another account started about one of the Agency's Listings.
+
+`POST /public/listings/{id}/views` counts one view. Only `ListingViewCount` (a total per Listing) is kept. To count a
+browser once per 30 minutes, `ListingViewBucket` holds an HMAC of Listing, client network and `User-Agent` until it
+expires; the `listings.view_buckets` retention job purges it. No cookie is set. Not counted: the owner, administrators,
+self-declared bots, an empty `User-Agent`, and more than 300 beacons an hour from one network. Two people behind one
+address with the same browser count once in a window. The totals are indicative, not fraud-proof.
