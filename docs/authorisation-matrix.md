@@ -115,6 +115,7 @@ whose permission is not explicit.
 | `/api/v1/listings/<str:listing_id>/confirm` | POST | signed_in | `apps.presentation.api.listings.ListingConfirmView` |
 | `/api/v1/listings/<str:listing_id>/correction` | GET, POST | signed_in | `apps.presentation.api.listings.ListingCorrectionView` |
 | `/api/v1/listings/<str:listing_id>/estimate` | POST | signed_in | `apps.presentation.api.estimates.ListingEstimateView` |
+| `/api/v1/listings/<str:listing_id>/floor-plan` | DELETE, PUT | signed_in | `apps.presentation.api.listing_images.ListingFloorPlanView` |
 | `/api/v1/listings/<str:listing_id>/images` | PATCH, POST | signed_in | `apps.presentation.api.listing_images.ListingImagesView` |
 | `/api/v1/listings/<str:listing_id>/images/<str:image_id>` | DELETE | signed_in | `apps.presentation.api.listing_images.ListingImageDetailView` |
 | `/api/v1/listings/<str:listing_id>/images/<str:image_id>/file` | GET, HEAD | public | `apps.presentation.api.listing_images.ListingImageFileView` |

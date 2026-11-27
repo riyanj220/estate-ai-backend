@@ -254,6 +254,10 @@ Version 11 (Story 4.2) flags `subtype` and `locality` as `valuation_input`: the 
 features come from flagged fields only. A change to either now emits `listing.model_inputs_changed`. See
 `docs/valuation.md`.
 
+Version 12 (Stories 11.3 and 11.4) adds the type `url` (needs `max_length`, no `min_length`), the nine deferred sale fields and `video_tour_url` (see `docs/listings.md`). Existing Listings keep their stored
+`registry_version` until their next write; nothing is re-judged and no fingerprint changes, because no identity or
+valuation flag moved.
+
 ## Rules and caveats added in review
 
 - **Id lengths.** Every purpose, category and subtype id must be at most 32 characters (the Listing columns are

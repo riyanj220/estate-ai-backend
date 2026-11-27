@@ -264,9 +264,9 @@ otherwise, whatever the value; `null` on a field that does not apply is a `200` 
 - **Seller-declared**: possession, balloting, development, approval authority and plot file status are the owner's own
   claims. The registry marks them (`seller_declared: true`, served) so a display or search layer shows them as
   "Seller-declared" and never as a platform badge or verified fact.
-- **Unsupported attributes** such as `installment_available`, `down_payment`, `title_document_type`,
-  `mortgage_declaration` and `approval_reference_number` are not in the registry, so they are `unknown_field` under
-  `non_field_errors` like any unknown id, and nothing is written (they arrive in Epic 11).
+- **Unsupported attributes** (any id the registry does not define) are `unknown_field` under
+  `non_field_errors`, and nothing is written. The deferred legal and installment fields arrived in version 12
+  (below).
 
 Validation: the feet and kilowatt fields are strict decimal text with the registry scale (`^\d{1,10}(\.\d{1,2})?$`
 shape, no leading zeros, exponent, comma, spaces or JSON numbers: `invalid`); a well-formed value that is zero,
@@ -307,10 +307,8 @@ database write could leave (there is no purpose CHECK), can still be cleared by 
   The message for `invalid_date` is neutral catalogue text that names no value.
 - **Money, integers, booleans, enums**: as `asking_price` (`invalid_price`, now worded without "above zero" because a
   deposit and the advance rent may be `0`; the text is deliberately neutral, "within the allowed range"), Story 2.4 integers (`invalid`, `invalid_range`), booleans and enums (`invalid_choice`).
-- **Unsupported (deferred)** terms `payment_type`, `down_payment`, `total_installment_price`, `monthly_installment`,
-  `remaining_installments`, `ownership_document_type`, `title_document_type`, `approval_information`,
-  `installment_available` and any other id outside the registry are `unknown_field` under `non_field_errors`; nothing
-  is written (Epic 11).
+- Any id outside the registry is `unknown_field` under `non_field_errors`; nothing is written. The deferred
+  sale terms arrived in version 12 (below).
 - None of the new fields is a `valuation_input`, so a terms edit never emits `listing.model_inputs_changed`; an edit
   that also changes a model input emits exactly one event after commit, as before.
 - A stored value outside today's rules (an older registry's wider window or range) is never altered by an unrelated
@@ -986,3 +984,19 @@ archived: restrict or lift; removed: restore, move to archived, and lift if rest
 `governance.moderation.moderate` is the only caller: it records a `ModerationAction` (actor, reason, time, outcome) and
 notifies the owner. Reasons are 5 to 120 characters without contact details. Reports never change a Listing; the
 owner resource's `under_review` is composed in presentation from Reports in `reviewing`.
+
+## Deferred attributes, floor plan and tour link (version 12, Stories 11.3 and 11.4)
+
+- Sale only, all optional, never a valuation input or quota identity: `payment_type` (`cash`, `installments`,
+  `cash_or_installments`), `down_payment`, `total_installment_price`, `monthly_installment`,
+  `remaining_installments` (0 to 600), `title_document_type`, `approval_information`, `approval_reference_number` and
+  `mortgage_declaration` (`none`, `mortgaged`, `disputed`, `mortgaged_and_disputed`). The last four are
+  `seller_declared` and never extracted by the Assistant. No relation between them is checked.
+- They are stored in `ListingTerms.extra_attributes` (JSON, AD-4): a key per answered field, money as a two-decimal
+  string. `payment_type`, `title_document_type` and `mortgage_declaration` are public filters.
+- `video_tour_url` (type `url`, both purposes): `https://` and a named host only; no user part, port, IP address or
+  space (`invalid_url`); chat links (`wa.me`, `t.me` and the like) and links holding a phone, email or address are
+  `contains_contact_details`. The server never fetches it; clients show it as a link, never an embed.
+- **Floor plan:** `PUT` and `DELETE /api/v1/listings/{id}/floor-plan`. One per Listing, processed and counted against
+  the storage cap like an image, served by the media endpoint, removed with the Listing's images. It is a separate
+  table (`ListingFloorPlan`): never a photo, cover, part of the 10-image limit or of the publication image rule.
