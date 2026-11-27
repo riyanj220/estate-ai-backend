@@ -55,3 +55,6 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 # Uploaded media goes to a throw-away directory, never the developer's MEDIA_ROOT.
 MEDIA_ROOT = tempfile.mkdtemp(prefix="estate-ai-test-media-")
 atexit.register(shutil.rmtree, MEDIA_ROOT, ignore_errors=True)
+
+# Same thread, same transaction: a worker thread would not see a test's uncommitted rows.
+VALUATION_BACKGROUND_ESTIMATES = False

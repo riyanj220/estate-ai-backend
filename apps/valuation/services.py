@@ -7,11 +7,11 @@ import time
 import uuid
 from collections.abc import Mapping
 from concurrent.futures import TimeoutError as FutureTimeout
-from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -22,12 +22,12 @@ from apps.identity.policy import can
 from apps.kernel import ai_log, runtime
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
 from apps.kernel.errors import DomainError
+from apps.listings import lifecycle, validation
 from apps.listings import selectors as listings
-from apps.listings import validation
 from apps.listings.services import FieldsInvalid
-from apps.valuation import features, model_store, selectors, supportability
-from apps.valuation.data import localities
+from apps.valuation import features, forecasting, model_store, selectors
 from apps.valuation.models import PriceEstimate, ValuationModelVersion
+from apps.valuation.selectors import EstimateOutcome
 
 logger = logging.getLogger("estate.valuation")
 
@@ -36,16 +36,6 @@ ATTRIBUTE_FIELDS = tuple(name for name in features.SOURCE_FIELDS if name != "sub
 TIMEOUT_SECONDS = 20  # the first call imports scikit-learn; later ones take milliseconds
 ROUND_TO = 1000  # PKR; the model is no more precise than this
 AI_FEATURE = "price_estimate"
-
-
-@dataclass(frozen=True)
-class EstimateOutcome:
-    """Either a value (`reason` None) or an unavailable reason and no number."""
-
-    value: Decimal | None = None
-    model_version: int | None = None
-    estimated_at: datetime | None = None
-    reason: str | None = None
 
 
 def _require_requester(actor: Actor) -> None:
@@ -90,58 +80,82 @@ def estimate_for_attributes(
     wire = {name: listings.field_text(name, value) for name, value in checked.items()}
     wire |= {"purpose": purpose, "category": category, "subtype": subtype}
     wire["city"] = chosen.city_id if chosen else None
-    return _estimate(actor, wire, listing_id=None)
+    return _estimate(actor.account_id, wire, listing_id=None)
 
 
-def estimate_for_draft(actor: Actor, listing_id) -> EstimateOutcome:
-    """An estimate for the account's own Draft.
+def estimate_for_listing(actor: Actor, listing_id) -> EstimateOutcome:
+    """An estimate for the account's own Draft or Published Listing (the owner's recompute).
 
     Visitor `unauthenticated`; not the owner's (also unknown and malformed) `not_found`;
-    Suspended or Deactivated `forbidden`; a Listing that is not a Draft `conflict`."""
+    Suspended or Deactivated `forbidden`; an Archived, Sold or Rented one `conflict`."""
     require_signed_in(actor)
     view = listings.get_owned_listing(actor, listing_id)
     _require_requester(actor)
-    if view.status != "draft":
+    if view.status != "draft" and not lifecycle.is_published(view):
         raise DomainError("conflict")
-    return _estimate(actor, view.fields, listing_id=view.id)
+    return _estimate(actor.account_id, view.fields, listing_id=view.id)
 
 
-def _name_of(names, value) -> str | None:
-    key = catalog.parse_uuid(value)
-    return None if key is None else names([key]).get(key)
+def recompute_public_listing(actor: Actor, listing_id) -> EstimateOutcome:
+    """Compute and store the estimate of a publicly visible Listing from its public model inputs,
+    on the owner's account. The platform's own work (events, lazy repair): no throttle.
+
+    The system actor only; a Listing that is not publicly visible is `not_found`."""
+    view = listings.public_listing(actor, listing_id)
+    owner = listings.public_owner_id(actor, view.id)
+    return _estimate(owner, selectors.listing_fields(view), listing_id=view.id)
 
 
-def _estimate(actor: Actor, fields: Mapping, listing_id: uuid.UUID | None) -> EstimateOutcome:
-    locality = _name_of(catalog.locality_names, fields.get("locality"))
-    reason = supportability.classify(
-        purpose=fields.get("purpose"),
-        category=fields.get("category"),
-        subtype=fields.get("subtype"),
-        city=_name_of(catalog.city_names, fields.get("city")),
-        locality=locality,
-        area_value=fields.get("area_value"),
-        area_unit=fields.get("area_unit"),
-        marla_basis=fields.get("marla_basis"),
-        covered=localities.load().base_rates,
-    )
+def schedule_listing_estimate(actor: Actor, listing_id) -> None:
+    """`recompute_public_listing` without making the caller wait: on the runtime executor (in the
+    calling thread when `VALUATION_BACKGROUND_ESTIMATES` is off, as in tests). When it cannot run
+    or fails, the Listing has no current estimate until `current_estimate` or the owner repairs
+    it."""
+    if not settings.VALUATION_BACKGROUND_ESTIMATES:
+        _scheduled(actor, listing_id, _infer_now)
+        return
+    try:
+        # already on a heavy slot: inference runs in this task, not in a second one
+        runtime.submit_heavy(_scheduled, actor, listing_id, _infer_now)
+    except runtime.ExecutorBusy:
+        logger.warning("estimate_not_scheduled", extra={"event": "estimate_not_scheduled"})
+
+
+def _scheduled(actor: Actor, listing_id, infer) -> None:
+    try:
+        view = listings.public_listing(actor, listing_id)
+    except DomainError:  # gone or no longer public meanwhile
+        return
+    if selectors.current_model() is None:
+        return
+    owner = listings.public_owner_id(actor, view.id)
+    _estimate(owner, selectors.listing_fields(view), listing_id=view.id, infer=infer)
+
+
+def _estimate(
+    account_id: uuid.UUID, fields: Mapping, listing_id: uuid.UUID | None, infer=None
+) -> EstimateOutcome:
+    locality = selectors.name_of(catalog.locality_names, fields.get("locality"))
+    reason = selectors.unsupported_reason(fields, locality)
     if reason:
         return EstimateOutcome(reason=reason)
     inputs = features.snapshot_of(fields, locality)
     model = selectors.current_model()
-    value, reason = _run_model(model, inputs)
+    value, reason = _run_model(model, inputs, infer or _infer_bounded)
     if reason:
         return EstimateOutcome(reason=reason)
     row = PriceEstimate.objects.create(
-        account_id=actor.account_id,
+        account_id=account_id,
         listing_id=listing_id,
         model_version_id=model.id,
         feature_schema_version=features.FEATURE_SCHEMA_VERSION,
         inputs=inputs,
         inputs_sha256=features.snapshot_hash(inputs),
         value=value,
+        forecast=forecasting.compute(value, locality),
         created_at=timezone.now(),
     )
-    return EstimateOutcome(row.value, model.version, row.created_at)
+    return EstimateOutcome(row.value, model.version, row.created_at, forecast=row.forecast)
 
 
 def _infer(model: selectors.ModelVersionRef, inputs: dict) -> float | None:
@@ -153,17 +167,29 @@ def _infer(model: selectors.ModelVersionRef, inputs: dict) -> float | None:
         return None
 
 
-def _run_model(model, inputs: dict) -> tuple[Decimal | None, str | None]:
+def _infer_now(model: selectors.ModelVersionRef, inputs: dict) -> float | None:
+    return _infer(model, inputs)
+
+
+def _infer_bounded(model: selectors.ModelVersionRef, inputs: dict) -> float | None:
+    """On a heavy slot with a time limit: for a caller that waits for the answer."""
+    future = runtime.submit_heavy(_infer, model, inputs)
+    try:
+        return future.result(timeout=TIMEOUT_SECONDS)
+    except FutureTimeout:
+        future.cancel()
+        raise
+
+
+def _run_model(model, inputs: dict, infer) -> tuple[Decimal | None, str | None]:
     """(value, None) or (None, reason). Every attempt is in the AI request log, without content."""
     started = time.monotonic()
     value, reason, outcome = None, "temporarily_unavailable", "error"
     try:
         if model is not None:
-            future = runtime.submit_heavy(_infer, model, inputs)
             try:
-                raw = future.result(timeout=TIMEOUT_SECONDS)
+                raw = infer(model, inputs)
             except FutureTimeout:
-                future.cancel()
                 outcome = "timeout"
             else:
                 if raw is None:

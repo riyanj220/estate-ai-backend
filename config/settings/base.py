@@ -77,6 +77,8 @@ def build_database(user: str, password: str) -> dict:
 # Runtime executor (AD-14): heavy work never uses more than total minus reserved workers.
 RUNTIME_EXECUTOR_MAX_WORKERS = env_int("RUNTIME_EXECUTOR_MAX_WORKERS", 4)
 RUNTIME_EXECUTOR_RESERVED_WORKERS = env_int("RUNTIME_EXECUTOR_RESERVED_WORKERS", 1)
+# Estimates after publication and edits run on the executor, so no request waits for them.
+VALUATION_BACKGROUND_ESTIMATES = True
 validate_limits(RUNTIME_EXECUTOR_MAX_WORKERS, RUNTIME_EXECUTOR_RESERVED_WORKERS)
 
 # Mail (Story 1.13). Delivery is off the request thread unless MAIL_SEND_INLINE (tests).
@@ -176,6 +178,7 @@ SPECTACULAR_SETTINGS = {
         "VisibilityEnum": "apps.listings.lifecycle.Visibility",
         "ListingStatusEnum": ["draft", "published", "archived", "sold", "rented", "removed"],
         "FieldRequirementEnum": ["required_for_publication", "recommended", "optional"],
+        "EstimateStatusEnum": ["available", "unavailable"],
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",

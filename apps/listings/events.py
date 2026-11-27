@@ -17,7 +17,7 @@ class ListingModelInputsChanged(DomainEvent):
 @dataclass(frozen=True)
 class ListingPublished(DomainEvent):
     """A Draft became Published, or an Archived Listing was republished (`republished`), after
-    commit. Ids and that flag only; nothing subscribes yet."""
+    commit. Ids and that flag only; `valuation` computes the estimate."""
 
     name = "listing.published"
     listing_id: uuid.UUID

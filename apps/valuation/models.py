@@ -32,7 +32,7 @@ class PriceEstimate(models.Model):
 
     `inputs` is the non-private feature snapshot (`features.SOURCE_FIELDS`, the locality by name):
     `features.build_features(inputs)` and the recorded model version reproduce `value`.
-    `listing_id` is the Draft it was requested for, null for entered attributes; there is no
+    `listing_id` is the Listing it is for, null for entered attributes; there is no
     foreign key (another app's table), so deletion goes through `listing.deleted` and the
     retention job."""
 
@@ -44,6 +44,8 @@ class PriceEstimate(models.Model):
     inputs = models.JSONField()
     inputs_sha256 = models.CharField(max_length=64)
     value = models.DecimalField(max_digits=14, decimal_places=2)  # PKR
+    # the 5-Year Price Forecast of `value` (`forecasting.compute`); null on rows older than it
+    forecast = models.JSONField(null=True)
     created_at = models.DateTimeField()
 
     class Meta:

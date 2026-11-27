@@ -605,6 +605,18 @@ def public_listing(viewer: Actor, listing_id) -> PublicListingView:
     return public_view_of(row)
 
 
+def public_owner_id(system: Actor, listing_id) -> uuid.UUID:
+    """The owning account of a publicly visible Listing, for derived rows kept per account (a
+    stored estimate). The system actor only; anything else is `not_found`."""
+    key = canonical_uuid(listing_id)
+    owner = None
+    if system.kind is ActorKind.SYSTEM and key is not None:
+        owner = public_listings().filter(id=key).values_list("owner_account_id", flat=True).first()
+    if owner is None:
+        raise DomainError("not_found")
+    return owner
+
+
 # --- public discovery (Story 3.1) ----------------------------------------------------------------
 
 SORT_NEWEST = "newest"
