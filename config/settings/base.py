@@ -81,8 +81,11 @@ RUNTIME_EXECUTOR_RESERVED_WORKERS = env_int("RUNTIME_EXECUTOR_RESERVED_WORKERS",
 VALUATION_BACKGROUND_ESTIMATES = True
 validate_limits(RUNTIME_EXECUTOR_MAX_WORKERS, RUNTIME_EXECUTOR_RESERVED_WORKERS)
 
-# AI gateway (AD-8, AD-25). Only the recorded stub exists so far: no network, no keys.
+# AI gateway (AD-8, AD-25). `stub` (default) uses no network and no key; `gemini` calls Google.
 AI_PROVIDER = env("AI_PROVIDER", "stub")
+GEMINI_API_KEY = env("GEMINI_API_KEY", "")  # secret: never log or print it
+GEMINI_MODEL = env("GEMINI_MODEL", "gemini-3.5-flash-lite")
+GEMINI_EMBEDDING_MODEL = env("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
 # Provider requests allowed per UTC day; at least half is kept for signed-in Listing creation.
 AI_DAILY_BUDGET = env_int("AI_DAILY_BUDGET", 1000)
 AI_RESERVED_PERCENT = env_int("AI_RESERVED_PERCENT", 50)

@@ -1,4 +1,5 @@
 import atexit
+import os
 import shutil
 import tempfile
 
@@ -61,5 +62,9 @@ VALUATION_BACKGROUND_ESTIMATES = False
 
 # Tests never call a provider, whatever a developer's environment says.
 AI_PROVIDER = "stub"
+os.environ.pop("GEMINI_API_KEY", None)  # nor does the test process keep a real key
+GEMINI_API_KEY = ""
+GEMINI_MODEL = "gemini-test-model"
+GEMINI_EMBEDDING_MODEL = "gemini-test-embedding"
 AI_DAILY_BUDGET = 1000
 AI_RESERVED_PERCENT = 50

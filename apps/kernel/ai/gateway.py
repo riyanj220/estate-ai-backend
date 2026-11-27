@@ -14,6 +14,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 
 from django.db import DatabaseError, transaction
@@ -157,17 +158,24 @@ def _admit(
         decision = ratelimit.hit(scope, key, now)
         if not decision.allowed:
             return _fallback(feature.name, adapter, started, "blocked", decision.retry_after)
+    reserved = feature.reserved and actor.account_id is not None
+    return _spend(feature.name, adapter, started, reserved=reserved, now=now)
+
+
+def _spend(
+    feature: str, adapter, started: float, *, reserved: bool, now: datetime | None
+) -> AiResult | None:
+    """Count one provider request; None when allowed, else the fallback."""
     try:
-        reserved = feature.reserved and actor.account_id is not None
         allowed = budget.take(ai_log.normalise_token(adapter.provider), reserved=reserved, now=now)
     except DatabaseError as exc:  # fail closed: an uncounted call could exhaust a free tier
         logger.warning(
             "ai_budget_failure",
             extra={"event": "ai_budget_failure", "exception_class": type(exc).__name__},
         )
-        return _fallback(feature.name, adapter, started, "fallback")
+        return _fallback(feature, adapter, started, "fallback")
     if not allowed:
-        return _fallback(feature.name, adapter, started, "budget_exhausted")
+        return _fallback(feature, adapter, started, "budget_exhausted")
     return None
 
 
@@ -228,16 +236,24 @@ def transcribe(
     )
 
 
-def embed(actor: Actor, texts) -> AiResult:
-    """The embedding model runs locally (AD-8): flagged and logged, but no limit or budget."""
+def embed(actor: Actor, texts, *, now: datetime | None = None) -> AiResult:
+    """Flagged and logged, with no per-account limit. A local embedding model (AD-8) needs no
+    budget; a provider's counts against the open part of its daily budget."""
     texts = tuple(texts)
     require_redacted(*texts)
     adapter, started = get_adapter(), time.monotonic()
+    logged = SimpleNamespace(
+        provider=adapter.provider, model=getattr(adapter, "embedding_model", adapter.model)
+    )
     if not flags.is_enabled(FLAG):
-        return _fallback("embedding", adapter, started, "fallback")
+        return _fallback("embedding", logged, started, "fallback")
+    if not adapter.local_embeddings:
+        refused = _spend("embedding", logged, started, reserved=False, now=now)
+        if refused:
+            return refused
     return _call(
         "embedding",
-        adapter,
+        logged,
         started,
         EMBEDDING_TIMEOUT,
         lambda: adapter.embed(texts, timeout=EMBEDDING_TIMEOUT),

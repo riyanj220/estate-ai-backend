@@ -1,4 +1,4 @@
-"""The recorded-stub adapter: the default, and the only one until the provider adapters exist.
+"""The recorded-stub adapter: the default, and the only one tests use.
 
 It implements all three ports without any network and records every request it receives, so tests
 can prove what would have left the machine. Tests script it with `reply`, `fail_with` and `delay`.
@@ -26,6 +26,7 @@ class Recorded:
 class RecordedStub:
     provider = "stub"
     model = "recorded-stub"
+    local_embeddings = True
 
     def __init__(self) -> None:
         self.requests: deque[Recorded] = deque(maxlen=HISTORY)
