@@ -51,6 +51,9 @@ DB_HOST = env("POSTGRES_HOST", "127.0.0.1")
 DB_PORT = env_int("POSTGRES_PORT", 5432)
 MIGRATOR_DB_USER = env("MIGRATOR_USER", "migrator")
 RUNTIME_DB_USER = env("RUNTIME_USER", "runtime")
+# `purger` deletes expired history the runtime role may not (Stories 10.12, 10.13). Its connection
+# alias `purge` exists only where PURGE_PASSWORD is set: operator jobs, never the serving process.
+PURGE_DB_USER = env("PURGE_USER", "purger")
 
 # Tables the runtime role may read and insert but not delete, truncate or update (the audit table,
 # Story 1.10), except for the columns named in RUNTIME_COLUMN_UPDATES below.
@@ -66,6 +69,16 @@ RUNTIME_APPEND_ONLY_TABLES: list[str] = [
 RUNTIME_COLUMN_UPDATES: dict[str, list[str]] = {
     "listings_publicationevent": ["correction_used", "identity_fingerprint"],
 }
+# Everything the purge role may touch: SELECT and DELETE on these tables, nothing else.
+PURGE_ROLE_TABLES: list[str] = [
+    "kernel_auditrecord",
+    "listings_publicationevent",
+    "governance_moderationaction",
+    "governance_report",
+    "governance_reporttransition",
+    "governance_verificationrequest",
+    "governance_verificationdecision",
+]
 
 
 # Story 2.16: `seed_sample_data` runs under the local and test settings only. A staging or other

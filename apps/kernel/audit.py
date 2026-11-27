@@ -4,6 +4,9 @@ Owning apps declare each action once with `register_action(action, schema)` (fro
 `AppConfig.ready`). A schema maps every allowed metadata key to `bool`, `int`, `uuid.UUID` or a
 collection of allowed strings, never free text. `record` refuses anything else before writing,
 so contact details and message text cannot be smuggled in. It never swallows its own errors.
+
+Records are immutable in the product. Only `purge_expired` removes them, after 24 months, through
+the purge database role, run by the operator command `purge_audit_records` (Story 10.13).
 """
 
 import re
@@ -16,6 +19,7 @@ from django.db import connection
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.kernel import retention
 from apps.kernel.actor import Actor, require_admin
 from apps.kernel.models import AuditRecord
 from apps.kernel.privacy.patterns import LONG_DIGIT_RUN
@@ -25,6 +29,7 @@ _KEY = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
 _SCALARS = (bool, int, uuid.UUID)
 READ_ACTION = "privacy.viewed"  # written only by kernel.privacy.reads
 REASON_MAX = 300
+RETENTION_MONTHS = 24  # PRD section 8.3
 
 _actions: dict[str, dict[str, Any]] = {}
 
@@ -116,7 +121,7 @@ def page(
     cursor: uuid.UUID | None = None,
 ) -> tuple[list[AuditRecord], str | None]:
     """One page of the trail for review (Story 10.7), newest first, and the next cursor. Read
-    only: nothing in the product changes or deletes a record."""
+    only: nothing in the product changes a record (retention is `purge_expired`)."""
     require_admin(actor)
     rows = AuditRecord.objects.all()
     exact = {
@@ -138,6 +143,17 @@ def page(
     found = list(rows.order_by("-created_at", "-id")[: PAGE_SIZE + 1])
     items = found[:PAGE_SIZE]
     return items, str(items[-1].id) if len(found) > PAGE_SIZE else None
+
+
+def purge_expired(now: datetime, dry_run: bool) -> int:
+    """Delete records older than 24 months with the purge role (dry run: only count). Not a
+    `run_retention` job: an operator runs `purge_audit_records`."""
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("now must be timezone-aware")
+    cutoff = retention.months_ago(now, RETENTION_MONTHS)
+    return retention.delete_with_purge_role(
+        AuditRecord.objects.filter(created_at__lt=cutoff), dry_run
+    )
 
 
 def record(

@@ -2,12 +2,13 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connections
 
-from config.privileges import grant_runtime_privileges, role_exists
+from config.privileges import grant_purge_privileges, grant_runtime_privileges, role_exists
 
 
 class Command(BaseCommand):
     help = (
-        "Grant DML (never DDL) privileges to the runtime database role. "
+        "Grant DML (never DDL) privileges to the runtime database role, and SELECT and DELETE "
+        "on settings.PURGE_ROLE_TABLES to the purge role if it exists. "
         "Append-only tables come from settings.RUNTIME_APPEND_ONLY_TABLES, the columns "
         "they may still update from settings.RUNTIME_COLUMN_UPDATES."
     )
@@ -25,3 +26,8 @@ class Command(BaseCommand):
             connection, role, settings.RUNTIME_APPEND_ONLY_TABLES, settings.RUNTIME_COLUMN_UPDATES
         )
         self.stdout.write("Runtime privileges granted.")
+        if role_exists(connection, settings.PURGE_DB_USER):
+            grant_purge_privileges(connection, settings.PURGE_DB_USER, settings.PURGE_ROLE_TABLES)
+            self.stdout.write("Purge privileges granted.")
+        else:
+            self.stdout.write("Purge database role does not exist: no purge privileges granted.")

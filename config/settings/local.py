@@ -18,6 +18,7 @@ from .base import *  # noqa: E402, F403
 from .base import (  # noqa: E402
     INSTALLED_APPS,
     MIGRATOR_DB_USER,
+    PURGE_DB_USER,
     RUNTIME_DB_USER,
     build_database,
 )
@@ -50,6 +51,8 @@ DATABASES = {
     "default": build_database(RUNTIME_DB_USER, env("RUNTIME_PASSWORD")),
     "migrator": build_database(MIGRATOR_DB_USER, env("MIGRATOR_PASSWORD")),
 }
+if env("PURGE_PASSWORD", ""):
+    DATABASES["purge"] = build_database(PURGE_DB_USER, env("PURGE_PASSWORD"))
 
 # Mailpit catcher; start-up refuses any non-loopback host so local mail never leaves the machine.
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"

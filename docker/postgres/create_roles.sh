@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Creates the migrator and runtime roles and the pgvector and btree_gist extensions.
+# Creates the migrator, runtime and purge roles and the pgvector and btree_gist extensions.
 # Runs from the Postgres image's init directory, and from CI against a service
 # container (set PGHOST, PGPORT and PGPASSWORD there). Idempotent.
 #
 # Required env: POSTGRES_USER, POSTGRES_DB, MIGRATOR_USER, MIGRATOR_PASSWORD,
-# RUNTIME_USER, RUNTIME_PASSWORD.
+# RUNTIME_USER, RUNTIME_PASSWORD. Optional: PURGE_PASSWORD (no purge role without it) and
+# PURGE_USER (default purger).
 set -euo pipefail
 
 : "${POSTGRES_USER:?}" "${POSTGRES_DB:?}"
@@ -38,3 +39,16 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 SQL
+
+# Purge: only deletes expired history (Stories 10.12, 10.13). LOGIN and CONNECT here; its table
+# rights (SELECT, DELETE on a fixed list) come from migrate or grant_runtime_privileges.
+if [ -n "${PURGE_PASSWORD:-}" ]; then
+  psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+    -v db="$POSTGRES_DB" -v p_user="${PURGE_USER:-purger}" -v p_pw="$PURGE_PASSWORD" <<'SQL'
+SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD %L',
+              :'p_user', :'p_pw')
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'p_user') \gexec
+SELECT format('ALTER ROLE %I PASSWORD %L', :'p_user', :'p_pw') \gexec
+SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'db', :'p_user') \gexec
+SQL
+fi

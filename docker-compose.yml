@@ -12,6 +12,9 @@ services:
       MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?run scripts/bootstrap_env.py first}
       RUNTIME_USER: ${RUNTIME_USER:-runtime}
       RUNTIME_PASSWORD: ${RUNTIME_PASSWORD:?run scripts/bootstrap_env.py first}
+      # Optional, so an .env made before Story 10.13 still works (no purge role until set).
+      PURGE_USER: ${PURGE_USER:-purger}
+      PURGE_PASSWORD: ${PURGE_PASSWORD:-}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:

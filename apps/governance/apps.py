@@ -8,6 +8,7 @@ class GovernanceConfig(AppConfig):
 
     def ready(self):
         from apps.governance import closure, erasure, reports, subscribers, support
+        from apps.governance import retention as record_retention
         from apps.governance.moderation import NOTIFICATION_KINDS
         from apps.identity.events import AccountSessionEnded
         from apps.kernel import audit, events, notifications, retention
@@ -41,6 +42,11 @@ class GovernanceConfig(AppConfig):
         # Story 9.5: reported Messages are read only with a recorded reason.
         register_private_target("report_snapshot", "The Messages of a Conversation Report")
         retention.register("governance.report_snapshots", reports.purge_deactivated_snapshots)
+        retention.register("governance.reports", record_retention.reports)
+        retention.register("governance.verification", record_retention.verification)
+        retention.register("governance.moderation_records", record_retention.moderation_records)
+        retention.register("governance.support_requests", record_retention.support_requests)
+        retention.register("governance.closure_requests", record_retention.closure_requests)
         # Stories 9.5 and 9.6.
         for event, handler in (
             (AccountSessionEnded, subscribers.on_session_ended),

@@ -1132,6 +1132,15 @@ def existing_listing_ids(actor: Actor, listing_ids) -> set[uuid.UUID]:
     return set(found.values_list("id", flat=True))
 
 
+def listing_ids_first_published_before(actor: Actor, listing_ids, before: datetime) -> set:
+    """Which of these Listings were first published before `before`, for retention sweeps
+    (system actor only)."""
+    if actor.kind is not ActorKind.SYSTEM:
+        raise DomainError("forbidden")
+    found = PropertyListing.objects.filter(id__in=list(listing_ids), first_published_at__lt=before)
+    return set(found.values_list("id", flat=True))
+
+
 def listing_ids_owned_by(owner_account_ids) -> list[uuid.UUID]:
     """The ids of every Listing owned by any of the accounts, oldest first."""
     return list(

@@ -18,3 +18,4 @@ class AssistantConfig(AppConfig):
         audit.register_action("assistant.account_erased", {})
         erasers.register("assistant", erasure.erase_account_data)
         retention.register("assistant.history", history_retention.purge_orphaned)
+        retention.register("assistant.published_history", history_retention.purge_published)

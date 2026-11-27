@@ -6,19 +6,27 @@ An app registers its job from `AppConfig.ready`:
 
 `purge(now, dry_run)` returns the number of rows deleted, or in dry-run the number that
 would be deleted, and deletes nothing. The kernel never imports an app; apps come to it.
+
+History the runtime role may not delete (append-only tables and the rows that cascade into them)
+is deleted through the `purge` connection, whose database role holds only SELECT and DELETE on
+`settings.PURGE_ROLE_TABLES` (Stories 10.12 and 10.13). Use `delete_with_purge_role`.
 """
 
+import calendar
 import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
+from django.conf import settings
 from django.db import transaction
+from django.db.models import QuerySet
 
 logger = logging.getLogger("estate.retention")
 
 Purge = Callable[[datetime, bool], int]
+PURGE_ALIAS = "purge"
 _NAME = re.compile(r"^[a-z][a-z0-9_.]{0,63}$")
 _jobs: dict[str, Purge] = {}
 
@@ -70,3 +78,35 @@ def run_all(now: datetime, dry_run: bool = False) -> list[JobResult]:
         else:
             results.append(JobResult(name, count))
     return results
+
+
+class PurgeRoleNotConfigured(RuntimeError):
+    """There are rows to purge but no `purge` connection (PURGE_PASSWORD is not set)."""
+
+
+def months_ago(now: datetime, months: int) -> datetime:
+    """`now` minus whole calendar months; a day the target month lacks becomes its last day."""
+    year, month = divmod(now.year * 12 + now.month - 1 - months, 12)
+    month += 1
+    return now.replace(
+        year=year, month=month, day=min(now.day, calendar.monthrange(year, month)[1])
+    )
+
+
+def purge_alias() -> str:
+    if PURGE_ALIAS not in settings.DATABASES:
+        raise PurgeRoleNotConfigured("set PURGE_PASSWORD for the purge database role")
+    return PURGE_ALIAS
+
+
+def delete_with_purge_role(rows: QuerySet, dry_run: bool) -> int:
+    """Delete `rows` (and what cascades from them) as the purge role, in its own transaction.
+    Returns the number of `rows` themselves. Counting uses the ordinary connection, so a dry run,
+    or a run with nothing to delete, needs no purge role."""
+    count = rows.count()
+    if dry_run or not count:
+        return count
+    alias = purge_alias()
+    with transaction.atomic(using=alias):
+        _, per_model = rows.using(alias).delete()
+    return per_model.get(rows.model._meta.label, 0)

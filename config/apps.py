@@ -9,15 +9,19 @@ def _grant_after_migrate(sender, using, **kwargs):
         return
     from django.db import connections
 
-    from config.privileges import grant_runtime_privileges, role_exists
+    from config.privileges import grant_purge_privileges, grant_runtime_privileges, role_exists
 
     connection = connections[using]
     role = settings.RUNTIME_DB_USER
-    if connection.settings_dict["USER"] == role or not role_exists(connection, role):
+    purger = settings.PURGE_DB_USER
+    if connection.settings_dict["USER"] in (role, purger):
         return
-    grant_runtime_privileges(
-        connection, role, settings.RUNTIME_APPEND_ONLY_TABLES, settings.RUNTIME_COLUMN_UPDATES
-    )
+    if role_exists(connection, role):
+        grant_runtime_privileges(
+            connection, role, settings.RUNTIME_APPEND_ONLY_TABLES, settings.RUNTIME_COLUMN_UPDATES
+        )
+    if role_exists(connection, purger):
+        grant_purge_privileges(connection, purger, settings.PURGE_ROLE_TABLES)
 
 
 class ConfigAppConfig(AppConfig):

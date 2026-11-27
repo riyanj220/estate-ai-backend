@@ -38,7 +38,7 @@ from apps.identity.capabilities import Access, Capability, matrix_access
 from apps.identity.policy import can
 from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, lock_account
 from apps.identity.state import AccountState
-from apps.kernel import audit, idempotency
+from apps.kernel import audit, idempotency, retention
 from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.kernel.events import emit
@@ -75,6 +75,7 @@ _REPUBLISH_KINDS = (KIND_REPUBLISH_COUNTED, KIND_REPUBLISH_FREE)
 _KEY = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 CORRECTION_WINDOW = timedelta(hours=24)
+EVENT_RETENTION_MONTHS = 24  # PRD section 8.3
 # What a correction accepts. `marla_basis` is not an identity field: it is here only as the
 # companion of a changed area, so that the corrected area is valid.
 CORRECTABLE_FIELDS = ("locality", "area_value", "area_unit", "marla_basis")
@@ -632,12 +633,23 @@ def restore_after_moderation(
     return moderation.Moderated(row.id, row.owner_account_id, before, row.status, row.restricted)
 
 
+def purge_old_events(now: datetime, dry_run: bool) -> int:
+    """Retention (Story 10.12): events older than 24 months, with their identity fingerprints.
+    The monthly count, the republication baseline and the correction window never look back that
+    far. The runtime role cannot delete events, so this uses the purge role."""
+    cutoff = retention.months_ago(now, EVENT_RETENTION_MONTHS)
+    return retention.delete_with_purge_role(
+        PublicationEvent.objects.filter(created_at__lt=cutoff), dry_run
+    )
+
+
 def remove_seed_events(actor: Actor, account_ids, *, using: str | None = None) -> int:
-    """Delete the `seed` events of the given (sample) accounts: the one place an event is ever
-    removed. System actor only (`forbidden` otherwise); never touches another kind. The runtime
-    role cannot delete events (it may insert, read and update only `correction_used` and
-    `identity_fingerprint`), so the sample-data command passes `using`, the
-    privileged connection alias (`sample_data.privileged_alias`). Returns the number removed."""
+    """Delete the `seed` events of the given (sample) accounts: apart from retention
+    (`purge_old_events`), the one place an event is removed. System actor only (`forbidden`
+    otherwise); never touches another kind. The runtime role cannot delete events (it may insert,
+    read and update only `correction_used` and `identity_fingerprint`), so the sample-data command
+    passes `using`, the privileged connection alias (`sample_data.privileged_alias`). Returns the
+    number removed."""
     if actor.kind is not ActorKind.SYSTEM:
         raise DomainError("forbidden")
     ids = list(account_ids)

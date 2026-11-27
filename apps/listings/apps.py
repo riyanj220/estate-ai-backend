@@ -12,7 +12,7 @@ class ListingsConfig(AppConfig):
         from apps.kernel import erasure as erasers
         from apps.kernel.ai import known_values
         from apps.kernel.privacy.reads import register_private_target
-        from apps.listings import erasure, lifecycle
+        from apps.listings import erasure, lifecycle, publication
         from apps.listings import retention as draft_retention
         from apps.listings.models import QUOTA_ACCOUNT_TYPES
         from apps.listings.selectors import known_private_addresses
@@ -72,3 +72,4 @@ class ListingsConfig(AppConfig):
         retention.register("listings.draft_notice", draft_retention.draft_notice)
         retention.register("listings.draft_expiry", draft_retention.draft_expiry)
         retention.register("listings.view_buckets", draft_retention.view_buckets)
+        retention.register("listings.publication_events", publication.purge_old_events)

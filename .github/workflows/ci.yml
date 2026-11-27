@@ -52,6 +52,8 @@ jobs:
       MIGRATOR_PASSWORD: ci-migrator-password-not-a-secret-0123456789
       RUNTIME_USER: runtime
       RUNTIME_PASSWORD: ci-runtime-password-not-a-secret-0123456789
+      PURGE_USER: purger
+      PURGE_PASSWORD: ci-purge-password-not-a-secret-0123456789
       PGHOST: 127.0.0.1
       DJANGO_ALLOWED_HOSTS: testserver,127.0.0.1,localhost
       CSRF_TRUSTED_ORIGINS: http://localhost:3000
