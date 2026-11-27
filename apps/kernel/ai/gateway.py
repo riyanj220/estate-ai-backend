@@ -21,14 +21,14 @@ from django.db import DatabaseError, transaction
 
 from apps.kernel import ai_log, flags, ratelimit, runtime
 from apps.kernel.actor import Actor, require_signed_in
-from apps.kernel.ai import budget
+from apps.kernel.ai import budget, oversight
 from apps.kernel.ai.adapters import get_adapter
 from apps.kernel.ai.ports import Audio, LLMRequest, require_redacted
 from apps.kernel.errors import DomainError
 
 logger = logging.getLogger("estate.ai")
 
-FLAG = "ai_gateway"
+FLAG = oversight.MASTER
 MAX_AUDIO_BYTES = 2 * 1024 * 1024  # far more than a 30 second recording
 EMBEDDING_TIMEOUT = 12.0
 
@@ -158,7 +158,8 @@ def _admit(
     now: datetime | None,
 ) -> AiResult | None:
     """None when the call may go ahead, else the fallback to return."""
-    if not flags.is_enabled(FLAG):
+    own = f"ai_{feature.name}"
+    if not flags.is_enabled(FLAG) or (own in oversight.NAMES and not flags.is_enabled(own)):
         return _fallback(feature.name, adapter, started, "fallback")
     if actor.account_id is not None:
         scope = feature.account_scope

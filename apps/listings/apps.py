@@ -19,6 +19,7 @@ class ListingsConfig(AppConfig):
 
         known_values.register("listings", known_private_addresses)
         register_private_target("listing_draft", "A Draft Listing's content")
+        register_private_target("listing_address", "A Listing's Private address")
         # Moderation (Story 9.4): the Listing id is the target; the reason stays in `governance`.
         for action in (
             "listing.restricted",

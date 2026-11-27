@@ -4,6 +4,7 @@ Rules live in `listings` and `governance`. Content is the public projection (nev
 address); a Draft's content is a reasoned private read.
 """
 
+from dataclasses import asdict
 from datetime import date
 
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
@@ -240,6 +241,34 @@ class AdminDraftReadView(ReasonedReadMixin, _AdminView):
         key = selectors.draft_id_for_read(actor, listing_id)
         detail = selectors.admin_read_draft_listing(actor, reason, key)
         return _detail_response(actor, detail, draft=True)
+
+
+class AdminListingAddressSerializer(serializers.Serializer):
+    """Private. All null when the Listing has no Private address."""
+
+    street = serializers.CharField(allow_null=True)
+    house_number = serializers.CharField(allow_null=True)
+    latitude = serializers.CharField(allow_null=True)
+    longitude = serializers.CharField(allow_null=True)
+
+
+class AdminListingAddressReadView(ReasonedReadMixin, _AdminView):
+    @extend_schema(
+        operation_id="read_admin_listing_address",
+        summary="Read a Listing's Private address, with a reason",
+        description=(
+            "Needs `X-CSRFToken`. A reasoned private read recorded in the audit trail, one "
+            "Listing at a time. " + _REFUSALS
+        ),
+        request=ReasonedReadSerializer,
+        responses={200: OpenApiResponse(AdminListingAddressSerializer, description="Private")},
+    )
+    def post(self, request, listing_id):
+        actor = get_actor(request)
+        reason = self.read_reason(request)
+        key = selectors.listing_id_for_address_read(actor, listing_id)
+        address = selectors.admin_read_listing_address(actor, reason, key)
+        return Response(AdminListingAddressSerializer(asdict(address)).data)
 
 
 def _moderate(request, listing_id, action: str) -> Response:

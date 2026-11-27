@@ -1350,3 +1350,41 @@ def admin_read_draft_listing(actor: Actor, reason: str, listing_id: uuid.UUID):
     if row.status != ListingStatus.DRAFT.value:
         raise DomainError("not_found")
     return _admin_detail(row)
+
+
+@dataclass(frozen=True)
+class AdminAddress:
+    """The Private address as an administrator reads it after giving a reason."""
+
+    street: str | None = field(repr=False)
+    house_number: str | None = field(repr=False)
+    latitude: str | None = field(repr=False)
+    longitude: str | None = field(repr=False)
+
+
+def listing_id_for_address_read(actor: Actor, listing_id) -> uuid.UUID:
+    require_admin(actor)
+    return _admin_row_of(listing_id).id
+
+
+def admin_read_listing_address(actor: Actor, reason: str, listing_id: uuid.UUID) -> AdminAddress:
+    """A reasoned private read (`docs/audit.md`) of one Listing's Private address (Story 10.4).
+    A Listing without one answers with empty values."""
+    record_private_read(actor, reason, ("listing_address", listing_id))
+    row = address_of(_admin_row_of(listing_id))
+    values = (
+        getattr(row, name, None) for name in ("street", "house_number", "latitude", "longitude")
+    )
+    return AdminAddress(*(None if value is None else str(value) for value in values))
+
+
+def admin_listing_totals(actor: Actor, since: datetime) -> tuple[dict[str, int], int, int]:
+    """Listings by status (every status, zero included) and how many were created since
+    `since`, then the Published total (Story 10.8)."""
+    require_admin(actor)
+    counted = dict(
+        PropertyListing.objects.values_list("status").annotate(total=Count("id")).order_by()
+    )
+    by_status = {status.value: counted.get(status.value, 0) for status in ListingStatus}
+    new = PropertyListing.objects.filter(created_at__gte=since).count()
+    return by_status, new, by_status[ListingStatus.PUBLISHED.value]

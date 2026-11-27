@@ -449,6 +449,22 @@ def report_queue(
     )
 
 
+def reports_about(actor: Actor, account_id: uuid.UUID, limit: int = 50) -> list[ReportRow]:
+    """Reports on this account's Listings, Conversations or Messages, newest first
+    (Story 10.4). As in the queue, no Message text or description."""
+    require_admin(actor)
+    rows = Report.objects.filter(subject_account_id=account_id).order_by("-created_at", "-id")
+    return [
+        ReportRow(r.id, r.target_type, _listing_id(r), _title(r), r.reason, r.status, r.created_at)
+        for r in rows[:limit]
+    ]
+
+
+def unresolved_report_count(actor: Actor) -> int:
+    require_admin(actor)
+    return Report.objects.filter(status__in=OPEN_REPORT_STATUSES).count()
+
+
 def open_report_count(actor: Actor, listing_id) -> int:
     require_admin(actor)
     return Report.objects.filter(

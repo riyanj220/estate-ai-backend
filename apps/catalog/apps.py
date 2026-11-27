@@ -14,3 +14,6 @@ class CatalogConfig(AppConfig):
         audit.register_action("city.created", {})
         audit.register_action("locality.created", {})
         audit.register_action("amenity.created", {})
+        # Story 10.5: what changed, never the name.
+        for action in ("city.updated", "locality.updated", "amenity.updated"):
+            audit.register_action(action, {"change": ["renamed", "deactivated", "reactivated"]})

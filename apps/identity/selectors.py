@@ -132,6 +132,191 @@ def admin_read_account(actor: Actor, reason: str, account_id: uuid.UUID) -> Admi
     )
 
 
+DIRECTORY_PAGE_SIZE = 20
+
+
+class InvalidCursor(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class DirectoryRow:
+    """An account in the administrator directory: no phone, address or full email."""
+
+    id: uuid.UUID
+    account_type: str
+    display_name: str
+    masked_email: str
+    state: AccountState
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class DirectoryPage:
+    items: list[DirectoryRow]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True)
+class AdminAccountProfile(DirectoryRow):
+    email_verified: bool
+    suspension_reason: str = field(repr=False)
+    suspended_at: datetime | None
+    deactivated_at: datetime | None
+    # Agencies only: the public profile fields
+    description: str
+    city: str | None
+    verification_status: str | None
+
+
+@dataclass(frozen=True)
+class AdminAccountContact:
+    """Private: read only with a recorded reason."""
+
+    email: str = field(repr=False)
+    phone: str = field(repr=False)
+    office_address: str = field(repr=False)  # agencies only
+
+
+_STATE_FILTERS = {
+    AccountState.DEACTIVATED: {"deactivated_at__isnull": False},
+    AccountState.SUSPENDED: {"deactivated_at__isnull": True, "suspended_at__isnull": False},
+    AccountState.EMAIL_UNVERIFIED: {
+        "deactivated_at__isnull": True,
+        "suspended_at__isnull": True,
+        "email_verified_at__isnull": True,
+    },
+    AccountState.ACTIVE: {
+        "deactivated_at__isnull": True,
+        "suspended_at__isnull": True,
+        "email_verified_at__isnull": False,
+    },
+}
+
+
+def _owner_accounts():
+    return Account.objects.filter(account_type__in=OWNER_TYPES).select_related(
+        "individual_profile", "agency_profile"
+    )
+
+
+def _profile_of(account: Account):
+    name = "agency_profile" if account.account_type == AccountType.AGENCY else "individual_profile"
+    return getattr(account, name, None)
+
+
+def _directory_row(account: Account) -> dict:
+    profile = _profile_of(account)
+    attribute = "agency_name" if account.account_type == AccountType.AGENCY else "full_name"
+    return {
+        "id": account.id,
+        "account_type": account.account_type,
+        "display_name": getattr(profile, attribute, ""),
+        "masked_email": mask_email(account.email),
+        "state": account.state,
+        "created_at": account.created_at,
+    }
+
+
+def admin_directory(
+    actor: Actor,
+    *,
+    query: str = "",
+    account_type: str | None = None,
+    state: str | None = None,
+    cursor: str | None = None,
+) -> DirectoryPage:
+    """Individual and Agency accounts, newest first, 20 per page (Story 10.4). `query` is part
+    of a name, or an account id. Email is not searched: that is the reasoned lookup."""
+    require_admin(actor)
+    rows = _owner_accounts()
+    if account_type is not None:
+        rows = rows.filter(account_type=account_type)
+    if state is not None:
+        rows = rows.filter(**_STATE_FILTERS[AccountState(state)])
+    query = query.strip()
+    if query:
+        match = Q(individual_profile__full_name__icontains=query) | Q(
+            agency_profile__agency_name__icontains=query
+        )
+        if (key := parse_id(query)) is not None:
+            match |= Q(id=key)
+        rows = rows.filter(match)
+    if cursor is not None:
+        key = parse_id(cursor)
+        last = Account.objects.filter(id=key).first() if key else None
+        if last is None:
+            raise InvalidCursor
+        rows = rows.filter(
+            Q(created_at__lt=last.created_at) | Q(created_at=last.created_at, id__lt=last.id)
+        )
+    found = list(rows.order_by("-created_at", "-id")[: DIRECTORY_PAGE_SIZE + 1])
+    items = found[:DIRECTORY_PAGE_SIZE]
+    return DirectoryPage(
+        [DirectoryRow(**_directory_row(a)) for a in items],
+        str(items[-1].id) if len(found) > DIRECTORY_PAGE_SIZE else None,
+    )
+
+
+def _owner_account(account_id) -> Account:
+    key = parse_id(account_id)
+    account = _owner_accounts().filter(id=key).first() if key else None
+    if account is None:
+        raise DomainError("not_found")
+    return account
+
+
+def admin_account_profile(actor: Actor, account_id) -> AdminAccountProfile:
+    """Status and non-private profile details of one account."""
+    require_admin(actor)
+    account = _owner_account(account_id)
+    agency = _profile_of(account) if account.account_type == AccountType.AGENCY else None
+    city = catalog.city_names([agency.city_id]).get(agency.city_id) if agency else None
+    return AdminAccountProfile(
+        **_directory_row(account),
+        email_verified=account.email_verified_at is not None,
+        suspension_reason=account.suspension_reason,
+        suspended_at=account.suspended_at,
+        deactivated_at=account.deactivated_at,
+        description=agency.description if agency else "",
+        city=city,
+        verification_status=agency.verification_status if agency else None,
+    )
+
+
+def account_id_for_contact_read(actor: Actor, account_id) -> uuid.UUID:
+    """The id when it names an Individual or Agency account, so no read of nothing is
+    recorded."""
+    require_admin(actor)
+    return _owner_account(account_id).id
+
+
+def admin_read_account_contact(
+    actor: Actor, reason: str, account_id: uuid.UUID
+) -> AdminAccountContact:
+    """A reasoned private read (`docs/audit.md`) of one account's contact details."""
+    record_private_read(actor, reason, ("account_contact", account_id))
+    account = _owner_account(account_id)
+    profile = _profile_of(account)
+    agency = account.account_type == AccountType.AGENCY
+    return AdminAccountContact(
+        email=account.email,
+        phone=getattr(profile, "business_phone" if agency else "phone", ""),
+        office_address=getattr(profile, "office_address", "") if agency else "",
+    )
+
+
+def admin_account_totals(actor: Actor, since: datetime) -> dict[str, int]:
+    """Accounts by type (every state), and how many of them were created since `since`."""
+    require_admin(actor)
+    rows = Account.objects.filter(account_type__in=OWNER_TYPES)
+    return {
+        "individual": rows.filter(account_type=AccountType.INDIVIDUAL).count(),
+        "agency": rows.filter(account_type=AccountType.AGENCY).count(),
+        "new": rows.filter(created_at__gte=since).count(),
+    }
+
+
 def get_signed_in_account(account_id) -> AccountView | None:
     """The account a session may act as: unknown and deactivated accounts give None."""
     view = get_account(account_id)

@@ -10,7 +10,9 @@ from pathlib import Path
 from apps.catalog import selectors as catalog
 from apps.identity.capabilities import Capability
 from apps.identity.policy import can
+from apps.kernel import flags
 from apps.kernel.actor import Actor, ActorKind
+from apps.kernel.ai import oversight
 from apps.kernel.errors import DomainError
 from apps.listings import selectors as listings
 from apps.valuation import features, model_store, supportability
@@ -139,6 +141,8 @@ def current_estimate(actor: Actor, listing_id) -> EstimateOutcome:
     reason = unsupported_reason(fields, locality)
     if reason:
         return EstimateOutcome(reason=reason)
+    if not flags.is_enabled(oversight.PRICE_ESTIMATE):  # a stored figure is hidden too
+        return EstimateOutcome(reason="temporarily_unavailable")
     found = stored_estimate(view.id, features.snapshot_of(fields, locality))
     if found is not None:
         return EstimateOutcome(
@@ -170,6 +174,6 @@ def latest_draft_estimate(actor: Actor, listing_id) -> StoredEstimate | None:
     Anything but the account's own Listing is `not_found`."""
     view = listings.get_owned_listing(actor, listing_id)
     locality = name_of(catalog.locality_names, view.fields.get("locality"))
-    if locality is None:
+    if locality is None or not flags.is_enabled(oversight.PRICE_ESTIMATE):
         return None
     return stored_estimate(view.id, features.snapshot_of(view.fields, locality))

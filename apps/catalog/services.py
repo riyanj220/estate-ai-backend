@@ -17,7 +17,7 @@ from apps.catalog.models import (
     KnowledgeDocument,
     Locality,
 )
-from apps.catalog.selectors import AmenityRef, CityRef, LocalityRef, get_city
+from apps.catalog.selectors import AmenityRef, CityRef, LocalityRef, get_city, parse_uuid
 from apps.kernel import audit
 from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.ai import gateway
@@ -127,14 +127,9 @@ def create_amenity(
         or not isinstance(sort_order, int)
         or isinstance(sort_order, bool)
         or not -(2**31) <= sort_order < 2**31  # the column is a 32-bit integer
-        or not isinstance(label, str)
     ):
         raise DomainError("validation_error")
-    label = " ".join(unicodedata.normalize("NFC", label).split())
-    if not LABEL_MIN <= len(label) <= LABEL_MAX or any(
-        unicodedata.category(ch)[0] == "C" for ch in label
-    ):
-        raise DomainError("validation_error")
+    label = _clean_label(label)
     with transaction.atomic():
         if Amenity.objects.filter(code=code).exists():
             raise DomainError("validation_error")
@@ -147,6 +142,107 @@ def create_amenity(
             raise DomainError("validation_error") from None
         audit.record(actor, "amenity.created", "amenity", row.id)
     return AmenityRef(code=row.code, label=row.label, kind=row.kind, group=row.group)
+
+
+def _clean_label(label) -> str:
+    if not isinstance(label, str):
+        raise DomainError("validation_error")
+    label = " ".join(unicodedata.normalize("NFC", label).split())
+    if not LABEL_MIN <= len(label) <= LABEL_MAX or any(
+        unicodedata.category(ch)[0] == "C" for ch in label
+    ):
+        raise DomainError("validation_error")
+    return label
+
+
+def _apply_changes(actor: Actor, row, kind: str, name_field: str, name, active, taken) -> None:
+    """Rename and/or (de)activate one locked row, one audit record per change that happens.
+    Reference items are never deleted, so a stored use of one keeps its name."""
+    if active is not None and not isinstance(active, bool):
+        raise DomainError("validation_error")
+    changes = []
+    if name is not None and name != getattr(row, name_field):
+        if taken(name):
+            raise DomainError("validation_error")
+        setattr(row, name_field, name)
+        changes.append("renamed")
+    if active is not None and active != row.is_active:
+        row.is_active = active
+        changes.append("reactivated" if active else "deactivated")
+    if not changes:
+        return
+    try:
+        with transaction.atomic():
+            row.save(update_fields=[name_field, "is_active"])
+    except IntegrityError:  # lost a race to the unique constraint
+        raise DomainError("validation_error") from None
+    for change in changes:
+        audit.record(actor, f"{kind}.updated", kind, row.id, {"change": change})
+
+
+def _locked(model, **lookup):
+    row = model.objects.select_for_update().filter(**lookup).first()
+    if row is None:
+        raise DomainError("not_found")
+    return row
+
+
+def update_city(actor: Actor, city_id, name=None, is_active=None) -> None:
+    """Administrators rename, deactivate or reactivate a city."""
+    require_admin(actor)
+    key = parse_uuid(city_id)
+    if key is None:
+        raise DomainError("not_found")
+    name = None if name is None else _clean_name(name)
+    with transaction.atomic():
+        row = _locked(City, id=key)
+        others = City.objects.exclude(id=row.id).annotate(lowered=Lower("name"))
+        _apply_changes(
+            actor,
+            row,
+            "city",
+            "name",
+            name,
+            is_active,
+            lambda new: others.filter(lowered=new.lower()).exists(),
+        )
+
+
+def update_locality(actor: Actor, locality_id, name=None, is_active=None) -> None:
+    """The same for an area or society. The price model knows localities by name, so a renamed
+    covered locality has no estimates until the model is retrained."""
+    require_admin(actor)
+    key = parse_uuid(locality_id)
+    if key is None:
+        raise DomainError("not_found")
+    name = None if name is None else _clean_name(name, digits=True)
+    with transaction.atomic():
+        row = _locked(Locality, id=key)
+        others = (
+            Locality.objects.filter(city_id=row.city_id)
+            .exclude(id=row.id)
+            .annotate(lowered=Lower("name"))
+        )
+        _apply_changes(
+            actor,
+            row,
+            "locality",
+            "name",
+            name,
+            is_active,
+            lambda new: others.filter(lowered=new.lower()).exists(),
+        )
+
+
+def update_amenity(actor: Actor, code: str, label=None, is_active=None) -> None:
+    """Relabel, deactivate or reactivate an amenity. The code Listings store never changes."""
+    require_admin(actor)
+    if not isinstance(code, str) or not _CODE.fullmatch(code):
+        raise DomainError("not_found")
+    label = None if label is None else _clean_label(label)
+    with transaction.atomic():
+        row = _locked(Amenity, code=code)
+        _apply_changes(actor, row, "amenity", "label", label, is_active, lambda _new: False)
 
 
 KNOWLEDGE_BATCH = 50  # passages per embedding request

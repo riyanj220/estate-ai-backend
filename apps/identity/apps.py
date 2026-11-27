@@ -66,6 +66,7 @@ class IdentityConfig(AppConfig):
             notifications.register_kind(kind, {})
 
         register_private_target("account", "An account's email, name and state")
+        register_private_target("account_contact", "An account's email, phone and office address")
 
         known_values.register("identity", known_private_values)
         subscribers.register()

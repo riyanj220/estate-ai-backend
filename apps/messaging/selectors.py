@@ -12,7 +12,7 @@ from apps.identity import selectors as identity
 from apps.identity.capabilities import Capability
 from apps.identity.policy import can
 from apps.identity.state import AccountState
-from apps.kernel.actor import Actor, ActorKind, require_signed_in
+from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.listings import selectors as listings
 from apps.messaging.models import Conversation, Message
@@ -304,3 +304,9 @@ def inquiries_by_listing(actor: Actor, listing_ids) -> dict[uuid.UUID, int]:
         .order_by()
     )
     return {key: counted.get(key, 0) for key in ids}
+
+
+def messages_sent_since(actor: Actor, since: datetime) -> int:
+    """A platform total for the administrator dashboard (Story 10.8): a count, never content."""
+    require_admin(actor)
+    return Message.objects.filter(created_at__gte=since).count()

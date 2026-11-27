@@ -19,8 +19,9 @@ from apps.catalog import registry
 from apps.catalog import selectors as catalog
 from apps.identity.capabilities import Capability
 from apps.identity.policy import can
-from apps.kernel import ai_log, runtime
+from apps.kernel import ai_log, flags, runtime
 from apps.kernel.actor import Actor, ActorKind, require_signed_in
+from apps.kernel.ai import oversight
 from apps.kernel.errors import DomainError
 from apps.listings import lifecycle, validation
 from apps.listings import selectors as listings
@@ -140,6 +141,8 @@ def _estimate(
     reason = selectors.unsupported_reason(fields, locality)
     if reason:
         return EstimateOutcome(reason=reason)
+    if not flags.is_enabled(oversight.PRICE_ESTIMATE):  # switched off by an administrator
+        return EstimateOutcome(reason="temporarily_unavailable")
     inputs = features.snapshot_of(fields, locality)
     model = selectors.current_model()
     value, reason = _run_model(model, inputs, infer or _infer_bounded)

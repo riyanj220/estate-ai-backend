@@ -9,12 +9,14 @@ so contact details and message text cannot be smuggled in. It never swallows its
 import re
 import uuid
 from collections.abc import Collection, Mapping
+from datetime import datetime
 from typing import Any
 
 from django.db import connection
+from django.db.models import Q
 from django.utils import timezone
 
-from apps.kernel.actor import Actor
+from apps.kernel.actor import Actor, require_admin
 from apps.kernel.models import AuditRecord
 from apps.kernel.privacy.patterns import LONG_DIGIT_RUN
 
@@ -93,6 +95,49 @@ def _validate(action: str, metadata: Mapping[str, Any] | None) -> dict[str, Any]
                 raise ValueError(f"metadata {key!r} must be a UUID")
             clean[key] = str(value)
     return clean
+
+
+PAGE_SIZE = 50
+
+
+class InvalidCursor(ValueError):
+    pass
+
+
+def page(
+    actor: Actor,
+    *,
+    actor_id: uuid.UUID | None = None,
+    action: str | None = None,
+    target_type: str | None = None,
+    target_id: uuid.UUID | None = None,
+    since: datetime | None = None,
+    before: datetime | None = None,
+    cursor: uuid.UUID | None = None,
+) -> tuple[list[AuditRecord], str | None]:
+    """One page of the trail for review (Story 10.7), newest first, and the next cursor. Read
+    only: nothing in the product changes or deletes a record."""
+    require_admin(actor)
+    rows = AuditRecord.objects.all()
+    exact = {
+        "actor_id": actor_id,
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "created_at__gte": since,
+        "created_at__lt": before,
+    }
+    rows = rows.filter(**{key: value for key, value in exact.items() if value is not None})
+    if cursor is not None:
+        last = AuditRecord.objects.filter(id=cursor).first()
+        if last is None:
+            raise InvalidCursor
+        rows = rows.filter(
+            Q(created_at__lt=last.created_at) | Q(created_at=last.created_at, id__lt=last.id)
+        )
+    found = list(rows.order_by("-created_at", "-id")[: PAGE_SIZE + 1])
+    items = found[:PAGE_SIZE]
+    return items, str(items[-1].id) if len(found) > PAGE_SIZE else None
 
 
 def record(

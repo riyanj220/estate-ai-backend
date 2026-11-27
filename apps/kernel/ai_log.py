@@ -13,6 +13,7 @@ log the exception class and carry on. Provider and model ids from outside should
 import re
 from datetime import datetime, timedelta
 
+from django.db.models import Count
 from django.utils import timezone
 
 from apps.kernel.models import AI_OUTCOMES, AiRequestLog
@@ -62,6 +63,26 @@ def record_ai_call(
         outcome=outcome,
         created_at=now or timezone.now(),
     )
+
+
+def outcome_counts(since: datetime) -> dict[str, dict[str, int]]:
+    """{feature: {outcome: calls}} since `since`. The log holds no content or account id."""
+    out: dict[str, dict[str, int]] = {}
+    rows = (
+        AiRequestLog.objects.filter(created_at__gte=since)
+        .values_list("feature", "outcome")
+        .annotate(total=Count("id"))
+        .order_by("feature", "outcome")
+    )
+    for feature, outcome, total in rows:
+        out.setdefault(feature, {})[outcome] = total
+    return out
+
+
+def recent_failures(feature: str, since: datetime, limit: int = 20) -> list[AiRequestLog]:
+    """The newest calls of one feature that did not succeed."""
+    rows = AiRequestLog.objects.filter(feature=feature, created_at__gte=since)
+    return list(rows.exclude(outcome="success").order_by("-created_at")[:limit])
 
 
 def purge_expired(now: datetime, dry_run: bool = False) -> int:

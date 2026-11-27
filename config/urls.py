@@ -5,14 +5,22 @@ from apps.presentation.adminapi.accounts import (
     AccountReactivateView,
     AccountSuspendView,
 )
+from apps.presentation.adminapi.audit import AuditTrailView
 from apps.presentation.adminapi.closure import (
     ClosureApproveView,
     ClosureQueueView,
     ClosureRejectView,
 )
+from apps.presentation.adminapi.dashboard import AdminDashboardView
+from apps.presentation.adminapi.directory import (
+    AccountContactReadView,
+    AccountDirectoryView,
+    AccountReviewView,
+)
 from apps.presentation.adminapi.flags import AdminFlagsView
 from apps.presentation.adminapi.listings import (
     AdminDraftReadView,
+    AdminListingAddressReadView,
     AdminListingsView,
     AdminListingView,
     ArchiveRemovedListingView,
@@ -22,10 +30,20 @@ from apps.presentation.adminapi.listings import (
     RestrictListingView,
 )
 from apps.presentation.adminapi.me import AdminMeView
+from apps.presentation.adminapi.oversight import AiOversightView, AiSwitchView
 from apps.presentation.adminapi.quota import (
     QuotaPolicyDetailView,
     QuotaPolicyView,
     QuotaUsageView,
+)
+from apps.presentation.adminapi.reference import (
+    AdminAmenitiesView,
+    AdminAmenityView,
+    AdminCitiesView,
+    AdminCityLocalitiesView,
+    AdminCityView,
+    AdminFixedCatalogueView,
+    AdminLocalityView,
 )
 from apps.presentation.adminapi.reports import (
     ReportDetailView,
@@ -181,7 +199,18 @@ urlpatterns = [
         name="admin-quota-policy-type",
     ),
     path("api/v1/admin/quota-usage", QuotaUsageView.as_view(), name="admin-quota-usage"),
+    path("api/v1/admin/accounts", AccountDirectoryView.as_view(), name="admin-accounts"),
     path("api/v1/admin/accounts/lookup", AccountLookupView.as_view(), name="admin-account-lookup"),
+    path(
+        "api/v1/admin/accounts/<str:account_id>",
+        AccountReviewView.as_view(),
+        name="admin-account",
+    ),
+    path(
+        "api/v1/admin/accounts/<str:account_id>/private",
+        AccountContactReadView.as_view(),
+        name="admin-account-private",
+    ),
     path(
         "api/v1/admin/accounts/<str:account_id>/suspend",
         AccountSuspendView.as_view(),
@@ -280,6 +309,42 @@ urlpatterns = [
         name="admin-report-read",
     ),
     path("api/v1/admin/flags", AdminFlagsView.as_view(), name="admin-flags"),
+    path("api/v1/admin/dashboard", AdminDashboardView.as_view(), name="admin-dashboard"),
+    path("api/v1/admin/audit-records", AuditTrailView.as_view(), name="admin-audit-records"),
+    path("api/v1/admin/ai-oversight", AiOversightView.as_view(), name="admin-ai-oversight"),
+    path(
+        "api/v1/admin/ai-oversight/switches/<str:name>",
+        AiSwitchView.as_view(),
+        name="admin-ai-switch",
+    ),
+    path(
+        "api/v1/admin/reference/fixed",
+        AdminFixedCatalogueView.as_view(),
+        name="admin-reference-fixed",
+    ),
+    path("api/v1/admin/reference/cities", AdminCitiesView.as_view(), name="admin-cities"),
+    path("api/v1/admin/reference/cities/<str:city_id>", AdminCityView.as_view(), name="admin-city"),
+    path(
+        "api/v1/admin/reference/cities/<str:city_id>/localities",
+        AdminCityLocalitiesView.as_view(),
+        name="admin-city-localities",
+    ),
+    path(
+        "api/v1/admin/reference/localities/<str:locality_id>",
+        AdminLocalityView.as_view(),
+        name="admin-locality",
+    ),
+    path("api/v1/admin/reference/amenities", AdminAmenitiesView.as_view(), name="admin-amenities"),
+    path(
+        "api/v1/admin/reference/amenities/<str:code>",
+        AdminAmenityView.as_view(),
+        name="admin-amenity",
+    ),
+    path(
+        "api/v1/admin/listings/<str:listing_id>/private-address",
+        AdminListingAddressReadView.as_view(),
+        name="admin-listing-address",
+    ),
     path("api/v1/admin/listings", AdminListingsView.as_view(), name="admin-listings"),
     path(
         "api/v1/admin/listings/<str:listing_id>", AdminListingView.as_view(), name="admin-listing"

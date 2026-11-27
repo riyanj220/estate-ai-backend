@@ -212,3 +212,8 @@ def admin_read_conversation_report(actor: Actor, reason: str, report_id: uuid.UU
     if row is None:
         raise DomainError("not_found")
     return ReportContent(row.description, row.snapshot["messages"])
+
+
+def pending_verification_count(actor: Actor) -> int:
+    require_admin(actor)
+    return VerificationRequest.objects.filter(status="pending").count()

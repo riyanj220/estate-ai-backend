@@ -10,10 +10,11 @@ from django.db.models import Case, IntegerField, Value, When
 from django.db.models.functions import Lower
 
 from apps.catalog.models import AMENITY_KINDS, Amenity, City, KnowledgeChunk, Locality
-from apps.kernel.actor import Actor
+from apps.kernel.actor import Actor, require_admin
 from apps.kernel.ai import gateway
 from apps.kernel.ai.known_values import known_values_for
 from apps.kernel.ai.redaction import redact
+from apps.kernel.errors import DomainError
 
 logger = logging.getLogger("estate.knowledge")
 
@@ -149,6 +150,45 @@ def list_amenities() -> tuple[AmenityRef, ...]:
 def amenity_codes() -> frozenset[str]:
     """The codes of the active amenities: what a listing may newly declare."""
     return frozenset(Amenity.objects.filter(is_active=True).values_list("code", flat=True))
+
+
+@dataclass(frozen=True)
+class AdminPlace:
+    id: uuid.UUID
+    name: str
+    is_active: bool
+    kind: str = ""  # localities only
+
+
+@dataclass(frozen=True)
+class AdminAmenity:
+    code: str
+    label: str
+    kind: str
+    group: str
+    is_active: bool
+
+
+def admin_cities(actor: Actor) -> list[AdminPlace]:
+    """Every city, deactivated ones included (Story 10.5)."""
+    require_admin(actor)
+    rows = City.objects.order_by(Lower("name"), "id")
+    return [AdminPlace(r.id, r.name, r.is_active) for r in rows]
+
+
+def admin_localities(actor: Actor, city_id) -> list[AdminPlace]:
+    require_admin(actor)
+    key = parse_uuid(city_id)
+    if key is None or not City.objects.filter(id=key).exists():
+        raise DomainError("not_found")
+    rows = Locality.objects.filter(city_id=key).order_by(Lower("name"), "id")
+    return [AdminPlace(r.id, r.name, r.is_active, r.kind) for r in rows]
+
+
+def admin_amenities(actor: Actor) -> list[AdminAmenity]:
+    require_admin(actor)
+    rows = Amenity.objects.order_by("kind", "group", "sort_order", "code")
+    return [AdminAmenity(r.code, r.label, r.kind, r.group, r.is_active) for r in rows]
 
 
 KNOWLEDGE_TOP = 3

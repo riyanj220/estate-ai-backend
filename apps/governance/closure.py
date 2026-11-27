@@ -172,6 +172,13 @@ def review_queue(actor: Actor, status: str = "pending", cursor: str | None = Non
     return QueuePage(_rows(items), str(items[-1].id) if len(page) > PAGE_SIZE else None)
 
 
+def requests_of(actor: Actor, account_id: uuid.UUID) -> list[QueueRow]:
+    """One account's closure requests, newest first (Story 10.4)."""
+    require_admin(actor)
+    rows = ClosureRequest.objects.filter(account_id=account_id).order_by("-submitted_at", "-id")
+    return _rows(list(rows[:PAGE_SIZE]))
+
+
 def _locked_pending(request_id):
     """Inside a transaction: the account, then the request, locked. Unknown ids are
     `not_found`; a decided request is `conflict`."""
