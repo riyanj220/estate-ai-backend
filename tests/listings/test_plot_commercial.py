@@ -637,12 +637,9 @@ def test_the_floor_check_constraint_still_guards_a_shop_row(db):
 
 # --- unsupported attributes ----------------------------------------------------------------------
 
-UNSUPPORTED = (
+UNSUPPORTED = (  # ids the registry does not define
     "installment_available",
-    "down_payment",
-    "title_document_type",
-    "mortgage_declaration",
-    "approval_reference_number",
+    "title_deed_scan",
 )
 
 
@@ -905,8 +902,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_under_the_current_version
     }
     assert PropertyListing.objects.get().registry_version == 4
     saved = update(account, view, {"possession_status": "file_only"})
-    assert saved.registry_version == registry.registry_version() == 11
-    assert PropertyListing.objects.get().registry_version == 11
+    assert saved.registry_version == registry.registry_version() == 12
+    assert PropertyListing.objects.get().registry_version == 12
 
 
 def drop_constraint(table, name):
@@ -1212,4 +1209,8 @@ def test_seller_declared_fields_are_flagged_in_the_registry_and_nowhere_else():
     assert {f.id for f in registry.fields() if f.seller_declared} == {
         *SELLER_DECLARED,
         "possession_availability",
+        "title_document_type",  # Story 11.3: the legal declarations
+        "approval_information",
+        "approval_reference_number",
+        "mortgage_declaration",
     }

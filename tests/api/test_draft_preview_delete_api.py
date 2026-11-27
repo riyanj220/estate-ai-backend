@@ -39,7 +39,7 @@ JPEG = make_image("JPEG", (1200, 800))
 PHONE = "+923001234567"
 STREET, HOUSE_NUMBER, LAT, LNG = "Mango Lane", "Plum Twelve", "31.512345", "74.398765"
 PUBLIC_KEYS = {
-    "id", "purpose", "category", "subtype", "title", "description", "fields", "media",
+    "id", "purpose", "category", "subtype", "title", "description", "fields", "media", "floor_plan",
     "registry_version", "estimate",
 }  # fmt: skip
 IMAGE_KEYS = {"id", "position", "is_cover", "content_type", "width", "height", "url"}

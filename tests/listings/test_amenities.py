@@ -26,7 +26,9 @@ from apps.listings.models import (
 )
 from tests.listings.support import (
     AMENITY_IDS,
+    DEFERRED_IDS,
     HOUSE,
+    LINK_IDS,
     PLOT_FILE,
     RENT_HOUSE,
     SHOP,
@@ -79,8 +81,9 @@ def counts():
 
 
 def test_the_registry_defines_the_amenities_field_last_with_the_right_shape():
-    assert registry.registry_version() == 11
-    assert tuple(f.id for f in registry.fields())[-1:] == AMENITY_IDS
+    assert registry.registry_version() == 12
+    ids = tuple(f.id for f in registry.fields())  # only the Epic 11 fields follow it
+    assert ids[: -len(DEFERRED_IDS) - len(LINK_IDS)][-1:] == AMENITY_IDS
     definition = registry.field("amenities")
     assert (definition.type, definition.requirement, definition.field_class) == (
         "amenities",
@@ -98,16 +101,18 @@ def test_the_registry_defines_the_amenities_field_last_with_the_right_shape():
 def test_the_field_is_stored_as_rows_and_is_editable_and_on_the_wire_before_the_derived_area():
     assert fields.STORAGE["amenities"] == fields.AMENITIES
     assert "amenities" in fields.EDITABLE_FIELDS
-    assert fields.WIRE_FIELDS[-2:] == ("amenities", "area_sqft")
+    # only the fields of Stories 11.3 and 11.4 follow it
+    assert fields.WIRE_FIELDS[-2 - len(DEFERRED_IDS) - len(LINK_IDS)] == "amenities"
+    assert fields.WIRE_FIELDS[-1] == "area_sqft"
     assert "amenities" not in {f.name for f in ListingAmenity._meta.get_fields()}  # no column
 
 
 def test_the_loader_accepts_the_type_and_refuses_a_private_one():
     text = registry.FIELDS_PATH.read_text(encoding="utf-8")
-    assert registry.parse(text).version == 11
+    assert registry.parse(text).version == 12
     tail = "    class: public\n    searchable: true\n    valuation_input: true\n"
-    assert text.endswith(tail)
-    private = text.removesuffix(tail) + "    class: private\n"
+    assert text.count(tail) == 1
+    private = text.replace(tail, "    class: private\n")
     with pytest.raises(ImproperlyConfigured, match="must be public"):
         registry.parse(private)
     wrong = text.replace("    section: amenities\n", "    section: elsewhere\n")

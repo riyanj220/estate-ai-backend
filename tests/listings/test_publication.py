@@ -227,6 +227,7 @@ def test_the_publish_module_imports_nothing_external():
         "ai_log",
         "storage",
         "media",
+        "floor_plan",
         "runtime",
         "notifications",
         "images",

@@ -48,6 +48,7 @@ WIRE_KEYS = {
     "fields",
     "provenance",
     "media",
+    "floor_plan",
     "restricted",
     "restriction_reason",
     "under_review",
@@ -118,7 +119,7 @@ def test_create_returns_the_wire_shape(kind):
     body = response.json()
     assert set(body) == WIRE_KEYS
     assert body["status"] == "draft" and body["visibility"] == "private"
-    assert (body["revision"], body["registry_version"]) == (1, 11)
+    assert (body["revision"], body["registry_version"]) == (1, 12)
     assert body["fields"] == {**BODY, **NEW_FIELDS} and body["provenance"] == {}
     assert body["media"] == [] and body["fields"]["amenities"] is None
     uuid.UUID(body["id"])
@@ -367,6 +368,7 @@ def test_listing_resource_is_exactly_the_wire_shape():
         "fields",
         "provenance",
         "media",
+        "floor_plan",
         "under_review",
         "restricted",
         "restriction_reason",
@@ -1102,7 +1104,7 @@ def test_house_details_over_http_use_native_json_types_and_stay_null_when_unknow
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["revision"] == 2 and body["registry_version"] == 11
+    assert body["revision"] == 2 and body["registry_version"] == 12
     assert body["fields"]["bedrooms"] == 4 and type(body["fields"]["bedrooms"]) is int
     assert body["fields"]["basement"] is False
     assert body["fields"]["covered_area_sqft"] == "2400.0000"
@@ -1254,7 +1256,7 @@ def test_plot_details_over_http_use_native_types_and_decimal_strings():
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["revision"] == 2 and body["registry_version"] == 11
+    assert body["revision"] == 2 and body["registry_version"] == 12
     assert body["fields"]["plot_width"] == "35.00" and body["fields"]["plot_depth"] == "70.50"
     assert body["fields"]["road_width_ft"] == "40.00"
     assert body["fields"]["corner_plot"] is True and body["fields"]["water"] is False
@@ -1401,10 +1403,7 @@ def test_the_measure_message_is_catalogue_text_without_the_value():
     "name",
     [
         "installment_available",
-        "down_payment",
-        "title_document_type",
-        "mortgage_declaration",
-        "approval_reference_number",
+        "title_deed_scan",
     ],
 )
 def test_unsupported_attributes_are_unknown_fields_over_http(name):
@@ -1499,7 +1498,7 @@ def test_rent_terms_over_http_use_native_types_and_a_plain_date():
     response = edit(client, created, RENT_TERMS_SAVE)
     assert response.status_code == 200
     body = response.json()
-    assert body["revision"] == 2 and body["registry_version"] == 11
+    assert body["revision"] == 2 and body["registry_version"] == 12
     wire = body["fields"]
     assert wire["availability_date"] == "2027-03-01"  # a date, never a timestamp
     assert wire["security_deposit"] == "50000.00" and wire["advance_rent"] == "25000.50"
@@ -1601,14 +1600,7 @@ def test_the_terms_messages_are_catalogue_texts_without_the_value():
 @pytest.mark.parametrize(
     "name",
     [
-        "payment_type",
-        "down_payment",
-        "total_installment_price",
-        "monthly_installment",
-        "remaining_installments",
         "ownership_document_type",
-        "title_document_type",
-        "approval_information",
         "installment_available",
     ],
 )

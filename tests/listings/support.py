@@ -147,7 +147,20 @@ PUBLIC_LOCATION_IDS = ("city", "locality", "society", "phase", "sector", "block"
 PRIVATE_ADDRESS_IDS = ("street", "house_number", "latitude", "longitude")
 LOCATION_IDS = (*PUBLIC_LOCATION_IDS, *PRIVATE_ADDRESS_IDS)  # Story 2.7, registry order
 AMENITY_IDS = ("amenities",)  # Story 2.8: the one map field, after the location
-TAIL_IDS = (*DETAIL_IDS, *TERMS_IDS, *LOCATION_IDS, *AMENITY_IDS)
+# Story 11.3: the deferred sale attributes (keys of `ListingTerms.extra_attributes`), then the link
+DEFERRED_IDS = (
+    "payment_type",
+    "down_payment",
+    "total_installment_price",
+    "monthly_installment",
+    "remaining_installments",
+    "title_document_type",
+    "approval_information",
+    "approval_reference_number",
+    "mortgage_declaration",
+)
+LINK_IDS = ("video_tour_url",)
+TAIL_IDS = (*DETAIL_IDS, *TERMS_IDS, *LOCATION_IDS, *AMENITY_IDS, *DEFERRED_IDS, *LINK_IDS)
 
 SALE_HOUSE = HOUSE  # a sale Draft
 RENT_HOUSE = ("rent", "house", "house")

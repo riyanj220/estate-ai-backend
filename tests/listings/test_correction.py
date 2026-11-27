@@ -145,7 +145,7 @@ def refused(account, view, changes=None, **kw):
 
 def test_the_identity_set_is_exactly_the_seven_fields():
     assert {f.id for f in registry.fields() if f.quota_identity} == set(IDENTITY)
-    assert registry.registry_version() == 11
+    assert registry.registry_version() == 12
     assert publication.CORRECTABLE_FIELDS == ("locality", "area_value", "area_unit", "marla_basis")
 
 

@@ -67,15 +67,8 @@ SALE_SET = {
     "price_negotiable": False,
     "possession_availability": "within_one_month",
 }
-DEFERRED = (
-    "payment_type",
-    "down_payment",
-    "total_installment_price",
-    "monthly_installment",
-    "remaining_installments",
+DEFERRED = (  # ids the registry still does not define
     "ownership_document_type",
-    "title_document_type",
-    "approval_information",
     "installment_available",
 )
 DATE_FIELD = registry.field("availability_date")
@@ -169,8 +162,8 @@ def test_the_wire_order_follows_the_registry_and_the_terms_come_after_the_detail
     assert names[-1] == "area_sqft"
     ids = [f.id for f in registry.fields()]
     # the location (Story 2.7) and the amenities (Story 2.8) are appended after them
-    after = len(TERMS_IDS) + len(LOCATION_IDS) + 1
-    assert ids[-after : -len(LOCATION_IDS) - 1] == list(TERMS_IDS)
+    start = ids.index(TERMS_IDS[0])
+    assert ids[start : start + len(TERMS_IDS) + len(LOCATION_IDS)] == [*TERMS_IDS, *LOCATION_IDS]
 
 
 def test_a_date_is_the_same_text_whatever_the_server_time_zone():
@@ -768,8 +761,8 @@ def test_a_draft_from_an_older_registry_is_revalidated_under_the_current_version
     }
     assert PropertyListing.objects.get().registry_version == 5
     saved = update(account, view, {"availability_date": "2027-03-01"})
-    assert saved.registry_version == registry.registry_version() == 11
-    assert PropertyListing.objects.get().registry_version == 11
+    assert saved.registry_version == registry.registry_version() == 12
+    assert PropertyListing.objects.get().registry_version == 12
 
 
 # --- stored values outside today's rules --------------------------------------------------------

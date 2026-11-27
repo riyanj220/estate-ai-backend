@@ -493,8 +493,8 @@ def test_an_older_registry_draft_is_revalidated_for_area():
     assert codes(account, view, {"area_value": "0"}) == {"area_value": "invalid_area"}
     assert PropertyListing.objects.get().registry_version == 2
     saved = update(account, view, {"area_value": "4", "area_unit": "sqft"})
-    assert saved.registry_version == registry.registry_version() == 11
-    assert PropertyListing.objects.get().registry_version == 11
+    assert saved.registry_version == registry.registry_version() == 12
+    assert PropertyListing.objects.get().registry_version == 12
 
 
 def test_ai_origin_area_is_unconfirmed_and_derived_stays_out_of_provenance():

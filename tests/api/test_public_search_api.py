@@ -251,7 +251,7 @@ def test_the_filter_schema():
     assert set(by_id) == {
         "purpose", "category", "subtype", "asking_price", "price_basis", "rental_period",
         "area_sqft", "bedrooms", "bathrooms", "furnishing", "parking_spaces", "city",
-        "locality", "amenities",
+        "locality", "amenities", "payment_type", "title_document_type", "mortgage_declaration",
     }  # fmt: skip
     assert by_id["bedrooms"]["params"] == ["bedrooms_min", "bedrooms_max"]
     assert by_id["bedrooms"]["max"] == "50"

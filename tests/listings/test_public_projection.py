@@ -37,7 +37,7 @@ FORBIDDEN_NAMES = (
     "address",
 )
 TOP_LEVEL = {
-    "id", "purpose", "category", "subtype", "title", "description", "fields", "media",
+    "id", "purpose", "category", "subtype", "title", "description", "fields", "media", "floor_plan",
     "registry_version",
 }  # fmt: skip
 

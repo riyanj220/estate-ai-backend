@@ -106,6 +106,7 @@ def test_card_and_detail_shapes(owner):
     detail = response.json()
     assert set(detail) == {
         "id", "purpose", "category", "subtype", "title", "description", "fields", "media",
+        "floor_plan",
         "registry_version", "city", "locality", "published_on", "advertiser",
     }  # fmt: skip
     assert detail["description"] == "A quiet home."

@@ -10,7 +10,7 @@ import yaml
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.catalog import registry
-from tests.listings.support import PRIVATE_ADDRESS_IDS, TAIL_IDS, TERMS_IDS
+from tests.listings.support import DEFERRED_IDS, PRIVATE_ADDRESS_IDS, TAIL_IDS, TERMS_IDS
 
 GOOD = yaml.safe_load(registry.FIELDS_PATH.read_text())
 
@@ -52,7 +52,7 @@ def add_field(**overrides):
 
 def test_the_shipped_registry_loads_with_the_identity_and_editing_fields():
     loaded = registry.load()
-    assert loaded.version == 11
+    assert loaded.version == 12
     assert [f.id for f in registry.fields()] == [
         "purpose",
         "category",
@@ -137,7 +137,7 @@ def test_plot_file_is_a_distinct_subtype_of_plot():
 
 
 def test_accessors_return_immutable_values():
-    assert registry.registry_version() == 11
+    assert registry.registry_version() == 12
     assert registry.field("purpose").allowed_values == ("sale", "rent")
     assert registry.field("nope") is None
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -277,7 +277,7 @@ def test_startup_fails_on_an_invalid_file(monkeypatch, tmp_path):
     finally:
         monkeypatch.undo()
         registry.load.cache_clear()
-    assert registry.load().version == 11
+    assert registry.load().version == 12
 
 
 def test_catalog_ready_loads_the_registry(monkeypatch):
@@ -344,8 +344,8 @@ def test_the_files_are_found_from_any_working_directory(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     registry.load.cache_clear()
     try:
-        assert registry.load().version == 11
-        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 11
+        assert registry.load().version == 12
+        assert registry.read_lock(registry.LOCK_PATH.read_text())[0] == 12
     finally:
         registry.load.cache_clear()
 
@@ -745,7 +745,7 @@ def test_a_boolean_field_takes_no_bounds_values_or_scale():
 
 
 def test_the_residential_fields_are_defined_by_the_registry():
-    assert registry.registry_version() == 11
+    assert registry.registry_version() == 12
     bedrooms = registry.field("bedrooms")
     assert bedrooms.requirement == "required_for_publication"
     assert bedrooms.searchable and bedrooms.valuation_input and bedrooms.ai_extractable
@@ -900,6 +900,10 @@ def test_the_seller_declared_fields_are_exactly_the_legal_and_possession_claims(
         "approval_authority",
         "plot_file_status",
         "possession_availability",  # Story 2.6: the seller's own claim about possession
+        "title_document_type",  # Story 11.3: the legal declarations
+        "approval_information",
+        "approval_reference_number",
+        "mortgage_declaration",
     }
 
 
@@ -989,13 +993,7 @@ def test_the_utility_plot_and_commercial_definitions():
 
 
 def test_unsupported_attributes_are_not_in_the_registry():
-    for name in (
-        "installment_available",
-        "down_payment",
-        "title_document_type",
-        "mortgage_declaration",
-        "approval_reference_number",
-    ):
+    for name in ("installment_available", "title_deed_scan"):
         assert registry.field(name) is None
 
 
@@ -1131,7 +1129,7 @@ def test_a_private_date_field_is_allowed_but_cannot_be_searchable():
 
 
 def test_version_6_adds_the_terms_after_every_details_field():
-    assert registry.registry_version() == 11
+    assert registry.registry_version() == 12
     ids = [f.id for f in registry.fields()]
     assert ids[-len(TAIL_IDS) :] == list(TAIL_IDS)
     assert registry.field("availability_date").type == "date"
@@ -1152,17 +1150,7 @@ def test_the_terms_applicability_is_by_purpose_only():
 
 
 def test_the_unsupported_terms_are_not_in_the_registry():
-    for name in (
-        "payment_type",
-        "down_payment",
-        "total_installment_price",
-        "monthly_installment",
-        "remaining_installments",
-        "ownership_document_type",
-        "title_document_type",
-        "approval_information",
-        "installment_available",
-    ):
+    for name in ("ownership_document_type", "installment_available"):
         assert registry.field(name) is None
 
 
@@ -1205,7 +1193,7 @@ def test_section_is_terms_or_details_and_defaults_to_details():
 
 def test_the_shipped_terms_fields_are_in_the_terms_section():
     terms = {f.id for f in registry.fields() if f.section == "terms"}
-    assert terms == {*TERMS_IDS, "rental_period"}
+    assert terms == {*TERMS_IDS, "rental_period", *DEFERRED_IDS}
     assert registry.field("asking_price").section == "details"
 
 
@@ -1290,10 +1278,11 @@ def test_the_location_section_is_a_known_section():
 
 
 def test_version_7_adds_the_location_after_the_terms():
-    assert registry.registry_version() == 11
+    assert registry.registry_version() == 12
     ids = [f.id for f in registry.fields()]
     assert ids[-len(TAIL_IDS) :] == list(TAIL_IDS)
-    assert ids[-11:-1] == [
+    start = ids.index("city")
+    assert ids[start : start + 10] == [
         "city",
         "locality",
         "society",

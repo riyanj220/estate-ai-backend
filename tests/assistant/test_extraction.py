@@ -169,4 +169,4 @@ def test_planner_asks_required_first_then_offers_review():
 def test_extraction_schema_version_is_recorded():
     _, _, client, session_id = start()
     body = client.get(f"/api/v1/assistant/sessions/{session_id}").json()
-    assert body["schema_version"] == schemas.SCHEMA_VERSION == 3
+    assert body["schema_version"] == schemas.SCHEMA_VERSION == 4

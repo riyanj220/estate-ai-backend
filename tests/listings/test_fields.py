@@ -55,6 +55,9 @@ def test_each_mapped_field_is_a_column_of_its_table():
         if table == fields.AMENITIES:  # the map is rows of ListingAmenity, not a column
             assert name == fields.AMENITIES_FIELD
             continue
+        if table == fields.EXTRA:  # a key of the terms' JSON, not a column
+            assert ListingTerms._meta.get_field("extra_attributes")
+            continue
         assert table in tables, name
         assert tables[table]._meta.get_field(name), name
     parts = [
@@ -68,6 +71,7 @@ def test_each_mapped_field_is_a_column_of_its_table():
         fields.ADDRESS_FIELDS,
     ]
     parts.append((fields.AMENITIES_FIELD,))  # the one field stored as rows of ListingAmenity
+    parts.append(fields.EXTRA_FIELDS)
     assert set().union(*parts) == set(fields.EDITABLE_FIELDS)
     assert sum(len(part) for part in parts) == len(fields.EDITABLE_FIELDS)  # one table each
 
@@ -145,6 +149,8 @@ def test_every_decimal_money_integer_and_date_field_fits_its_column():
         if definition.type not in checked or definition.id in fields.IDENTITY_FIELDS:
             continue
         table = {**fields.STORAGE, **fields.DERIVED}[definition.id]
+        if table == fields.EXTRA:
+            continue  # JSON: no column to fit
         column = tables[table]._meta.get_field(definition.id)
         name = definition.id
         if definition.type in ("decimal", "money"):

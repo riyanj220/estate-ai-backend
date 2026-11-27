@@ -25,7 +25,7 @@ ALLOWED = {
 # on it or name the published status.
 OWNER_FLAG_FILES = {"apps/presentation/api/listings.py", "apps/presentation/adminapi/listings.py"}
 GUARDED_NAMES = {"PUBLISHED", "restricted"}
-GUARDED_MODELS = {"PropertyListing", "ListingImage"}
+GUARDED_MODELS = {"PropertyListing", "ListingImage", "ListingFloorPlan"}
 # a string that spells the predicate: a quoted status, `status = published`, `restricted =`/`is`
 SQLISH = re.compile(
     r"""(?ix)

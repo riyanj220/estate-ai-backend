@@ -30,6 +30,7 @@ SIGNED_IN = {
     "/api/v1/listings/<str:listing_id>/estimate": OWNER,
     "/api/v1/listings/<str:listing_id>": OWNER,
     "/api/v1/listings/<str:listing_id>/correction": OWNER,
+    "/api/v1/listings/<str:listing_id>/floor-plan": OWNER,
     "/api/v1/listings/<str:listing_id>/images": OWNER,
     "/api/v1/listings/<str:listing_id>/images/<str:image_id>": OWNER,
     "/api/v1/listings/<str:listing_id>/preview": OWNER,

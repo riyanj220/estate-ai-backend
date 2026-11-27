@@ -30,7 +30,7 @@ NOW = datetime(2026, 11, 15, 12, 0, tzinfo=UTC)
 ENVELOPE = {"code", "message", "fields", "request_id"}
 WIRE = {
     *("id", "status", "visibility", "revision", "registry_version"),
-    *("fields", "provenance", "media", "restricted", "restriction_reason"),
+    *("fields", "provenance", "media", "floor_plan", "restricted", "restriction_reason"),
     "under_review",
 }
 

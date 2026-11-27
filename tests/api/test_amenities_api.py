@@ -39,8 +39,8 @@ def test_the_registry_serves_the_amenities_field_with_its_type_and_section():
     assert field["requirement"] == "optional" and field["searchable"] and not field["sortable"]
     assert field["applicability"] == {"purposes": [], "categories": [], "subtypes": []}
     assert field["allowed_values"] is None and field["reference"] is None
-    assert body["fields"][-1]["id"] == "amenities"
-    assert "distance" not in json.dumps(body) and "verified" not in json.dumps(body["fields"][-1])
+    assert field in body["fields"]
+    assert "distance" not in json.dumps(body) and "verified" not in json.dumps(field)
 
 
 def test_the_catalogue_endpoint_is_public_and_matches_what_the_listing_accepts():

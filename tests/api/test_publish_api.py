@@ -76,7 +76,7 @@ def test_publishing_returns_the_owner_listing():
     assert body == client.get(detail(listing_id)).json()
     assert set(body) == {
         *("id", "status", "visibility", "revision", "registry_version"),
-        *("fields", "provenance", "media", "restricted", "restriction_reason"),
+        *("fields", "provenance", "media", "floor_plan", "restricted", "restriction_reason"),
         "under_review",
     }
     assert PublicationEvent.objects.count() == 1

@@ -46,7 +46,7 @@ def test_active_owner_creates_a_draft(kind):
     account = make_account(account_type=kind)
     view = services.create_draft(user(account), *HOUSE)
     assert view.status == "draft" and view.visibility == "private"
-    assert (view.revision, view.registry_version) == (1, 11)
+    assert (view.revision, view.registry_version) == (1, 12)
     assert dict(view.fields) == {
         "purpose": "sale",
         "category": "house",
@@ -384,6 +384,7 @@ def test_view_is_frozen_and_has_no_owner():
         "fields",
         "provenance",
         "media",
+        "floor_plan",
         "restricted",
         "restriction_reason",
     }
