@@ -10,9 +10,12 @@ import re
 
 import pytest
 
+from apps.catalog import selectors as catalog_selectors
+from apps.catalog import services as catalog_services
 from apps.catalog.models import City
 from apps.identity.models import AgencyProfile, IndividualProfile
 from apps.kernel import runtime
+from apps.kernel.actor import Actor
 from apps.kernel.ai import gateway
 from apps.kernel.ai.known_values import known_values_for
 from apps.kernel.ai.ports import LLMRequest, Message
@@ -71,10 +74,16 @@ def embeddings(actor, message):
     return gateway.embed(actor, [_safe(actor, message)])
 
 
+def knowledge_retrieval(actor, message):
+    catalog_services.rebuild_knowledge_index(Actor.system())
+    return catalog_selectors.retrieve_knowledge(actor, message)
+
+
 ENTRY_POINTS = [
     pytest.param(llm_assistant_turn, id="assistant-turn-port"),
     pytest.param(llm_search_query, id="search-query-port"),
     pytest.param(embeddings, id="embeddings-port"),
+    pytest.param(knowledge_retrieval, id="knowledge-retrieval"),
 ]
 
 
