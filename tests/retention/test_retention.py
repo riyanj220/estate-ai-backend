@@ -45,6 +45,7 @@ def test_kernel_jobs_are_registered_in_order():
         "identity.sessions",
         "listings.draft_notice",
         "listings.draft_expiry",
+        "listings.view_buckets",
         "valuation.estimates",
         "assistant.history",
     ]
@@ -92,6 +93,7 @@ def test_dry_run_reports_counts_and_deletes_nothing(db):
         "identity.sessions: would delete 0",
         "listings.draft_notice: would delete 0",
         "listings.draft_expiry: would delete 0",
+        "listings.view_buckets: would delete 0",
         "valuation.estimates: would delete 0",
         "assistant.history: would delete 0",
     ]
@@ -117,6 +119,7 @@ def test_real_run_deletes_expired_and_keeps_newer(db):
         "identity.sessions: deleted 0",
         "listings.draft_notice: deleted 0",
         "listings.draft_expiry: deleted 0",
+        "listings.view_buckets: deleted 0",
         "valuation.estimates: deleted 0",
         "assistant.history: deleted 0",
     ]

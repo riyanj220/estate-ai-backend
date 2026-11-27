@@ -83,6 +83,8 @@ class Canaries:
 
 # saving or removing a favourite takes no body, so a viewer's own call may succeed
 FAVOURITE = "/api/v1/me/favourites/<str:listing_id>"
+# the view beacon takes no body and answers 204 with nothing (Story 8.2)
+VIEW_BEACON = "/api/v1/public/listings/<str:listing_id>/views"
 
 
 @pytest.fixture(autouse=True)
@@ -284,7 +286,7 @@ def test_no_canary_in_any_response_or_log():
                             response = client.generic(method, url, "{}", "application/json")
                             where = f"{who}: {method} {url} -> {response.status_code}"
                             assert response.status_code < 500, where
-                            if unsafe and route.path != FAVOURITE:
+                            if unsafe and route.path not in (FAVOURITE, VIEW_BEACON):
                                 assert response.status_code >= 400, f"not refused: {where}"
                             elif response.status_code == 200:
                                 answered.add((route.path, url))
