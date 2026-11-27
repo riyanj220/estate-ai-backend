@@ -170,6 +170,19 @@ def test_runtime_can_use_flags_ai_log_and_purges_but_not_ddl(runtime_conn):
             runtime_conn.execute(f"ALTER TABLE {table} ADD COLUMN nope int")
 
 
+def test_runtime_can_count_the_ai_budget_but_not_ddl(runtime_conn):
+    runtime_conn.execute(
+        "INSERT INTO kernel_aibudgetledger (id, provider, day, used, open_used) "
+        "VALUES (gen_random_uuid(), 'role_probe', current_date, 0, 0)"
+    )
+    runtime_conn.execute(
+        "UPDATE kernel_aibudgetledger SET used = used + 1 WHERE provider = 'role_probe'"
+    )
+    runtime_conn.execute("DELETE FROM kernel_aibudgetledger WHERE provider = 'role_probe'")
+    with pytest.raises(errors.InsufficientPrivilege):
+        runtime_conn.execute("ALTER TABLE kernel_aibudgetledger ADD COLUMN nope int")
+
+
 def test_runtime_can_store_update_and_purge_notifications_but_not_ddl(runtime_conn):
     runtime_conn.execute(
         "INSERT INTO kernel_notification (id, account_id, kind, payload, created_at) "

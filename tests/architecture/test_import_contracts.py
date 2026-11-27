@@ -168,6 +168,18 @@ VIOLATIONS = [
         id="presentation-imports-pillow",
     ),
     pytest.param(
+        "apps/assistant/services.py",
+        "import httpx\n",
+        "Provider SDKs and HTTP clients are imported only inside kernel",
+        id="assistant-imports-http-client",
+    ),
+    pytest.param(
+        "apps/search/services.py",
+        "import groq\n",
+        "Provider SDKs and HTTP clients are imported only inside kernel",
+        id="search-imports-provider-sdk",
+    ),
+    pytest.param(
         "apps/messaging/services.py",
         "import channels\n",
         "Domain apps never import HTTP or WebSocket code",
