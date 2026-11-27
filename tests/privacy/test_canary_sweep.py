@@ -188,6 +188,30 @@ def seed(canaries):
         updated_at=timezone.now(),
     )
     contexts += [{"report_id": report.id}]
+    # a Conversation Report: its Messages are read only with a recorded reason
+    reported = Report.objects.create(
+        target_type="conversation",
+        target_id=conversation.id,
+        reporter_account_id=public[1].owner_account_id,
+        subject_account_id=public[0].owner_account_id,
+        reason="abusive",
+        description=canaries.address("Canarycomplaint about these messages"),
+        snapshot={
+            "listing_id": str(public[0].id),
+            "messages": [
+                {
+                    "seq": 1,
+                    "sender": "reported",
+                    "selected": True,
+                    "body": canaries.address("Canarymessage body of the thread"),
+                    "sent_at": timezone.now().isoformat(),
+                }
+            ],
+        },
+        created_at=timezone.now(),
+        updated_at=timezone.now(),
+    )
+    contexts += [{"report_id": reported.id}]
     return {
         "contexts": contexts,
         "public": [str(x.id) for x in public],

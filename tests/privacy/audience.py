@@ -39,6 +39,7 @@ SIGNED_IN = {
     "/api/v1/listings/<str:listing_id>/status": OWNER,
     # the caller reports another account's Listing and gets its public title back
     "/api/v1/listings/<str:listing_id>/reports": OTHER_ACCOUNT,
+    "/api/v1/conversations/<str:conversation_id>/reports": OTHER_ACCOUNT,
     # the caller's own favourites show other accounts' Listings (the public card)
     "/api/v1/me/favourites": OTHER_ACCOUNT,
     "/api/v1/notifications": OWNER,

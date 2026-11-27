@@ -48,6 +48,7 @@ def test_kernel_jobs_are_registered_in_order():
         "listings.view_buckets",
         "valuation.estimates",
         "assistant.history",
+        "governance.report_snapshots",
     ]
 
 
@@ -96,6 +97,7 @@ def test_dry_run_reports_counts_and_deletes_nothing(db):
         "listings.view_buckets: would delete 0",
         "valuation.estimates: would delete 0",
         "assistant.history: would delete 0",
+        "governance.report_snapshots: would delete 0",
     ]
     assert IdempotencyRecord.objects.count() == 2
     assert AiRequestLog.objects.count() == 2
@@ -122,6 +124,7 @@ def test_real_run_deletes_expired_and_keeps_newer(db):
         "listings.view_buckets: deleted 0",
         "valuation.estimates: deleted 0",
         "assistant.history: deleted 0",
+        "governance.report_snapshots: deleted 0",
     ]
     assert list(IdempotencyRecord.objects.values_list("key", flat=True)) == ["new"]
     assert AiRequestLog.objects.count() == 1
