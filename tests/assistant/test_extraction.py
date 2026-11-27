@@ -41,7 +41,7 @@ def current(account, draft):
 def test_the_schema_is_strict_and_leaves_the_description_out():
     schema = extraction.turn_schema("sale", "house")
     fields = schema["properties"]["fields"]
-    assert schema["required"] == ["reply", "clarify", "fields"]
+    assert schema["required"] == list(schema["properties"])
     assert fields["required"] == list(fields["properties"])
     assert "bedrooms" in fields["properties"]
     assert not {"description", "street", "city", "purpose"} & set(fields["properties"])
@@ -168,4 +168,4 @@ def test_planner_asks_required_first_then_offers_review():
 def test_extraction_schema_version_is_recorded():
     _, _, client, session_id = start()
     body = client.get(f"/api/v1/assistant/sessions/{session_id}").json()
-    assert body["schema_version"] == schemas.SCHEMA_VERSION == 2
+    assert body["schema_version"] == schemas.SCHEMA_VERSION == 3

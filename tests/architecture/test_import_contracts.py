@@ -132,6 +132,12 @@ VIOLATIONS = [
         id="assistant-to-listings-models",
     ),
     pytest.param(
+        "apps/assistant/services.py",
+        "import apps.listings.publication\n",
+        "Assistant never imports publication",
+        id="assistant-to-publication",
+    ),
+    pytest.param(
         "apps/listings/services.py",
         "import django.http\n",
         "Domain apps never import HTTP or WebSocket code",

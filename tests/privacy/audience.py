@@ -17,6 +17,7 @@ ME = "/api/v1/me"  # the caller's own data by construction
 SIGNED_IN = {
     "/api/v1/assistant/sessions": OWNER,
     "/api/v1/assistant/sessions/<str:session_id>": OWNER,
+    "/api/v1/assistant/sessions/<str:session_id>/description": OWNER,
     "/api/v1/assistant/sessions/<str:session_id>/turns": OWNER,
     "/api/v1/estimates": OWNER,
     "/api/v1/listings": OWNER,
@@ -26,6 +27,7 @@ SIGNED_IN = {
     "/api/v1/listings/<str:listing_id>/images": OWNER,
     "/api/v1/listings/<str:listing_id>/images/<str:image_id>": OWNER,
     "/api/v1/listings/<str:listing_id>/preview": OWNER,
+    "/api/v1/listings/<str:listing_id>/confirm": OWNER,
     "/api/v1/listings/<str:listing_id>/publish": OWNER,
     "/api/v1/listings/<str:listing_id>/republish": OWNER,
     "/api/v1/listings/<str:listing_id>/status": OWNER,

@@ -115,6 +115,22 @@ def assistant_extraction(actor, message):
     return result
 
 
+def assistant_description(actor, message):
+    """Description generation (Story 5.13): a confirmed text value reaches the model only if
+    redaction leaves it alone, and a sentence quoting private values is not saved."""
+    draft = services.create_draft(actor, "sale", "house", "house")
+    confirmed = {"title": "6 crore for 240 yards house", "society": OWN_STREET}
+    services.apply_updates(actor, draft.id, 1, confirmed)
+    session, _ = assistant.open_session(actor, draft.id)
+    sentences = [(message, "title"), ("It is for sale.", "purpose"), ("A house.", "subtype")]
+    stub.reply = json.dumps(
+        {"paragraphs": [{"sentences": [{"text": t, "fields": [f]}]} for t, f in sentences]}
+    )
+    result = assistant.write_description(actor, session.id, 2)
+    assert leaks(result.listing.fields["description"]) == []
+    return result
+
+
 ENTRY_POINTS = [
     pytest.param(llm_assistant_turn, id="assistant-turn-port"),
     pytest.param(llm_search_query, id="search-query-port"),
@@ -122,6 +138,7 @@ ENTRY_POINTS = [
     pytest.param(knowledge_retrieval, id="knowledge-retrieval"),
     pytest.param(assistant_turn, id="assistant-turn"),
     pytest.param(assistant_extraction, id="assistant-extraction"),
+    pytest.param(assistant_description, id="assistant-description"),
 ]
 
 
