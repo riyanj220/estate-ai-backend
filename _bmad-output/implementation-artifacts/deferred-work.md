@@ -49,3 +49,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-16-email-verification.md`
   summary: Add a per-client throttle policy for `POST /api/v1/email-verifications/confirm` if token-guessing abuse or database load appears.
   evidence: Confirm is public and unthrottled; tokens carry 256 bits of entropy so guessing is impractical, but each attempt costs a lookup.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-provider-adapters.md`
+  summary: Add the Groq LLM and Whisper adapter and re-run the trial when a `GROQ_API_KEY` exists.
+  evidence: Story 5.4 asks for Groq and Gemini; only a Gemini key exists, so there is no second provider or comparison.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-provider-adapters.md`
+  summary: Before real user data reaches Gemini, decide on the paid tier and set `AI_DAILY_BUDGET` from the project's real limits.
+  evidence: Unpaid-tier inputs may be used and human-reviewed and the terms forbid personal data; free-tier request limits are not published.
