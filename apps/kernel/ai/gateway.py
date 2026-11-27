@@ -29,7 +29,7 @@ from apps.kernel.errors import DomainError
 logger = logging.getLogger("estate.ai")
 
 FLAG = "ai_gateway"
-MAX_AUDIO_BYTES = 5 * 1024 * 1024
+MAX_AUDIO_BYTES = 2 * 1024 * 1024  # far more than a 30 second recording
 EMBEDDING_TIMEOUT = 12.0
 
 
@@ -67,11 +67,11 @@ SEARCH_QUERY = Feature(
     account_scope="ai_search_account",
     visitor_scope="ai_search_visitor",
 )
-VOICE_SEARCH = Feature(
-    "voice_search",
+VOICE_SEARCH = Feature(  # transcription only, with its own counters: the search of the
+    "voice_search",  # confirmed transcript is what counts as a search
     timeout=12.0,
-    account_scope="ai_search_account",
-    visitor_scope="ai_search_visitor",
+    account_scope="ai_voice_account",
+    visitor_scope="ai_voice_visitor",
 )
 
 MESSAGES = {

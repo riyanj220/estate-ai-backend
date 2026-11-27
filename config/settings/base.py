@@ -109,6 +109,7 @@ if not os.path.isabs(MEDIA_ROOT):
 # stays at Django's default; the file limit is aligned so an upload is held in memory and never
 # spills to a temp file.
 MAX_REQUEST_BODY_BYTES = 6 * 1024 * 1024
+MAX_VOICE_BODY_BYTES = 2 * 1024 * 1024 + 64 * 1024  # a recording and its multipart framing
 MAX_IMAGE_ORDER_BODY_BYTES = 64 * 1024  # the JSON body of `PATCH .../images`
 FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_REQUEST_BODY_BYTES
 FILE_UPLOAD_HANDLERS = ["django.core.files.uploadhandler.MemoryFileUploadHandler"]

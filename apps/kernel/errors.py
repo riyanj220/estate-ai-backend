@@ -99,6 +99,8 @@ FIELD_MESSAGES: dict[str, str] = {
     "not_applicable": "This field does not apply to this listing.",
     "too_short": "This text is too short.",
     "too_long": "This text is too long.",
+    "audio_too_large": "The recording is too large. Record a shorter one.",
+    "audio_type": "Record WebM, Ogg, MP4 or WAV audio.",
     "invalid_price": "Enter an amount within the allowed range with at most two decimals.",
     "invalid_area": "Enter an area above zero with at most four decimals, using digits only.",
     "invalid_measure": (

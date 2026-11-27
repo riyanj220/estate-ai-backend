@@ -6,6 +6,10 @@ the interpretation is that same read, with no AI.
 Only redacted text reaches the model, and neither the request nor the answer is stored or logged.
 Whatever goes wrong, the answer is a fallback that sends the buyer to the conventional filters;
 only the rate limit is an error (429).
+
+Voice (Story 6.3) is a step before that: the recording becomes a transcript the buyer reads, edits
+and then searches with `interpret_query`. The audio is held in memory for the one call: it is
+never stored or logged, and goes to the provider with no account data.
 """
 
 import logging
@@ -16,9 +20,9 @@ from apps.kernel import ratelimit
 from apps.kernel.actor import Actor
 from apps.kernel.ai import gateway
 from apps.kernel.ai.known_values import known_values_for
-from apps.kernel.ai.ports import LLMRequest
+from apps.kernel.ai.ports import Audio, LLMRequest
 from apps.kernel.ai.redaction import KnownValues, redact
-from apps.search import interpretation
+from apps.search import audio, interpretation
 
 logger = logging.getLogger("estate.search")
 
@@ -31,6 +35,14 @@ _FAILED = {
     "budget_exhausted": f"Today's AI capacity is used up. {USE_FILTERS}",
 }
 UNAVAILABLE = f"Search by description is unavailable right now. {USE_FILTERS}"
+
+TYPE_INSTEAD = "Type your search instead."
+_VOICE_FAILED = {
+    "timeout": f"Voice search took too long. {TYPE_INSTEAD}",
+    "budget_exhausted": f"Today's AI capacity is used up. {TYPE_INSTEAD}",
+}
+VOICE_UNAVAILABLE = f"Voice search is unavailable right now. {TYPE_INSTEAD}"
+NOT_HEARD = f"We did not hear a search in that. {TYPE_INSTEAD}"
 
 
 @dataclass(frozen=True)
@@ -85,3 +97,45 @@ def interpret_query(
     if read.empty:
         return SearchResult(False, NOTHING_FOUND, read)
     return SearchResult(True, read=read)
+
+
+@dataclass(frozen=True)
+class Transcription:
+    transcript: str = ""
+    message: str = ""  # why there is no transcript
+
+    @property
+    def ok(self) -> bool:
+        return bool(self.transcript)
+
+
+class AudioRejected(Exception):
+    """`reason` is a field error code; nothing was sent or counted."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def transcribe_query(
+    actor: Actor, data: bytes, *, visitor_key: str | None = None, now: datetime | None = None
+) -> Transcription:
+    """The words of a recorded search. A Visitor needs `visitor_key`. Raises `AudioRejected`
+    for a recording that is empty, too large or not an accepted type, and
+    `ratelimit.RateLimited` over the voice limit."""
+    if not data:
+        raise AudioRejected("empty")
+    if len(data) > gateway.MAX_AUDIO_BYTES:
+        raise AudioRejected("audio_too_large")
+    kind = audio.content_type(data)
+    if kind is None:
+        raise AudioRejected("audio_type")
+    result = gateway.transcribe(actor, Audio(data, kind), visitor_key=visitor_key, now=now)
+    if result.outcome == "blocked":
+        raise ratelimit.RateLimited(result.retry_after)
+    if not result.ok:
+        return Transcription(message=_VOICE_FAILED.get(result.outcome, VOICE_UNAVAILABLE))
+    # one line, no control characters, and no longer than a search may be
+    heard = "".join(c if c.isprintable() else " " for c in str(result.value))
+    heard = " ".join(heard.split())[:MAX_QUERY].strip()
+    return Transcription(heard) if heard else Transcription(message=NOT_HEARD)

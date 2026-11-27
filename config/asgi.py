@@ -40,5 +40,9 @@ def _order_too_large():
     return _refusal("order", "invalid")
 
 
-# Bounds the buffering of an image upload (and of the small reorder body) before Django reads it.
-application = BodyLimitASGI(django_application, _too_large, _order_too_large)
+def _voice_too_large():
+    return _refusal("audio", "audio_too_large")
+
+
+# Bounds the buffering of an image upload, a reorder body or a recording before Django reads it.
+application = BodyLimitASGI(django_application, _too_large, _order_too_large, _voice_too_large)
