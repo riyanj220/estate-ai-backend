@@ -37,6 +37,7 @@ whose permission is not explicit.
 | `/api/v1/agencies/<str:agency_id>/logo` | GET, HEAD | public | `apps.presentation.api.profile_images.AgencyLogoView` |
 | `/api/v1/assistant/sessions` | POST | signed_in | `apps.presentation.api.assistant.AssistantSessionsView` |
 | `/api/v1/assistant/sessions/<str:session_id>` | GET | signed_in | `apps.presentation.api.assistant.AssistantSessionView` |
+| `/api/v1/assistant/sessions/<str:session_id>/description` | POST | signed_in | `apps.presentation.api.assistant.AssistantDescriptionView` |
 | `/api/v1/assistant/sessions/<str:session_id>/turns` | POST | signed_in | `apps.presentation.api.assistant.AssistantTurnsView` |
 | `/api/v1/csrf` | GET | public | `apps.presentation.api.sessions.CsrfView` |
 | `/api/v1/email-changes/confirm` | POST | public | `apps.presentation.api.profile.EmailChangeConfirmView` |
@@ -46,6 +47,7 @@ whose permission is not explicit.
 | `/api/v1/health` | GET, HEAD | public | `apps.presentation.api.health.WrappedAPIView` |
 | `/api/v1/listings` | POST | signed_in | `apps.presentation.api.listings.DraftCreateView` |
 | `/api/v1/listings/<str:listing_id>` | DELETE, GET, PATCH | signed_in | `apps.presentation.api.listings.ListingDetailView` |
+| `/api/v1/listings/<str:listing_id>/confirm` | POST | signed_in | `apps.presentation.api.listings.ListingConfirmView` |
 | `/api/v1/listings/<str:listing_id>/correction` | GET, POST | signed_in | `apps.presentation.api.listings.ListingCorrectionView` |
 | `/api/v1/listings/<str:listing_id>/estimate` | POST | signed_in | `apps.presentation.api.estimates.ListingEstimateView` |
 | `/api/v1/listings/<str:listing_id>/images` | PATCH, POST | signed_in | `apps.presentation.api.listing_images.ListingImagesView` |

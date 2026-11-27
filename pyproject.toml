@@ -154,6 +154,14 @@ source_modules = ["apps.assistant"]
 forbidden_modules = ["apps.listings.models"]
 allow_indirect_imports = true
 
+# No AI path can publish (Story 5.12): only the owner's own publish request does.
+[[tool.importlinter.contracts]]
+name = "Assistant never imports publication"
+type = "forbidden"
+source_modules = ["apps.assistant"]
+forbidden_modules = ["apps.listings.publication"]
+allow_indirect_imports = true
+
 [[tool.importlinter.contracts]]
 name = "Domain apps never import HTTP or WebSocket code"
 type = "forbidden"

@@ -118,9 +118,9 @@ development_status:
   5-8-assistant-turn-endpoint-chat-shell-and-retrieval-integration: review
   5-9-extraction-and-applying-updates: review
   5-10-follow-up-question-planning: review
-  5-11-nearby-facilities-and-corrections: in-progress
-  5-12-integrity-and-explicit-approval: in-progress
-  5-13-description-generation: in-progress
+  5-11-nearby-facilities-and-corrections: review
+  5-12-integrity-and-explicit-approval: review
+  5-13-description-generation: review
   5-14-resume-and-idempotent-turns: backlog
   5-15-graceful-degradation-of-the-assistant: backlog
   epic-5-retrospective: optional
