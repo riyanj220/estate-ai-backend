@@ -161,11 +161,11 @@ development_status:
   10-1-request-account-deactivation-or-deletion: review
   10-2-decide-and-execute-account-deactivation: review
   10-3-erasure-by-messaging-assistant-and-governance: review
-  10-4-account-directory-and-review: backlog
-  10-5-reference-data-management: backlog
-  10-6-ai-and-ml-oversight: backlog
-  10-7-audit-trail-review: backlog
-  10-8-administrator-dashboard: backlog
+  10-4-account-directory-and-review: review
+  10-5-reference-data-management: review
+  10-6-ai-and-ml-oversight: review
+  10-7-audit-trail-review: review
+  10-8-administrator-dashboard: review
   10-9-support-requests: backlog
   10-10-administrator-second-factor: backlog
   10-11-retention-jobs-for-kernel-data: backlog
