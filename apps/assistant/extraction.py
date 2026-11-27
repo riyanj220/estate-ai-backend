@@ -3,12 +3,15 @@
 The answer is untrusted: only the fields of the code-generated schema are read, text values must
 survive redaction unchanged, and every write goes through `listings.services.apply_updates` with
 origin `ai` (so it is judged by the registry rules and stored unconfirmed). A value that fails is
-not saved; a value the Seller changed while the model was working is never overwritten.
+not saved; a value the Seller changed while the model was working is never overwritten. City and
+locality are not asked of the model: they are set when `places` finds one catalogue locality, and
+never over a value the Seller set.
 """
 
 import json
 from dataclasses import dataclass, field
 
+from apps.assistant import places
 from apps.assistant.facts import SYNONYMS, amenities_text, mentions
 from apps.assistant.planner import label
 from apps.catalog import extraction as schemas
@@ -25,7 +28,8 @@ CONTACT_NOTICE = (
     "Please enter those in the form instead; I do not save them."
 )
 # Fields that only mean something together: if one cannot be saved, none of them is.
-_TOGETHER = (frozenset({"area_value", "area_unit", "marla_basis"}),)
+_PLACE = ("city", "locality")
+_TOGETHER = (frozenset({"area_value", "area_unit", "marla_basis"}), frozenset(_PLACE))
 AMENITIES = "amenities"  # nearby facilities are written into the amenities map (Story 5.11)
 MAX_UNMATCHED = 5
 
@@ -197,12 +201,48 @@ def _merged(view: ListingView, nearby: dict[str, str]) -> dict[str, str]:
     return {**(view.fields.get(AMENITIES) or {}), **nearby}
 
 
+def _by_seller(listing: ListingView, name: str) -> bool:
+    """A value the Seller typed or confirmed (anything that is not an unconfirmed AI value)."""
+    return (
+        listing.fields.get(name) is not None
+        and listing.provenance.get(name, {}).get("origin") != Origin.AI.value
+    )
+
+
+def _place(listing: ListingView, message: str, pending: dict) -> None:
+    """Add the city and locality of the one locality named, and drop a `society` that only
+    repeats its name."""
+    texts = [pending[n] for n in places.LOCATION_TEXTS if isinstance(pending.get(n), str)]
+    city = catalog.parse_uuid(listing.fields.get("city")) if _by_seller(listing, "city") else None
+    found = places.find_locality(message, texts, city)
+    if found is None:
+        return
+    if listing.fields.get("locality") != str(found.id):
+        if _by_seller(listing, "locality"):
+            return
+        if listing.fields.get("city") != str(found.city_id):
+            pending["city"] = str(found.city_id)
+        pending["locality"] = str(found.id)
+    if places.same_name(str(pending.get("society", "")), found.name):
+        del pending["society"]
+
+
+def _wire(name: str, value) -> str | int | bool | None:
+    """The value as the turn reports it: a place by its name, not its id."""
+    if name in _PLACE:
+        key = catalog.parse_uuid(value)
+        names = catalog.city_names if name == "city" else catalog.locality_names
+        return names([key]).get(key, "")
+    return field_text(name, value)
+
+
 def apply(
     actor: Actor,
     listing: ListingView,
     fields: dict,
     values: KnownValues,
     nearby: dict[str, str] | None = None,
+    message: str = "",
 ) -> Written:
     """Write what can be written against the revision of `listing` (read before the model call).
 
@@ -210,6 +250,7 @@ def apply(
     reported; the rest are applied to the current revision."""
     out = Written()
     pending = _proposed(listing, fields, values, out)
+    _place(listing, message, pending)
     stored = listing.fields.get(AMENITIES) or {}
     nearby = {c: s for c, s in (nearby or {}).items() if stored.get(c) != s}
     if nearby:
@@ -238,6 +279,13 @@ def apply(
                 for name in pending
                 if name != AMENITIES and stale.current.fields.get(name) != listing.fields.get(name)
             }
+            # city and locality are one choice: a change or a confirmation of either keeps both
+            if any(
+                stale.current.fields.get(n) != listing.fields.get(n)
+                or stale.current.provenance.get(n) != listing.provenance.get(n)
+                for n in _PLACE
+            ):
+                changed |= pending.keys() & set(_PLACE)
             for name in sorted(_with_partners(changed, pending)):
                 out.conflicts.append(name)
                 del pending[name]
@@ -252,6 +300,6 @@ def apply(
                 if name == AMENITIES:
                     out.applied[name] = amenities_text(nearby)
                 elif view.fields.get(name) != listing.fields.get(name):
-                    out.applied[name] = field_text(name, view.fields.get(name))
+                    out.applied[name] = _wire(name, view.fields.get(name))
             break
     return out

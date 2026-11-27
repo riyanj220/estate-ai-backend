@@ -74,7 +74,7 @@ def next_step(listing: ListingView) -> NextStep | None:
     question = "All required details are filled in. You can review your listing now."
     unconfirmed = [
         label(name)
-        for name in SENSITIVE_FIELDS
+        for name in ("city", *SENSITIVE_FIELDS)  # the city too is a quota identity
         if listing.provenance.get(name, {}).get("confirmed") is False
     ]
     if unconfirmed:

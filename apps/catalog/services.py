@@ -155,9 +155,10 @@ KNOWLEDGE_BATCH = 50  # passages per embedding request
 class KnowledgeIndexError(Exception):
     """The passages could not be embedded; the existing index is unchanged."""
 
-    def __init__(self, outcome: str) -> None:
+    def __init__(self, outcome: str, status: int | None = None) -> None:
         super().__init__(f"embedding failed: {outcome}")
         self.outcome = outcome
+        self.status = status  # the provider's HTTP status, when it gave one
 
 
 def rebuild_knowledge_index(actor: Actor, *, pause: float = 0.0) -> int:
@@ -182,7 +183,7 @@ def rebuild_knowledge_index(actor: Actor, *, pause: float = 0.0) -> int:
         ]
         result = gateway.embed(actor, texts)
         if not result.ok:
-            raise KnowledgeIndexError(result.outcome)
+            raise KnowledgeIndexError(result.outcome, result.status)
         if len(result.value) != len(texts):
             raise KnowledgeIndexError("error")
         vectors.extend(result.value)

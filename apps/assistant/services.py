@@ -249,7 +249,7 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
         notice = "" if knowledge.ok else knowledge.message
         with transaction.atomic():  # the Draft changes only if the turn is kept
             nearby = extracting.stated_nearby(parsed.nearby, safe.value)
-            written = extracting.apply(actor, listing, parsed.fields, values, nearby)
+            written = extracting.apply(actor, listing, parsed.fields, values, nearby, safe.value)
             notices = []
             if safe.value != text:
                 notices.append(extracting.CONTACT_NOTICE)

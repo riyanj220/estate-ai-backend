@@ -20,5 +20,11 @@ class Command(BaseCommand):
         try:
             count = services.rebuild_knowledge_index(Actor.system(), pause=options["pause"])
         except services.KnowledgeIndexError as error:
-            raise CommandError(f"Index unchanged ({model}): {error}") from None
+            hint = (
+                ". This looks like a rate limit (HTTP 429): wait, then retry with --pause, "
+                "for example --pause 60."
+                if error.status == 429
+                else ""
+            )
+            raise CommandError(f"Index unchanged ({model}): {error}{hint}") from None
         self.stdout.write(f"Indexed {count} passages with {model}.")

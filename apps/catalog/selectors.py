@@ -99,6 +99,16 @@ def get_locality(locality_id) -> LocalityRef | None:
     return LocalityRef(id=row.id, name=row.name, kind=row.kind, city_id=row.city_id)
 
 
+def active_localities() -> tuple[LocalityRef, ...]:
+    """Every active locality of every active city, for matching names in text (small and
+    bounded reference data)."""
+    rows = Locality.objects.filter(is_active=True, city__is_active=True).order_by("name", "id")
+    return tuple(
+        LocalityRef(id=r.id, name=r.name, kind=r.kind, city_id=r.city_id)
+        for r in rows.only("id", "name", "kind", "city_id")
+    )
+
+
 def city_names(city_ids) -> dict[uuid.UUID, str]:
     """{id: name} of these cities in one query, deactivated ones included: a stored location
     keeps its name. Unknown ids and None are left out."""

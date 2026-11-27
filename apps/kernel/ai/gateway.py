@@ -91,6 +91,7 @@ class AiResult:
     value: Any = field(default=None, repr=False)
     message: str = ""
     retry_after: int = 0
+    status: int | None = None  # the provider's HTTP status of a failed call, when there was one
 
     @property
     def ok(self) -> bool:
@@ -119,9 +120,11 @@ def _log(feature: str, adapter, started: float, outcome: str) -> None:
         )
 
 
-def _fallback(feature: str, adapter, started: float, outcome: str, retry_after=0) -> AiResult:
+def _fallback(
+    feature: str, adapter, started: float, outcome: str, retry_after=0, status=None
+) -> AiResult:
     _log(feature, adapter, started, outcome)
-    return AiResult(outcome, message=MESSAGES[outcome], retry_after=retry_after)
+    return AiResult(outcome, message=MESSAGES[outcome], retry_after=retry_after, status=status)
 
 
 def _call(feature: str, adapter, started: float, timeout: float, fn) -> AiResult:
@@ -141,7 +144,7 @@ def _call(feature: str, adapter, started: float, timeout: float, fn) -> AiResult
         )
         # an adapter may give up on its own socket just before the wait above does
         outcome = "timeout" if getattr(exc, "category", None) == "timeout" else "error"
-        return _fallback(feature, adapter, started, outcome)
+        return _fallback(feature, adapter, started, outcome, status=getattr(exc, "status", None))
     _log(feature, adapter, started, "success")
     return AiResult("success", value)
 
