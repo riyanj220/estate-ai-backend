@@ -171,7 +171,7 @@ def test_other_accounts_unknown_ids_non_drafts_and_suspended(client, owner):
     other = other_client()
     for url in (draft_url(view.id), draft_url(uuid.uuid4()), draft_url("nope")):
         assert post(other, url).status_code == 404
-    set_listing_visibility(view.id)
+    set_listing_visibility(view.id, status="sold")
     assert post(client, draft_url(view.id)).status_code == 409
     set_account_state(owner.id, "suspended")
     assert post(client, URL, body()).status_code == 403
