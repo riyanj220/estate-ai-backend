@@ -112,9 +112,9 @@ development_status:
   5-2-gateway-controls-limits-flags-request-log-and-budget: review
   5-3-external-service-notice: review
   5-4-provider-adapters-and-availability-trial: review
-  5-5-knowledge-base-index-and-embedding-runtime: backlog
-  5-6-knowledge-base-content: backlog
-  5-7-grounded-knowledge-retrieval: backlog
+  5-5-knowledge-base-index-and-embedding-runtime: in-progress
+  5-6-knowledge-base-content: in-progress
+  5-7-grounded-knowledge-retrieval: in-progress
   5-8-assistant-turn-endpoint-chat-shell-and-retrieval-integration: backlog
   5-9-extraction-and-applying-updates: backlog
   5-10-follow-up-question-planning: backlog
