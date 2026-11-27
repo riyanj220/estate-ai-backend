@@ -15,12 +15,14 @@ Registration is limited to 10 per hour per client: one run uses three.
 """
 
 import argparse
+import base64
 import concurrent.futures
 import http.cookiejar
 import json
 import os
 import re
 import secrets
+import socket
 import struct
 import subprocess
 import sys
@@ -118,6 +120,71 @@ class Client:
         answer = self.post(path, {"email": email, "password": password})
         self.token = None  # rotated on sign-in
         return answer
+
+
+class LiveSocket:
+    """A minimal WebSocket client (standard library only) for `/ws`: it reads small unfragmented
+    frames, answers pings and never sends data."""
+
+    def __init__(self, base, client, origin):
+        parts = urllib.parse.urlsplit(base)
+        self.sock = socket.create_connection((parts.hostname, parts.port or 80), timeout=10)
+        cookies = "; ".join(f"{c.name}={c.value}" for c in client.jar) if client else ""
+        lines = [
+            "GET /ws HTTP/1.1",
+            f"Host: {parts.netloc}",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+            f"Sec-WebSocket-Key: {base64.b64encode(secrets.token_bytes(16)).decode()}",
+            "Sec-WebSocket-Version: 13",
+            f"Origin: {origin}",
+            f"Cookie: {cookies}",
+        ]
+        self.sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
+        self.buffer = b""
+        while b"\r\n\r\n" not in self.buffer:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                break
+            self.buffer += chunk
+        head, _, self.buffer = self.buffer.partition(b"\r\n\r\n")
+        self.accepted = head.startswith(b"HTTP/1.1 101")
+
+    def _exactly(self, count):
+        while len(self.buffer) < count:
+            left = self.deadline - time.monotonic()
+            if left <= 0:  # pings keep arriving, so one socket timeout would never expire
+                raise TimeoutError
+            self.sock.settimeout(left)
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise Failure("the socket was dropped")
+            self.buffer += chunk
+        taken, self.buffer = self.buffer[:count], self.buffer[count:]
+        return taken
+
+    def receive(self, timeout=5):
+        """("event", dict), ("close", code) or ("silent", None) after `timeout` seconds."""
+        self.deadline = time.monotonic() + timeout
+        try:
+            while True:
+                first, second = self._exactly(2)
+                length = second & 0x7F
+                if length >= 126:
+                    length = int.from_bytes(self._exactly(2 if length == 126 else 8))
+                payload = self._exactly(length)
+                opcode = first & 0x0F
+                if opcode == 1:
+                    return "event", json.loads(payload)
+                if opcode == 8:
+                    return "close", int.from_bytes(payload[:2])
+                if opcode == 9:  # ping: a masked pong
+                    self.sock.sendall(bytes([0x8A, 0x80 | len(payload), 0, 0, 0, 0]) + payload)
+        except TimeoutError:
+            return "silent", None
+
+    def close(self):
+        self.sock.close()
 
 
 def png(width=640, height=480, seed=0):
@@ -480,7 +547,54 @@ class Smoke:
         stranger = self.ctx.get("agency")
         if stranger:
             stranger.get(path, expect=404)
+        self.ctx["conversation"] = conversation
         return f"{len(seen)} messages"
+
+    def live(self):
+        """Live delivery (Stories 7.2 and 7.3): only the participants hear of a message, within a
+        second; a foreign Origin and a Visitor are refused; signing out closes the socket."""
+        owner, buyer = Client(self.base), self.ctx["buyer"]
+        owner.sign_in(self.ctx["owner_email"], self.password)
+        conversation, origin = self.ctx["conversation"], self.args.origin
+        for client, sent_origin, what in (
+            (None, origin, "a Visitor"),
+            (owner, "http://evil.example", "a foreign Origin"),
+        ):
+            refused = LiveSocket(self.base, client, sent_origin)
+            check(not refused.accepted, f"{what} was given a socket")
+            refused.close()
+        sockets = {"owner": LiveSocket(self.base, owner, origin)}
+        if self.ctx.get("agency"):
+            sockets["stranger"] = LiveSocket(self.base, self.ctx["agency"], origin)
+        try:
+            for name, one in sockets.items():
+                check(one.accepted, f"{name}: the handshake was refused")
+                check(one.receive() == ("event", {"type": "ready"}), f"{name}: not ready")
+            started = time.monotonic()
+            saved = buyer.post(
+                f"/conversations/{conversation}/messages",
+                {"body": "Are you there?"},
+                201,
+                {"Idempotency-Key": str(uuid.uuid4())},
+            ).json()
+            kind, event = sockets["owner"].receive()
+            took = time.monotonic() - started
+            check(kind == "event" and event["message_id"] == saved["id"], f"owner got {event}")
+            check("body" not in event and took < 1, f"after {took:.2f}s: {event}")
+            if "stranger" in sockets:
+                heard = sockets["stranger"].receive(1)
+                check(heard == ("silent", None), f"a stranger heard {heard}")
+            # longer than the proxy's 30 s and Daphne's 20 s ping: an idle socket stays open
+            if self.args.live_idle:
+                idle = sockets["owner"].receive(self.args.live_idle)
+                check(idle == ("silent", None), f"an idle socket got {idle}")
+            owner.call("DELETE", "/session", expect=204)
+            ended = sockets["owner"].receive()
+            check(ended == ("close", 4401), f"after sign out: {ended}")
+        finally:
+            for one in sockets.values():
+                one.close()
+        return f"announced in {took * 1000:.0f} ms"
 
     def browse(self):
         visitor, buyer = Client(self.base), self.ctx["buyer"]
@@ -734,6 +848,7 @@ class Smoke:
         self.flow("browse/filter/detail/agency page", self.browse, ["published", "buyer"])
         self.flow("search by description", self.search, ["buyer"])
         self.flow("inquiry and reply", self.inquiry, ["published", "buyer"])
+        self.flow("live delivery", self.live, ["conversation"])
         self.flow("favourites and ownership", self.favourites, ["published", "buyer"])
         self.flow(
             "edit/archive/republish/correct/sold", self.edit_and_lifecycle, ["published", "third"]
@@ -755,6 +870,10 @@ def main(argv=None):
     parser.add_argument("--base-url", default="http://127.0.0.1:8100")
     parser.add_argument("--mailpit", default="http://127.0.0.1:8025")
     parser.add_argument("--provision-admin", action="store_true")
+    parser.add_argument(
+        "--origin", default="http://localhost:3000", help="a configured origin, for /ws"
+    )
+    parser.add_argument("--live-idle", type=float, default=0, help="hold the idle socket (s)")
     parser.add_argument("--manage-python", default="uv run python")
     parser.add_argument("--only-assistant", action="store_true")
     parser.add_argument("--verbose", action="store_true", help="print assistant answers")

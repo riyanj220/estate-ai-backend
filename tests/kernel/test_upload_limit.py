@@ -190,7 +190,7 @@ def test_other_requests_and_scopes_pass_straight_through():
 def test_the_real_application_answers_the_standard_envelope():
     import config.asgi as asgi
 
-    assert isinstance(asgi.application, BodyLimitASGI)
+    assert isinstance(asgi.application.application_mapping["http"], BodyLimitASGI)
     sent = async_to_sync(drive)(asgi.application, scope(length=CAP + 1), body_chunks([10]), [])
     headers = dict(sent[0]["headers"])
     assert sent[0]["status"] == 400 and headers[b"content-type"] == b"application/json"

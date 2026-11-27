@@ -16,4 +16,5 @@ if [ -f .env ]; then
   done < .env
 fi
 export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings.local}"
-exec uv run daphne --access-log /dev/null -b "${DJANGO_BIND_HOST:-127.0.0.1}" -p "${DJANGO_PORT:-8000}" config.asgi:application
+exec uv run daphne --access-log /dev/null \
+  --websocket-max-message-size 1024 --websocket-max-frame-size 1024 -b "${DJANGO_BIND_HOST:-127.0.0.1}" -p "${DJANGO_PORT:-8000}" config.asgi:application
