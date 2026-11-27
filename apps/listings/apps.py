@@ -10,12 +10,23 @@ class ListingsConfig(AppConfig):
         from apps.catalog import registry
         from apps.kernel import audit, notifications, retention
         from apps.kernel.ai import known_values
+        from apps.kernel.privacy.reads import register_private_target
         from apps.listings import lifecycle
         from apps.listings import retention as draft_retention
         from apps.listings.models import QUOTA_ACCOUNT_TYPES
         from apps.listings.selectors import known_private_addresses
 
         known_values.register("listings", known_private_addresses)
+        register_private_target("listing_draft", "A Draft Listing's content")
+        # Moderation (Story 9.4): the Listing id is the target; the reason stays in `governance`.
+        for action in (
+            "listing.restricted",
+            "listing.restriction_lifted",
+            "listing.removed",
+            "listing.restored",
+            "listing.removal_archived",
+        ):
+            audit.register_action(action, {})
 
         # Metadata holds the three enumerated registry values only: no free text, no address.
         audit.register_action(

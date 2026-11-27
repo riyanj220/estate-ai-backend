@@ -58,6 +58,8 @@ RUNTIME_APPEND_ONLY_TABLES: list[str] = [
     "kernel_auditrecord",
     "listings_publicationevent",
     "governance_verificationdecision",  # Story 8.4: decision history
+    "governance_reporttransition",  # Story 9.2: Report review history
+    "governance_moderationaction",  # Story 9.4: moderation history
 ]
 # The only columns of those tables the runtime role may still UPDATE (Story 2.19: the one-time
 # correction marks its counted publication event and moves its identity fingerprint).
@@ -218,6 +220,32 @@ SPECTACULAR_SETTINGS = {
             "withdrawn",
         ],
         "VerificationActionEnum": ["approved", "rejected", "revoked", "withdrawn"],
+        "ReportStatusEnum": ["pending", "reviewing", "resolved", "dismissed"],
+        "ReasonEnum": [
+            "rent_not_supported",
+            "type_not_supported",
+            "locality_missing",
+            "locality_not_covered",
+            "area_missing",
+            "marla_basis_unknown",
+            "temporarily_unavailable",
+        ],
+        "ReportMoveEnum": ["reviewing", "resolved", "dismissed"],
+        "ReportReasonEnum": [
+            "misleading",
+            "duplicate",
+            "prohibited_content",
+            "abusive",
+            "ai_generated_content",
+            "other",
+        ],
+        "ModerationActionEnum": [
+            "restrict",
+            "remove",
+            "lift_restriction",
+            "restore",
+            "archive_removed",
+        ],
     },
     "POSTPROCESSING_HOOKS": [
         "drf_spectacular.hooks.postprocess_schema_enums",

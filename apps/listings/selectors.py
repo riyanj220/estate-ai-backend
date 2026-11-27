@@ -14,7 +14,7 @@ import re
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from types import MappingProxyType
 
@@ -39,10 +39,11 @@ from apps.identity import selectors as identity
 from apps.identity.capabilities import Capability
 from apps.identity.policy import can
 from apps.kernel import media, notifications
-from apps.kernel.actor import Actor, ActorKind, require_signed_in
+from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.ai.redaction import KnownValues
 from apps.kernel.errors import DomainError
-from apps.listings import policy
+from apps.kernel.privacy.reads import record_private_read
+from apps.listings import lifecycle, policy
 from apps.listings.area import basis_text
 from apps.listings.fields import (
     ADDRESS_FIELDS,
@@ -338,7 +339,7 @@ def view_of(
         provenance=MappingProxyType(provenance),
         media=images if images is not None else media_by_listing([row.id])[row.id],
         restricted=row.restricted,
-        restriction_reason=row.restriction_reason,
+        restriction_reason=lifecycle.shown_reason(row),
     )
 
 
@@ -995,9 +996,10 @@ def image_for_serving(
     another Listing's image, a lost file and a Listing the actor may not view).
 
     The decision is the policy's (Story 2.12): `is_public`, else `is_owner`, the two halves of
-    `can_view`. An image of a public Listing goes to anyone, a Visitor included; an image of any
-    other Listing goes only to its owner. `ServedImage.public` says whether the Listing is public
-    right now, so the endpoint may cache the answer.
+    `can_view`, else `admin_may_inspect` (Story 9.3: an administrator, non-Draft Listings). An
+    image of a public Listing goes to anyone, a Visitor included; an image of any other Listing
+    goes only to its owner or a reviewing administrator. `ServedImage.public` says whether the
+    Listing is public right now, so the endpoint may cache the answer.
 
     `with_bytes=False` (for `HEAD`) decides access the same way but reads no file: `data` is empty
     and `size` comes from the asset row.
@@ -1009,7 +1011,7 @@ def image_for_serving(
     if row is None:
         raise DomainError("not_found")
     public = policy.is_public(row)  # once: it decides access and the cache header
-    if not (public or policy.is_owner(actor, row)):
+    if not (public or policy.is_owner(actor, row) or policy.admin_may_inspect(actor, row)):
         raise DomainError("not_found")
     link = ListingImage.objects.filter(id=image_key, listing_id=listing_key).first()
     if link is None:
@@ -1148,3 +1150,153 @@ def known_private_addresses(owner_account_id: uuid.UUID) -> KnownValues:
         if street and house_number:
             addresses.append(f"{house_number} {street}")
     return KnownValues(addresses=tuple(addresses))
+
+
+# --- moderation review (Story 9.3): administrators only ------------------------------------------
+
+
+@dataclass(frozen=True)
+class AdminListingRow:
+    """A Listing in the review list. A Draft's title is not shown: its content is read only with
+    a recorded reason."""
+
+    id: uuid.UUID
+    owner_account_id: uuid.UUID
+    status: str
+    restricted: bool
+    purpose: str
+    category: str
+    subtype: str
+    title: str | None
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class AdminListingPage:
+    items: tuple[AdminListingRow, ...]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True)
+class AdminListingDetail:
+    """What a reviewing administrator sees: the public projection of the content (never the
+    Private address), the moderation state and the actions open now."""
+
+    row: AdminListingRow
+    listing: PublicListingView
+    city: str | None
+    locality: str | None
+    reason: str | None  # the moderation reason the owner currently sees
+    actions: tuple[str, ...]
+    first_published_at: datetime | None
+
+
+def _admin_row(row: PropertyListing, *, with_title: bool) -> AdminListingRow:
+    return AdminListingRow(
+        id=row.id,
+        owner_account_id=row.owner_account_id,
+        status=row.status,
+        restricted=row.restricted,
+        purpose=row.purpose,
+        category=row.category,
+        subtype=row.subtype,
+        title=row.title if with_title else None,
+        created_at=row.created_at,
+    )
+
+
+def admin_listing_page(
+    actor: Actor,
+    *,
+    owner_id: uuid.UUID | None = None,
+    category: str | None = None,
+    status: str | None = None,
+    created_from: date | None = None,
+    created_to: date | None = None,
+    cursor: str | None = None,
+) -> AdminListingPage:
+    """Listings newest first, 20 per page. Without a `status` filter Drafts are left out;
+    `status="draft"` lists them without content. Dates are Karachi calendar days, inclusive."""
+    require_admin(actor)
+    rows = PropertyListing.objects.all()
+    if status is None:
+        rows = rows.exclude(status=ListingStatus.DRAFT.value)
+    else:
+        rows = rows.filter(status=ListingStatus(status).value)
+    if owner_id is not None:
+        rows = rows.filter(owner_account_id=owner_id)
+    if category is not None:
+        rows = rows.filter(category=category)
+    if created_from is not None:
+        rows = rows.filter(created_at__gte=datetime.combine(created_from, time.min, KARACHI))
+    if created_to is not None:
+        end = datetime.combine(created_to, time.min, KARACHI) + timedelta(days=1)
+        rows = rows.filter(created_at__lt=end)
+    tag = "|".join(str(v or "") for v in (owner_id, category, status, created_from, created_to))
+    tag = "admin:" + hashlib.sha256(tag.encode()).hexdigest()[:16]
+    if cursor is not None:
+        created_at, last_id = decode_cursor(cursor, tag)
+        rows = rows.filter(Q(created_at__lt=created_at) | Q(created_at=created_at, id__lt=last_id))
+    page = list(rows.order_by("-created_at", "-id")[: DEFAULT_LIMIT + 1])
+    more = len(page) > DEFAULT_LIMIT
+    page = page[:DEFAULT_LIMIT]
+    return AdminListingPage(
+        tuple(_admin_row(r, with_title=r.status != ListingStatus.DRAFT.value) for r in page),
+        encode_cursor(page[-1].created_at, page[-1].id, tag) if more else None,
+    )
+
+
+def _admin_row_of(listing_id) -> PropertyListing:
+    key = canonical_uuid(listing_id)
+    row = (
+        PropertyListing.objects.select_related(*PUBLIC_RELATED).filter(id=key).first()
+        if key is not None
+        else None
+    )
+    if row is None:
+        raise DomainError("not_found")
+    return row
+
+
+def _admin_detail(row: PropertyListing) -> AdminListingDetail:
+    location = location_of(row)
+    city = catalog.city_names([location.city]) if location else {}
+    locality = catalog.locality_names([location.locality]) if location else {}
+    return AdminListingDetail(
+        row=_admin_row(row, with_title=True),
+        listing=public_view_of(row),
+        city=city.get(location.city) if location else None,
+        locality=locality.get(location.locality) if location else None,
+        reason=lifecycle.shown_reason(row),
+        actions=lifecycle.moderation_actions(row),
+        first_published_at=row.first_published_at,
+    )
+
+
+def admin_listing(actor: Actor, listing_id) -> AdminListingDetail:
+    """One non-Draft Listing. A Draft is `not_found` here: see `admin_read_draft_listing`."""
+    require_admin(actor)
+    row = _admin_row_of(listing_id)
+    if row.status == ListingStatus.DRAFT.value:
+        raise DomainError("not_found")
+    return _admin_detail(row)
+
+
+def draft_id_for_read(actor: Actor, listing_id) -> uuid.UUID:
+    """The id of an existing Draft, else `not_found`; reads nothing else."""
+    require_admin(actor)
+    key = canonical_uuid(listing_id)
+    drafts = PropertyListing.objects.filter(id=key, status=ListingStatus.DRAFT.value)
+    if key is None or not drafts.exists():
+        raise DomainError("not_found")
+    return key
+
+
+def admin_read_draft_listing(actor: Actor, reason: str, listing_id: uuid.UUID):
+    """A reasoned private read (`docs/audit.md`) of one Draft's content. Its images are listed
+    but not served to administrators, and the Private address is not read."""
+    record_private_read(actor, reason, ("listing_draft", listing_id))
+    row = _admin_row_of(listing_id)
+    if row.status != ListingStatus.DRAFT.value:
+        raise DomainError("not_found")
+    return _admin_detail(row)

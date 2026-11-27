@@ -5,11 +5,28 @@ from apps.presentation.adminapi.accounts import (
     AccountReactivateView,
     AccountSuspendView,
 )
+from apps.presentation.adminapi.listings import (
+    AdminDraftReadView,
+    AdminListingsView,
+    AdminListingView,
+    ArchiveRemovedListingView,
+    LiftRestrictionView,
+    RemoveListingView,
+    RestoreListingView,
+    RestrictListingView,
+)
 from apps.presentation.adminapi.me import AdminMeView
 from apps.presentation.adminapi.quota import (
     QuotaPolicyDetailView,
     QuotaPolicyView,
     QuotaUsageView,
+)
+from apps.presentation.adminapi.reports import (
+    ReportDetailView,
+    ReportDismissView,
+    ReportQueueView,
+    ReportResolveView,
+    ReportStartView,
 )
 from apps.presentation.adminapi.verification import (
     VerificationApproveView,
@@ -105,6 +122,7 @@ from apps.presentation.api.public_listings import (
 from apps.presentation.api.reference import AmenityView, CityView, LocalityView
 from apps.presentation.api.registrations import AgencyRegistrationView, IndividualRegistrationView
 from apps.presentation.api.registry import RegistryView
+from apps.presentation.api.reports import ListingReportsView, OwnReportView
 from apps.presentation.api.schema import PublicSchemaView
 from apps.presentation.api.search import PublicSearchTranscriptionView, PublicSearchView
 from apps.presentation.api.sessions import AdminSessionView, CsrfView, MeView, SessionView
@@ -206,6 +224,63 @@ urlpatterns = [
         AgencyVerificationWithdrawView.as_view(),
         name="me-agency-verification-withdraw",
     ),
+    path("api/v1/admin/reports", ReportQueueView.as_view(), name="admin-reports"),
+    path("api/v1/admin/reports/<str:report_id>", ReportDetailView.as_view(), name="admin-report"),
+    path(
+        "api/v1/admin/reports/<str:report_id>/start",
+        ReportStartView.as_view(),
+        name="admin-report-start",
+    ),
+    path(
+        "api/v1/admin/reports/<str:report_id>/resolve",
+        ReportResolveView.as_view(),
+        name="admin-report-resolve",
+    ),
+    path(
+        "api/v1/admin/reports/<str:report_id>/dismiss",
+        ReportDismissView.as_view(),
+        name="admin-report-dismiss",
+    ),
+    path("api/v1/admin/listings", AdminListingsView.as_view(), name="admin-listings"),
+    path(
+        "api/v1/admin/listings/<str:listing_id>", AdminListingView.as_view(), name="admin-listing"
+    ),
+    path(
+        "api/v1/admin/listings/<str:listing_id>/read",
+        AdminDraftReadView.as_view(),
+        name="admin-listing-read",
+    ),
+    path(
+        "api/v1/admin/listings/<str:listing_id>/restrict",
+        RestrictListingView.as_view(),
+        name="admin-listing-restrict",
+    ),
+    path(
+        "api/v1/admin/listings/<str:listing_id>/lift-restriction",
+        LiftRestrictionView.as_view(),
+        name="admin-listing-lift",
+    ),
+    path(
+        "api/v1/admin/listings/<str:listing_id>/remove",
+        RemoveListingView.as_view(),
+        name="admin-listing-remove",
+    ),
+    path(
+        "api/v1/admin/listings/<str:listing_id>/restore",
+        RestoreListingView.as_view(),
+        name="admin-listing-restore",
+    ),
+    path(
+        "api/v1/admin/listings/<str:listing_id>/archive",
+        ArchiveRemovedListingView.as_view(),
+        name="admin-listing-archive",
+    ),
+    path(
+        "api/v1/listings/<str:listing_id>/reports",
+        ListingReportsView.as_view(),
+        name="listing-reports",
+    ),
+    path("api/v1/me/reports/<str:report_id>", OwnReportView.as_view(), name="me-report"),
     path("api/v1/me", MeView.as_view(), name="me"),
     path("api/v1/me/password", ChangePasswordView.as_view(), name="me-password"),
     path("api/v1/me/profile", ProfileDetailView.as_view(), name="me-profile"),

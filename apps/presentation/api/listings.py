@@ -19,6 +19,7 @@ from rest_framework.utils.urls import replace_query_param
 from rest_framework.views import APIView
 
 from apps.catalog import registry
+from apps.governance import reports
 from apps.listings import publication, quota, selectors, services
 from apps.listings import status as lifecycle_status
 from apps.listings.fields import EDITABLE_FIELDS, WIRE_FIELDS
@@ -195,6 +196,12 @@ class ListingSerializer(serializers.Serializer):
     )
     media = ImageSerializer(
         many=True, help_text="The images in `position` order; empty when there are none."
+    )
+    under_review = serializers.BooleanField(
+        help_text=(
+            "A Report on this Listing is being reviewed. Derived; it changes nothing and never "
+            "names the reporter."
+        )
     )
     restricted = serializers.BooleanField(
         help_text=(
@@ -483,7 +490,11 @@ def image_data(view: selectors.ImageView) -> dict:
     ).data
 
 
-def listing_data(view: selectors.ListingView) -> dict:
+def listing_data(view: selectors.ListingView, under_review: set | None = None) -> dict:
+    """The owner's resource. `under_review` is composed here from open Reports (Story 9.2):
+    `listings` cannot read governance data. A list passes the set for its whole page."""
+    if under_review is None:
+        under_review = reports.under_review([view.id])
     return ListingSerializer(
         {
             "id": view.id,
@@ -496,6 +507,7 @@ def listing_data(view: selectors.ListingView) -> dict:
             "media": [image_data(item) for item in view.media],
             "restricted": view.restricted,
             "restriction_reason": view.restriction_reason,
+            "under_review": view.id in under_review,
         }
     ).data
 
@@ -782,11 +794,12 @@ class MyListingsView(NoStoreMixin, APIView):
             )
         except selectors.InvalidCursor:  # a stable code, never the value
             raise field_errors({"cursor": "invalid"}) from None
+        reviewing = reports.under_review([v.id for v in page.items])
         return Response(
             {
                 "next": _link(request, page.next_cursor),
                 "previous": None,
-                "results": [listing_data(v) for v in page.items],
+                "results": [listing_data(v, reviewing) for v in page.items],
             }
         )
 

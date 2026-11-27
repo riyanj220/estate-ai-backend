@@ -215,12 +215,14 @@ class PropertyListing(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner_account_id = models.UUIDField()  # plain column: no key into identity
     status = models.CharField(max_length=16, choices=_choices(s.value for s in ListingStatus))
-    # Set by moderation (a later epic); fixtures only until then. A restricted Listing is never
+    # Written by `listings.moderation` only (Story 9.4). A restricted Listing is never
     # public, whatever its status (`listings.policy`).
     restricted = models.BooleanField(default=False)
-    # Why a restricted or removed Listing is so: short plain text, set only by moderation (a later
-    # story; test fixtures until then). Shown to the owner only, never in a public shape.
+    # Why the Listing is restricted: short plain text set by moderation. Shown to the owner (and
+    # administrators) only, never in a public shape.
     restriction_reason = models.CharField(max_length=200, null=True)
+    # Why a Removed Listing was removed; kept apart so a restriction keeps its own reason.
+    removal_reason = models.CharField(max_length=200, null=True)
     revision = models.PositiveIntegerField(default=1)
     registry_version = models.PositiveIntegerField()
     purpose = models.CharField(max_length=32)

@@ -9,6 +9,8 @@ A Listing is public iff it is Published AND not restricted AND its owner is an A
 owner (`identity.selectors.is_active_owner`). Besides that, the owning account sees its own
 Listing in any status (not when Deactivated). Everyone else, an administrator included, gets
 `False` for a non-public Listing; callers answer that with `not_found`, never `forbidden`.
+Moderation review (Story 9.3) is a separate question, `admin_may_inspect`: it never widens
+`can_view`, only the media endpoint reads it.
 """
 
 from django.db.models import Q
@@ -60,6 +62,16 @@ def is_owner(viewer: Actor, listing: PropertyListing) -> bool:
         and viewer.kind is ActorKind.USER
         and listing.owner_account_id == viewer.account_id
         and can(viewer, Capability.VIEW_DRAFTS)
+    )
+
+
+def admin_may_inspect(viewer: Actor, listing: PropertyListing) -> bool:
+    """May this administrator see the images of this Listing for moderation (Story 9.3)? Every
+    non-Draft Listing; a Draft is private (reasoned read, no images)."""
+    return (
+        viewer.kind is ActorKind.ADMIN
+        and listing.status in OWNER_VISIBLE_STATUSES - {ListingStatus.DRAFT.value}
+        and can(viewer, Capability.SIGN_IN)
     )
 
 

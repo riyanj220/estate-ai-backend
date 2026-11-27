@@ -1,6 +1,7 @@
-"""Publishing a Draft, republishing an Archived Listing and correcting a freshly published one
-(AD-7, Stories 2.15, 2.18 and 2.19). The ONLY code that sets `ListingStatus.PUBLISHED` and the
-only writer of `PublicationEvent` (an architecture guard enforces both).
+"""Publishing a Draft, republishing an Archived Listing, restoring a Removed one and correcting a
+freshly published one (AD-7, Stories 2.15, 2.18, 2.19 and 9.4). The ONLY code that sets
+`ListingStatus.PUBLISHED` and the only writer of `PublicationEvent` (an architecture guard enforces
+both). `restore_after_moderation` is the administrator's path: see its docstring.
 
 `publish` and `republish` share one transaction (`_run`, parameterised by `_Mode`), in this
 order: claim the idempotency key; lock the account and then the Listing row; compare
@@ -38,10 +39,10 @@ from apps.identity.policy import can
 from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, lock_account
 from apps.identity.state import AccountState
 from apps.kernel import audit, idempotency
-from apps.kernel.actor import Actor, ActorKind, require_signed_in
+from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.kernel.events import emit
-from apps.listings import lifecycle, quota, validation
+from apps.listings import lifecycle, moderation, quota, validation
 from apps.listings.completeness import problems_of
 from apps.listings.events import ListingModelInputsChanged, ListingPublished
 from apps.listings.lifecycle import ListingStatus, Origin
@@ -69,6 +70,7 @@ _KINDS = (KIND_INITIAL, KIND_SEED)
 REPUBLISH_SCOPE = "listings.republish"
 KIND_REPUBLISH_COUNTED = "republish_counted"
 KIND_REPUBLISH_FREE = "republish_free"
+KIND_RESTORE = "restore"  # an administrator's restore: uncounted (Story 9.4)
 _REPUBLISH_KINDS = (KIND_REPUBLISH_COUNTED, KIND_REPUBLISH_FREE)
 _KEY = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
@@ -575,6 +577,56 @@ def correct(
         if written.model_inputs_changed:
             emit(ListingModelInputsChanged(listing_id=row.id))  # last: after commit
     return written.view
+
+
+def restore_after_moderation(
+    actor: Actor, listing_id, now: datetime | None = None
+) -> moderation.Moderated:
+    """An administrator returns a Removed Listing to Published (Story 9.4, AD-7).
+
+    Visitor `unauthenticated`; non-administrator and unknown id `not_found`; not Removed
+    `conflict`. Writes one uncounted `restore` event (no allowance read or used), the status, a
+    revision and the audit record. A restriction stays in force, so a restricted Listing returns
+    to Published but not to public view. No `listing.published` event: nothing new was published.
+    """
+    require_admin(actor)
+    with transaction.atomic():
+        row = moderation.locked_for_moderation(actor, listing_id, lifecycle.RESTORE)
+        before = row.status
+        now = now if now is not None else timezone.now()
+        PublicationEvent.objects.create(
+            account_id=row.owner_account_id,
+            listing_id=row.id,
+            kind=KIND_RESTORE,
+            counted=False,
+            identity_fingerprint=identity_fingerprint(view_of(row, with_private=True)),
+            created_at=now,
+        )
+        row.status = ListingStatus.PUBLISHED.value
+        row.removal_reason = None
+        row.revision += 1
+        row.updated_at = now
+        if row.first_published_at is None:
+            row.first_published_at = now
+        row.save(
+            update_fields=[
+                "status",
+                "removal_reason",
+                "revision",
+                "updated_at",
+                "first_published_at",
+            ]
+        )
+        ListingRevision.objects.create(
+            listing=row,
+            revision=row.revision,
+            origin=Origin.MANUAL.value,
+            actor_account_id=actor.account_id,
+            changes={"status": ListingStatus.PUBLISHED.value},
+            created_at=now,
+        )
+        audit.record(actor, "listing.restored", "listing", row.id)
+    return moderation.Moderated(row.id, row.owner_account_id, before, row.status, row.restricted)
 
 
 def remove_seed_events(actor: Actor, account_ids, *, using: str | None = None) -> int:

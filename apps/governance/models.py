@@ -1,7 +1,8 @@
-"""Agency Verification requests and their decision history (Stories 8.3 and 8.4).
+"""Agency Verification (Stories 8.3 and 8.4), Reports and moderation decisions (Epic 9).
 
-`agency_account_id` and `actor_account_id` are plain ids. The verified flag itself lives on the
-identity profile and is changed only through `identity.services`.
+Account and Listing ids are plain columns. The verified flag lives on the identity profile and is
+changed only through `identity.services`; a Listing's moderation state lives in `listings` and is
+changed only through `listings.moderation` and `listings.publication`.
 """
 
 import uuid
@@ -63,4 +64,115 @@ class VerificationDecision(models.Model):
                 condition=models.Q(action__in=DECISION_ACTIONS),
                 name="governance_decision_action_valid",
             ),
+        ]
+
+
+# `conversation` Reports arrive with Story 9.5; the shape already holds them.
+REPORT_TARGETS = ["listing", "conversation"]
+REPORT_REASONS = [
+    "misleading",
+    "duplicate",
+    "prohibited_content",
+    "abusive",
+    "ai_generated_content",
+    "other",
+]
+REPORT_STATUSES = ["pending", "reviewing", "resolved", "dismissed"]
+OPEN_REPORT_STATUSES = ["pending", "reviewing"]
+
+
+class Report(models.Model):
+    """One user's Report. `snapshot` is the evidence at submission: for a Listing its public-view
+    content only. The reporter is never shown to anyone but administrators."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    target_type = models.CharField(max_length=16, default="listing")
+    target_id = models.UUIDField()  # the Listing or Conversation
+    reporter_account_id = models.UUIDField()
+    subject_account_id = models.UUIDField()  # the reported account (a Listing's owner)
+    reason = models.CharField(max_length=24)
+    description = models.CharField(max_length=1000, blank=True, default="")
+    snapshot = models.JSONField()
+    status = models.CharField(max_length=16, default="pending")
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(target_type__in=REPORT_TARGETS),
+                name="governance_report_target_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(reason__in=REPORT_REASONS),
+                name="governance_report_reason_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=REPORT_STATUSES),
+                name="governance_report_status_valid",
+            ),
+            models.UniqueConstraint(
+                fields=["reporter_account_id", "target_type", "target_id"],
+                condition=models.Q(status__in=OPEN_REPORT_STATUSES),
+                name="governance_report_one_open",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["status", "created_at", "id"], name="governance_report_queue_idx"),
+            models.Index(
+                fields=["target_type", "target_id", "status"], name="governance_report_target_idx"
+            ),
+        ]
+
+
+class ReportTransition(models.Model):
+    """Append-only: each move of a Report with the administrator's notes."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name="transitions")
+    to_status = models.CharField(max_length=16)
+    actor_account_id = models.UUIDField()
+    notes = models.CharField(max_length=1000, blank=True, default="")
+    created_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(to_status__in=["reviewing", "resolved", "dismissed"]),
+                name="governance_transition_status_valid",
+            ),
+        ]
+
+
+class ModerationAction(models.Model):
+    """Append-only: who did what to a Listing, why, when and with what outcome (Story 9.4)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    listing_id = models.UUIDField()
+    action = models.CharField(max_length=24)
+    actor_account_id = models.UUIDField()
+    reason = models.CharField(max_length=200)
+    status_before = models.CharField(max_length=16)
+    status_after = models.CharField(max_length=16)
+    restriction_after = models.BooleanField()
+    created_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    action__in=[
+                        "restrict",
+                        "remove",
+                        "lift_restriction",
+                        "restore",
+                        "archive_removed",
+                    ]
+                ),
+                name="governance_moderation_action_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["listing_id", "-created_at"], name="governance_moderation_idx")
         ]

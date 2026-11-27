@@ -6,8 +6,8 @@ from enum import StrEnum
 class ListingStatus(StrEnum):
     DRAFT = "draft"
     PUBLISHED = "published"  # set only by `listings.publication.publish` (AD-7)
-    # Set only by `listings.status.change_status` (archived, sold, rented). `removed` is written
-    # by nobody yet: the moderation story sets it; fixtures and tests create it directly.
+    # Set by `listings.status.change_status` (archived, sold, rented, by the owner). `removed` is
+    # written only by `listings.moderation` (an administrator), which may also archive it.
     ARCHIVED = "archived"
     SOLD = "sold"
     RENTED = "rented"
@@ -90,3 +90,36 @@ def move_refusal(row, target: str) -> str | None:
     if wanted is not None and row.purpose != wanted:
         return "conflict"  # a sale is sold, a rental is rented; never the other way round
     return None
+
+
+# --- moderation (Story 9.4, the administrator column of FR-75) ------------------------------------
+
+RESTRICT, LIFT, REMOVE = "restrict", "lift_restriction", "remove"
+RESTORE, ARCHIVE_REMOVED = "restore", "archive_removed"
+MODERATION_ACTIONS = (RESTRICT, REMOVE, LIFT, RESTORE, ARCHIVE_REMOVED)
+
+
+def moderation_actions(row) -> tuple[str, ...]:
+    """What an administrator may do to this Listing now. Drafts: nothing (an account is suspended
+    instead). Sold and rented: view only. A restriction persists across status changes and is
+    lifted only by `lift_restriction`, never by restoring or archiving."""
+    flag = (LIFT,) if row.restricted else (RESTRICT,)
+    if row.status == ListingStatus.PUBLISHED.value:
+        return (*flag, REMOVE)
+    if row.status == ListingStatus.ARCHIVED.value:
+        return flag
+    if row.status == ListingStatus.REMOVED.value:
+        return (RESTORE, ARCHIVE_REMOVED, *((LIFT,) if row.restricted else ()))
+    return ()
+
+
+def moderation_allowed(row, action: str) -> bool:
+    return action in moderation_actions(row)
+
+
+def shown_reason(row) -> str | None:
+    """The moderation reason the owner sees: why it was removed while it is Removed, else why it
+    is restricted."""
+    if row.status == ListingStatus.REMOVED.value and row.removal_reason:
+        return row.removal_reason
+    return row.restriction_reason
