@@ -19,6 +19,8 @@ SIGNED_IN = {
     "/api/v1/conversations": OTHER_ACCOUNT,
     "/api/v1/conversations/<str:conversation_id>": OTHER_ACCOUNT,
     "/api/v1/conversations/<str:conversation_id>/messages": OTHER_ACCOUNT,
+    "/api/v1/conversations/<str:conversation_id>/read": OWNER,
+    "/api/v1/conversations/unread-count": OWNER,
     "/api/v1/assistant/sessions": OWNER,
     "/api/v1/assistant/sessions/<str:session_id>": OWNER,
     "/api/v1/assistant/sessions/<str:session_id>/description": OWNER,

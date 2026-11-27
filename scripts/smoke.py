@@ -550,6 +550,38 @@ class Smoke:
         self.ctx["conversation"] = conversation
         return f"{len(seen)} messages"
 
+    def inbox(self):
+        """Inbox and unread (Story 7.5): the owner's reply is unread until the buyer says read."""
+        owner, buyer = self.ctx["owner"], self.ctx["buyer"]
+        conversation = self.ctx["conversation"]
+        path = f"/conversations/{conversation}"
+        key = {"Idempotency-Key": str(uuid.uuid4())}
+        owner.post(f"{path}/messages", {"body": "Come on Sunday."}, 201, key)
+        rows = buyer.get("/conversations").json()["results"]
+        mine = next(c for c in rows if c["id"] == conversation)
+        check(mine["unread_count"] >= 1, f"nothing unread: {mine}")
+        check("Come on Sunday." not in json.dumps(rows), "message text in the inbox")
+        before = buyer.get("/conversations/unread-count").json()["unread"]
+        buyer.post(f"{path}/read", {"seq": mine["last_seq"]}, 204)
+        after = buyer.get("/conversations/unread-count").json()["unread"]
+        check(after == before - 1, f"unread went {before} -> {after}")
+        check(any(c["id"] == conversation for c in owner.get("/conversations").json()["results"]),
+              "not in the owner's inbox")  # fmt: skip
+        missed = buyer.get(f"{path}/messages?after={mine['last_seq'] - 1}").json()["results"]
+        check([m["seq"] for m in missed] == [mine["last_seq"]], f"resume: {missed}")
+        return f"unread {before} -> {after}"
+
+    def continuity(self):
+        """Story 7.6: the Listing is sold by now; the history reads, nothing more is sent."""
+        buyer, conversation = self.ctx["buyer"], self.ctx["conversation"]
+        path = f"/conversations/{conversation}"
+        shown = buyer.get(path).json()
+        check(shown["listing"] == {"availability": "sold", "title": None}, f"header: {shown}")
+        check(buyer.get(f"{path}/messages").json()["results"], "the history is gone")
+        key = {"Idempotency-Key": str(uuid.uuid4())}
+        buyer.post(f"{path}/messages", {"body": "Still there?"}, 409, key)
+        return "read-only after the sale"
+
     def live(self):
         """Live delivery (Stories 7.2 and 7.3): only the participants hear of a message, within a
         second; a foreign Origin and a Visitor are refused; signing out closes the socket."""
@@ -849,10 +881,12 @@ class Smoke:
         self.flow("search by description", self.search, ["buyer"])
         self.flow("inquiry and reply", self.inquiry, ["published", "buyer"])
         self.flow("live delivery", self.live, ["conversation"])
+        self.flow("inbox and unread", self.inbox, ["conversation"])
         self.flow("favourites and ownership", self.favourites, ["published", "buyer"])
         self.flow(
             "edit/archive/republish/correct/sold", self.edit_and_lifecycle, ["published", "third"]
         )
+        self.flow("sold listing: read-only thread", self.continuity, ["conversation"])
         self.flow("notifications and allowance", self.notifications_and_quota, ["owner"])
         self.flow("password reset and sign out", self.password_reset, ["buyer"])
         self.flow("admin: quota, lookup, suspend", self.admin, ["owner"])
