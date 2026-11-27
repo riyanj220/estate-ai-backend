@@ -33,6 +33,7 @@ from apps.presentation.api.bodies import (
 from apps.presentation.api.passwords import NoStoreMixin
 from apps.presentation.api.permissions import RequireSignedIn
 from apps.presentation.api.serializers import ErrorBodySerializer
+from apps.valuation import selectors as valuation
 
 logger = logging.getLogger("estate.listings")
 
@@ -259,14 +260,26 @@ class PublicListingSerializer(serializers.Serializer):
     registry_version = serializers.IntegerField(min_value=1)
 
 
-class ListingPreviewSerializer(PublicListingSerializer):
-    """What the public will see of the owner's own Listing, plus an `estimate` that is always
-    null until the valuation feature exists."""
+class PreviewEstimateSerializer(serializers.Serializer):
+    """A stored AI Price Estimate of the previewed Listing."""
 
-    estimate = serializers.DictField(
+    estimated_value = serializers.CharField(
+        help_text="Estimated Property Value in PKR, a decimal string."
+    )
+    currency = serializers.CharField(help_text="Always `PKR`.")
+    model_version = serializers.IntegerField()
+    estimated_at = serializers.DateTimeField()
+
+
+class ListingPreviewSerializer(PublicListingSerializer):
+    """What the public will see of the owner's own Listing, plus its latest AI Price Estimate."""
+
+    estimate = PreviewEstimateSerializer(
         allow_null=True,
-        read_only=True,
-        help_text="Always null for now; reserved for the valuation estimate.",
+        help_text=(
+            "The latest estimate requested for this Listing; null when there is none or the saved "
+            "details it was computed from have changed since."
+        ),
     )
 
 
@@ -299,8 +312,16 @@ def public_values(view: selectors.PublicListingView) -> dict:
     }
 
 
-def preview_data(view: selectors.PublicListingView) -> dict:
-    return ListingPreviewSerializer({**public_values(view), "estimate": None}).data
+def preview_data(
+    view: selectors.PublicListingView, estimate: valuation.StoredEstimate | None = None
+) -> dict:
+    shown = estimate and {
+        "estimated_value": f"{estimate.value:.2f}",
+        "currency": "PKR",
+        "model_version": estimate.model_version,
+        "estimated_at": estimate.estimated_at,
+    }
+    return ListingPreviewSerializer({**public_values(view), "estimate": shown}).data
 
 
 class DraftCreateSerializer(serializers.Serializer):
@@ -683,8 +704,10 @@ class ListingPreviewView(NoStoreMixin, APIView):
             "public projection (the same fields a visitor would get, built by the same function): "
             "never a private address, coordinates, a phone number, the revision, the provenance or "
             "the status. `media` lists the images in the public shape; their `url` is the media "
-            "endpoint, which serves a Draft's image to its owner only. `estimate` is always "
-            "`null` until the valuation feature exists. Another account's, an administrator's, an "
+            "endpoint, which serves a Draft's image to its owner only. `estimate` is the latest "
+            "AI Price Estimate requested for the Listing, or `null` when there is none or the "
+            "saved details changed since; reading it computes nothing. Another account's, an "
+            "administrator's, an "
             "unknown and a malformed id are all `404 not_found`. A Visitor gets `401`. Opening the "
             "preview counts as opening the Draft (it postpones the idle-Draft notice). Never "
             "cached."
@@ -695,7 +718,8 @@ class ListingPreviewView(NoStoreMixin, APIView):
         actor = get_actor(request)
         view = selectors.preview_of(actor, listing_id)
         _note_open(actor, listing_id)
-        return Response(preview_data(view))
+        estimate = valuation.latest_draft_estimate(actor, listing_id)
+        return Response(preview_data(view, estimate))
 
 
 def _page_size(request) -> int:

@@ -309,3 +309,22 @@ def test_the_retention_job_removes_orphans_and_old_ad_hoc_estimates(client, owne
     assert retention.purge_estimates(now) == 1
     assert retention.purge_estimates(now + timedelta(days=91)) == 1
     assert PriceEstimate.objects.get().listing_id == kept.id
+
+
+def test_the_preview_shows_the_latest_estimate_until_the_inputs_change(client, owner):
+    view = draft(owner)
+    preview = f"/api/v1/listings/{view.id}/preview"
+    assert client.get(preview).json()["estimate"] is None
+    asked = post(client, draft_url(view.id)).json()
+    shown = client.get(preview).json()["estimate"]
+    assert shown == {
+        name: asked[name]
+        for name in ("estimated_value", "currency", "model_version", "estimated_at")
+    }
+    assert PriceEstimate.objects.count() == 1  # reading computes nothing
+    assert other_client().get(preview).status_code == 404
+    # the Asking price is not a model input; the area is
+    listings.apply_updates(user(owner), view.id, 2, {"asking_price": "5000000"})
+    assert client.get(preview).json()["estimate"] == shown
+    listings.apply_updates(user(owner), view.id, 3, {"area_value": "500", "area_unit": "sqyd"})
+    assert client.get(preview).json()["estimate"] is None
