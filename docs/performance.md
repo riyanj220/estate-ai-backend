@@ -58,3 +58,20 @@ not the sample marketplace data (`docs/sample-data.md`). Epic 11 extends it.
 - The cursor condition now also bounds the first sort key, so a later page starts inside the index.
 - No other index was added. Price sorts and relevance still read and sort every match, which is within budget at this
   size; the filter columns are not selective enough to need their own indexes.
+
+## Chat latency under load (Story 7.4, SM-7)
+
+    uv run pytest -m perf -s tests/perf/test_chat_latency.py
+
+Fifty Messages between two online accounts while five clients keep AI or image requests going (three re-encode
+12-megapixel photos, two searches by description with the stub provider made to take 2 s). Timed from the sender's
+POST until the recipient has had the socket event and read the Message. Budget: p95 under 1 s. It drives the ASGI
+application in one process, without the network.
+
+| 4-core laptop, 2026-11-27 | p50 | p95 | max |
+| --- | --- | --- | --- |
+| event received | 142 ms | 364 ms | 383 ms |
+| event received and Message read | 224 ms | 459 ms | 490 ms |
+
+The executor's limits (4 workers, 1 reserved) were not changed and Redis is not needed. With three heavy slots, five
+requests at once means some are refused busy and retried, which is the reservation working.

@@ -87,5 +87,7 @@ Listings and changes (then restores) a quota limit, so run it only against a thr
 4. In a shell with the same exports: `uv run python scripts/smoke.py --base-url http://127.0.0.1:8100 --provision-admin`.
 5. Drop the database afterwards.
 
-The base URL may also be a frontend that proxies to that server. Registration is limited to 10 an hour per client and
+The base URL may also be a frontend that proxies to that server (the "live delivery" flow then proves the `/ws`
+proxy too). Pass `--origin` with one of the server's trusted origins when it is not `http://localhost:3000`, and
+`--live-idle 45` to check that an idle socket stays open. Registration is limited to 10 an hour per client and
 one run uses three. With the stub provider the assistant extracts nothing and cannot write a description.

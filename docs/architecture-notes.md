@@ -28,6 +28,26 @@ AD-14 is flagged for amendment.** Consequences to carry into the amendment:
 - The single-process, single-worker rule is unaffected (it exists because of the in-memory channel layer).
 - Concurrency means sync code may now run in parallel threads, so shared in-process state needs thread safety.
 
+## Live delivery (Epic 7, Stories 7.2 to 7.4)
+
+- **AD-14 decision on send and sign-in.** Because the spike showed synchronous views run concurrently, message send,
+  sign-in and the session endpoints stay ordinary synchronous, database-only views (no external call, no heavy work
+  on the request thread). They were not rewritten as async views. AD-14's sentence about one shared thread should be
+  amended to match.
+- **One process.** The channel layer is `channels.layers.InMemoryChannelLayer`: one Daphne process, one worker. A
+  second process would silently miss events; Redis (`channels_redis`) is only needed then, or if the latency test
+  fails. There is no Redis today.
+- **What the socket carries.** `/ws` is receive-only and sends ids and numbers only (`events.schema.json`); the client
+  reads the Message over REST with `?after=<seq>`, which is also how it resumes after a drop.
+- **Who hears.** One group per authenticated account, recipients taken from the Conversation row. The session and
+  account are checked again before every event and every 30 seconds, so a change made by another process (a
+  management command), which cannot signal this one, still stops delivery.
+- **Limits.** 1 KiB inbound frames (any client frame closes the socket), 5 sockets per account, closed after 15 minutes
+  without an event (the client reconnects). Daphne's protocol pings (every 20 s) drop dead peers. Settings: `WS_*`.
+- **Running it.** `manage.py runserver` serves HTTP and `/ws` (`daphne` is in the local `INSTALLED_APPS`), as does
+  `scripts/dev_server.sh`. The frontend's Next server proxies `/ws` on its own origin, so the session cookie and the
+  Origin are the site's; in deployment `/ws` is routed on the same host.
+
 ## Identity services package layout
 
 `apps/identity/services/` is a package, split by area after Epic 1 grew the old single module to 1,379 lines. `__init__.py`

@@ -134,11 +134,11 @@ development_status:
 
   epic-7: in-progress
   7-1-start-an-inquiry: review
-  7-2-websocket-consumer-authentication-and-event-schema: in-progress
-  7-3-live-delivery-and-frontend-connection: in-progress
-  7-4-chat-latency-under-load: in-progress
-  7-5-inbox-history-and-unread-state: backlog
-  7-6-conversation-continuity-and-restrictions: backlog
+  7-2-websocket-consumer-authentication-and-event-schema: review
+  7-3-live-delivery-and-frontend-connection: review
+  7-4-chat-latency-under-load: review
+  7-5-inbox-history-and-unread-state: in-progress
+  7-6-conversation-continuity-and-restrictions: in-progress
   epic-7-retrospective: optional
 
   epic-8: backlog
