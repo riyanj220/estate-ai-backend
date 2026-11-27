@@ -153,8 +153,8 @@ development_status:
   9-2-review-reports: review
   9-3-moderation-listing-review: review
   9-4-moderation-actions: review
-  9-5-report-a-conversation-or-message: in-progress
-  9-6-suspicious-and-duplicate-listing-flags: in-progress
+  9-5-report-a-conversation-or-message: review
+  9-6-suspicious-and-duplicate-listing-flags: review
   epic-9-retrospective: optional
 
   epic-10: backlog

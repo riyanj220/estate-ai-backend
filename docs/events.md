@@ -75,6 +75,10 @@ the runtime executor (`docs/valuation.md`).
 `listing.deleted` (a Draft or sample Listing was removed) is subscribed by `valuation`, which deletes its stored
 estimates; its retention job repairs a lost event.
 
+`governance` also subscribes: `account.session_ended` with reason `deactivated` anonymises Conversation Report
+snapshots (Story 9.5), `listing.published` runs the duplicate flag rule and `listing.deleted` drops that Listing's
+flags (Story 9.6).
+
 `messaging.message_sent` (ids and the sequence number) has no subscriber yet; live delivery (Story 7.3) adds it.
 
 ## Idempotency (AD-17)

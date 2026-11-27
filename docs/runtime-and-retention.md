@@ -100,6 +100,12 @@ Story 8.2 adds `listings.view_buckets`: the 30-minute view-counting buckets, del
 Story 4.3 adds `valuation.estimates` (see `docs/valuation.md`): estimates of deleted Listings, and estimates of
 entered attributes older than 90 days.
 
+Story 9.5 adds `governance.report_snapshots`: anonymises Conversation Report snapshots of Deactivated participants
+that the deactivation subscriber missed.
+
+`run_flags` (Story 9.6) is separate from retention: schedule it nightly too. It refreshes the advisory duplicate and
+suspicious Listing flags.
+
 A job must return an int row count; anything else counts as a failed job. Runs must not overlap: schedule a single
 instance (there is no advisory lock yet). Purges delete in one statement for now, with no batching.
 

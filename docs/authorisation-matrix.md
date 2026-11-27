@@ -28,6 +28,10 @@ A view with no explicit permission is denied (403). Declare one of `AllowPublic`
 
 The reported Listing's owner never sees who reported it.
 
+A Conversation Report (Story 9.5) is made only by a participant (anyone else: 404; Suspended: 403) and only about
+the other participant's Messages. Administrators see its Messages and description only through the reasoned,
+audited `POST /api/v1/admin/reports/{id}/read`. The advisory flag list (Story 9.6) is administrator only.
+
 ## Routes
 
 Generated from the URL configuration; do not edit by hand. Regenerate with `uv run python scripts/authz_matrix.py`.
@@ -41,6 +45,7 @@ whose permission is not explicit.
 | `/api/v1/admin/accounts/<str:account_id>/reactivate` | POST | admin | `apps.presentation.adminapi.accounts.AccountReactivateView` |
 | `/api/v1/admin/accounts/<str:account_id>/suspend` | POST | admin | `apps.presentation.adminapi.accounts.AccountSuspendView` |
 | `/api/v1/admin/accounts/lookup` | POST | admin | `apps.presentation.adminapi.accounts.AccountLookupView` |
+| `/api/v1/admin/flags` | GET | admin | `apps.presentation.adminapi.flags.AdminFlagsView` |
 | `/api/v1/admin/listings` | GET | admin | `apps.presentation.adminapi.listings.AdminListingsView` |
 | `/api/v1/admin/listings/<str:listing_id>` | GET | admin | `apps.presentation.adminapi.listings.AdminListingView` |
 | `/api/v1/admin/listings/<str:listing_id>/archive` | POST | admin | `apps.presentation.adminapi.listings.ArchiveRemovedListingView` |
@@ -56,6 +61,7 @@ whose permission is not explicit.
 | `/api/v1/admin/reports` | GET | admin | `apps.presentation.adminapi.reports.ReportQueueView` |
 | `/api/v1/admin/reports/<str:report_id>` | GET | admin | `apps.presentation.adminapi.reports.ReportDetailView` |
 | `/api/v1/admin/reports/<str:report_id>/dismiss` | POST | admin | `apps.presentation.adminapi.reports.ReportDismissView` |
+| `/api/v1/admin/reports/<str:report_id>/read` | POST | admin | `apps.presentation.adminapi.reports.ReportReadView` |
 | `/api/v1/admin/reports/<str:report_id>/resolve` | POST | admin | `apps.presentation.adminapi.reports.ReportResolveView` |
 | `/api/v1/admin/reports/<str:report_id>/start` | POST | admin | `apps.presentation.adminapi.reports.ReportStartView` |
 | `/api/v1/admin/verification-requests` | GET | admin | `apps.presentation.adminapi.verification.VerificationQueueView` |
@@ -72,6 +78,7 @@ whose permission is not explicit.
 | `/api/v1/conversations/<str:conversation_id>` | GET | signed_in | `apps.presentation.api.conversations.ConversationDetailView` |
 | `/api/v1/conversations/<str:conversation_id>/messages` | GET, POST | signed_in | `apps.presentation.api.conversations.ConversationMessagesView` |
 | `/api/v1/conversations/<str:conversation_id>/read` | POST | signed_in | `apps.presentation.api.conversations.ConversationReadView` |
+| `/api/v1/conversations/<str:conversation_id>/reports` | POST | signed_in | `apps.presentation.api.reports.ConversationReportsView` |
 | `/api/v1/conversations/unread-count` | GET | signed_in | `apps.presentation.api.conversations.UnreadConversationsView` |
 | `/api/v1/csrf` | GET | public | `apps.presentation.api.sessions.CsrfView` |
 | `/api/v1/email-changes/confirm` | POST | public | `apps.presentation.api.profile.EmailChangeConfirmView` |
