@@ -11,6 +11,11 @@ from apps.presentation.adminapi.quota import (
     QuotaPolicyView,
     QuotaUsageView,
 )
+from apps.presentation.api.assistant import (
+    AssistantSessionsView,
+    AssistantSessionView,
+    AssistantTurnsView,
+)
 from apps.presentation.api.estimates import (
     EstimateView,
     ListingEstimateView,
@@ -229,6 +234,21 @@ urlpatterns = [
         name="listing-image-file",
     ),
     path("api/v1/estimates", EstimateView.as_view(), name="estimates"),
+    path(
+        "api/v1/assistant/sessions",
+        AssistantSessionsView.as_view(),
+        name="assistant-sessions",
+    ),
+    path(
+        "api/v1/assistant/sessions/<str:session_id>",
+        AssistantSessionView.as_view(),
+        name="assistant-session",
+    ),
+    path(
+        "api/v1/assistant/sessions/<str:session_id>/turns",
+        AssistantTurnsView.as_view(),
+        name="assistant-turns",
+    ),
     path(
         "api/v1/public/listings/<str:listing_id>/estimate",
         PublicListingEstimateView.as_view(),

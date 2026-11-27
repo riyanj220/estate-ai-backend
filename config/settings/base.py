@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "apps.identity",
     "apps.listings",
     "apps.valuation",
+    "apps.assistant",
 ]
 
 MIDDLEWARE = [

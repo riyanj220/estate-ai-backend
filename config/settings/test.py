@@ -3,6 +3,11 @@ import os
 import shutil
 import tempfile
 
+# One native thread per test process: with parallel workers, scikit-learn would otherwise start
+# one thread per core in each of them and starve the others (slow runs, timed-out estimates).
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
 from config.env import (
     env,
     env_list,

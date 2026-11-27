@@ -5,6 +5,8 @@ and no length or range constraint. The registry's rules still judge every propos
 
 from apps.catalog import registry
 
+# Bumped when the shape of the extraction schema changes; sessions record it.
+SCHEMA_VERSION = 1
 _JSON_TYPES = {"integer": "integer", "boolean": "boolean"}  # everything else is text
 
 

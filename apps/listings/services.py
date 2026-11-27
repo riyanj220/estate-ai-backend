@@ -80,6 +80,7 @@ from apps.listings.selectors import (
     clean_provenance,
     commercial_of,
     field_text,
+    get_owned_listing,
     image_url,
     live_image_count,
     location_of,
@@ -555,6 +556,16 @@ def _owned_editable(actor: Actor, listing_id) -> uuid.UUID:
     if not can(actor, Capability.EDIT_DRAFTS):
         raise DomainError("forbidden")
     return key
+
+
+def require_draft(actor: Actor, listing_id) -> ListingView:
+    """The owner's own Draft, for work that only a Draft allows (the Assistant, Story 5.8):
+    Visitor `unauthenticated`, not owned `not_found`, no `edit_drafts` `forbidden`, a Listing that
+    is not a Draft `conflict`."""
+    view = get_owned_listing(actor, _owned_editable(actor, listing_id))
+    if view.status != ListingStatus.DRAFT.value:
+        raise DomainError("conflict")
+    return view
 
 
 def require_image_access(actor: Actor, listing_id) -> None:

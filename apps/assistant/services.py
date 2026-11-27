@@ -1,0 +1,217 @@
+"""The write path of the Assistant (Story 5.8): sessions and turns.
+
+A turn calls the model once. A message that looks like a question also embeds it once for
+knowledge retrieval. Only redacted text is stored, and only for a turn that was answered. The
+Listing is never read into the prompt and never changed here.
+"""
+
+import logging
+import re
+from dataclasses import dataclass
+from datetime import timedelta
+
+from django.db import IntegrityError, transaction
+from django.db.models import Max
+from django.utils import timezone
+
+from apps.assistant import prompts
+from apps.assistant.models import AssistantSession, AssistantTurn
+from apps.assistant.selectors import (
+    SessionView,
+    TurnView,
+    owned_session,
+    session_view,
+    turn_view,
+)
+from apps.catalog import extraction, registry
+from apps.catalog import selectors as catalog
+from apps.kernel import ratelimit
+from apps.kernel.actor import Actor
+from apps.kernel.ai import gateway
+from apps.kernel.ai.known_values import known_values_for
+from apps.kernel.ai.ports import LLMRequest, Message
+from apps.kernel.ai.redaction import KnownValues, RedactedText, redact
+from apps.kernel.errors import DomainError
+from apps.listings import services as listings
+from apps.listings.selectors import canonical_uuid
+
+logger = logging.getLogger("estate.assistant")
+
+MAX_MESSAGE = gateway.ASSISTANT_TURN.max_chars
+MAX_REPLY = 4000
+MAX_TURNS = 200  # per session: history must not grow without bound
+HISTORY_TURNS = 6  # earlier turns the model sees
+ABANDONED_AFTER = timedelta(seconds=90)  # longer than retrieval plus the model call can take
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f\ud800-\udfff]")
+# Only a message that asks something is worth an embedding request on a free tier.
+_QUESTION = re.compile(
+    r"[?؟]"
+    r"|\b(explain|meaning|means?|difference|define|matlab|kya)\b"
+    r"|^\s*(what|how|why|which|when|where|who|is|are|can|does|do)\b",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class TurnResult:
+    """`turn` is None when the model could not answer: nothing was stored and `message` says why.
+    On success `message` is empty unless explanations were unavailable."""
+
+    outcome: str
+    message: str
+    turn: TurnView | None
+
+
+def open_session(actor: Actor, listing_id) -> tuple[SessionView, bool]:
+    """The open session of the caller's Draft, created when there is none; True when created.
+
+    Refusals: Visitor `unauthenticated`; not owned `not_found`; no `edit_drafts` capability
+    (Suspended, Deactivated) `forbidden`; a Listing that is not a Draft `conflict`."""
+    listing = listings.require_draft(actor, listing_id)
+    mine = AssistantSession.objects.filter(listing_id=listing.id, closed_at__isnull=True)
+    row = mine.first()
+    if row is not None:
+        return session_view(row), False
+    try:
+        with transaction.atomic():
+            row = AssistantSession.objects.create(
+                account_id=actor.account_id,
+                listing_id=listing.id,
+                registry_version=registry.registry_version(),
+                schema_version=extraction.SCHEMA_VERSION,
+                created_at=timezone.now(),
+            )
+    except IntegrityError:  # a concurrent request opened it
+        return session_view(mine.get()), False
+    return session_view(row), True
+
+
+def _check(message, client_turn_id) -> tuple[str, object]:
+    errors = {}
+    text = message.strip() if isinstance(message, str) else ""
+    if message is None or (isinstance(message, str) and not text):
+        errors["message"] = "required"
+    elif not isinstance(message, str) or _CONTROL.search(text):
+        errors["message"] = "invalid"
+    elif len(text) > MAX_MESSAGE:
+        errors["message"] = "too_long"
+    key = canonical_uuid(client_turn_id)
+    if key is None:
+        errors["client_turn_id"] = "required" if client_turn_id is None else "invalid"
+    if errors:
+        raise listings.FieldsInvalid(errors)
+    return text, key
+
+
+def _claim(session, client_turn_id, text: str) -> tuple[AssistantTurn, bool]:
+    """Reserve the turn before the model is called, so a repeat or a second message in flight
+    cannot call it twice. False with the stored turn when this one was already answered."""
+    now = timezone.now()
+    with transaction.atomic():
+        locked = AssistantSession.objects.select_for_update().filter(pk=session.pk).first()
+        if locked is None:
+            raise DomainError("not_found")
+        if locked.closed_at is not None:
+            raise DomainError("conflict")
+        turns = AssistantTurn.objects.filter(session=locked)
+        turns.filter(reply_text="", created_at__lt=now - ABANDONED_AFTER).delete()
+        same = turns.filter(client_turn_id=client_turn_id).first()
+        if same is not None and same.reply_text:
+            if same.user_text != text:
+                raise DomainError("idempotency_key_reused")
+            return same, False
+        if turns.filter(reply_text="").exists() or turns.count() >= MAX_TURNS:
+            raise DomainError("conflict")
+        last = turns.aggregate(last=Max("sequence"))["last"] or 0
+        row = AssistantTurn.objects.create(
+            session=locked,
+            sequence=last + 1,
+            client_turn_id=client_turn_id,
+            user_text=text,
+            created_at=now,
+        )
+    return row, True
+
+
+def _limit_reached(actor: Actor) -> bool:
+    """The gateway enforces the limit; this only avoids spending an embedding on a refused turn."""
+    key = ratelimit.derive_key("account", str(actor.account_id))
+    return ratelimit.peek(gateway.ASSISTANT_TURN.account_scope, key)
+
+
+def _knowledge(actor: Actor, text: str) -> catalog.KnowledgeResult:
+    if not _QUESTION.search(text) or _limit_reached(actor):
+        return catalog.KnowledgeResult("not_found")
+    # placeholders can push redacted text past the cap
+    return catalog.retrieve_knowledge(actor, text[: catalog.KNOWLEDGE_MAX_QUESTION])
+
+
+def _request(values: KnownValues, turn: AssistantTurn, safe: RedactedText, passages) -> LLMRequest:
+    earlier = list(
+        AssistantTurn.objects.filter(session_id=turn.session_id, sequence__lt=turn.sequence)
+        .exclude(reply_text="")
+        .order_by("-sequence")[:HISTORY_TURNS]
+    )
+    history = tuple(
+        Message(role, redact(text, values))  # again: the account's values may have changed
+        for row in reversed(earlier)
+        for role, text in (("user", row.user_text), ("assistant", row.reply_text))
+    )
+    context = tuple(
+        redact(f"{p.title} (source: {p.source}, version {p.version})\n{p.text}", KnownValues())
+        for p in passages
+    )
+    return LLMRequest(
+        system=redact(prompts.SYSTEM, KnownValues()),
+        input=safe,
+        history=history,
+        context=context,
+    )
+
+
+def _clean_reply(text: str, values: KnownValues) -> str:
+    """Model output is untrusted: plain characters only, redacted, bounded."""
+    plain = _CONTROL.sub("", text[: MAX_REPLY * 2].replace("\r\n", "\n"))
+    return redact(plain, values).value[:MAX_REPLY].strip()
+
+
+def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
+    """One turn. Refusals, in order: `unauthenticated`, `not_found` (not the caller's session),
+    `forbidden` (no `edit_drafts`), `conflict` (not a Draft any more), invalid values, then
+    `conflict` while another turn is in flight or the session is full, `idempotency_key_reused`
+    for a repeated `client_turn_id` with another message, and `throttled` over the message limit.
+
+    A repeat of an answered turn returns it without calling the model."""
+    session = owned_session(actor, session_id)
+    listings.require_draft(actor, session.listing_id)
+    text, key = _check(message, client_turn_id)
+    values = known_values_for(actor)
+    safe = redact(text, values)
+    turn, is_new = _claim(session, key, safe.value)
+    if not is_new:
+        return TurnResult("success", "", turn_view(turn))
+    pending = AssistantTurn.objects.filter(pk=turn.pk, reply_text="")
+    answered = False
+    try:
+        knowledge = _knowledge(actor, safe.value)
+        request = _request(values, turn, safe, knowledge.passages)
+        result = gateway.complete(actor, gateway.ASSISTANT_TURN, request)
+        if not result.ok:
+            if result.outcome == "blocked":
+                raise ratelimit.RateLimited(result.retry_after)
+            return TurnResult(result.outcome, result.message, None)
+        reply = _clean_reply(result.value.text, values)
+        if not reply:
+            return TurnResult("error", gateway.MESSAGES["error"], None)
+        turn.reply_text = reply
+        turn.sources = [
+            {"title": p.title, "source": p.source, "version": p.version} for p in knowledge.passages
+        ]
+        if not pending.update(reply_text=turn.reply_text, sources=turn.sources):
+            raise DomainError("not_found")  # the Draft was deleted meanwhile
+        answered = True
+    finally:
+        if not answered:
+            pending.delete()
+    notice = "" if knowledge.ok else knowledge.message
+    return TurnResult("success", notice, turn_view(turn))
