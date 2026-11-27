@@ -107,7 +107,7 @@ development_status:
   4-7-5-year-price-forecast: review
   epic-4-retrospective: optional
 
-  epic-5: in-progress
+  epic-5: done
   5-1-ai-ports-redaction-and-recorded-stub-adapter: review
   5-2-gateway-controls-limits-flags-request-log-and-budget: review
   5-3-external-service-notice: review
@@ -121,8 +121,8 @@ development_status:
   5-11-nearby-facilities-and-corrections: review
   5-12-integrity-and-explicit-approval: review
   5-13-description-generation: review
-  5-14-resume-and-idempotent-turns: in-progress
-  5-15-graceful-degradation-of-the-assistant: in-progress
+  5-14-resume-and-idempotent-turns: review
+  5-15-graceful-degradation-of-the-assistant: review
   epic-5-retrospective: optional
 
   epic-6: backlog
