@@ -46,7 +46,23 @@ The key is accepted. No quota refusal was seen.
 - Listed token limits for both tested LLMs: 1,048,576 input, 65,536 output.
 
 This is a small sample: one run, synthetic English and one Roman Urdu sentence, one machine-voiced
-WAV clip. It is not an accuracy evaluation (Story 11.5), and browser audio formats (WebM) are untested.
+WAV clip. It is not an accuracy evaluation (Story 11.5).
+
+### Browser recording formats (Story 6.3, 2026-11-27, 3 calls)
+
+Gemini's documented audio types include `audio/webm`, `audio/ogg`, `audio/aac`, `audio/m4a` and `audio/wav`, not
+`audio/mp4`; the server therefore sends MP4 recordings as `audio/m4a`. Tried on `gemini-3.5-flash-lite` with one
+machine-voiced English sentence of 12 words:
+
+| Recording | Sent as | Result | Latency |
+|---|---|---|---|
+| Chrome `MediaRecorder`, WebM/Opus (fake microphone) | `audio/webm` | 0 word errors | 1.7 s |
+| ffmpeg fragmented MP4/AAC (stands in for Safari) | `audio/m4a` | 0 word errors | 1.4 s |
+| Chrome `MediaRecorder`, MP4/Opus | `audio/m4a` | 0 word errors | 1.9 s |
+
+No conversion is needed. Not tried: a real Safari or Firefox recording, Ogg, a human voice, noise, Urdu or Roman
+Urdu speech. Measure those with `manage.py evaluate_speech <directory>` (clips with a `.txt` of the words spoken;
+it reports word error rate by name prefix and p90 latency).
 
 ## Free-tier limits
 
