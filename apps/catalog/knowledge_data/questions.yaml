@@ -1,0 +1,49 @@
+# The 40 labelled domain questions of SM-11 (FR-78) and a few off-topic ones for calibrating the
+# not-found threshold. `passage` is the id that should be in the top 3.
+questions:
+  - {question: "What is a marla?", passage: area.marla}
+  - {question: "How many square feet are in one marla, 225 or 272.25?", passage: area.marla-basis}
+  - {question: "How big is a kanal?", passage: area.kanal}
+  - {question: "How many square feet is a gaz?", passage: area.square-yard}
+  - {question: "What size is an acre?", passage: area.acre}
+  - {question: "Which units can I use for the area of my property?", passage: area.units}
+  - {question: "What does covered area mean?", passage: area.covered}
+  - {question: "How much is one crore in rupees?", passage: money.lakh-crore}
+  - {question: "Should rent be per month or per year?", passage: money.rental-period}
+  - {question: "What is a plot file?", passage: type.plot-file}
+  - {question: "My flat is a single room studio, how many bedrooms do I enter?", passage: type.studio}
+  - {question: "What is a grey structure?", passage: type.grey-structure}
+  - {question: "What is a corner plot?", passage: type.corner}
+  - {question: "What is a powder room?", passage: feature.powder-room}
+  - {question: "Can I say there is a mosque or school nearby?", passage: amenity.nearby}
+  - {question: "Which community amenities can I choose, like a swimming pool?", passage: amenity.community}
+  - {question: "What are maintenance charges?", passage: feature.maintenance}
+  - {question: "What does possession mean?", passage: legal.possession}
+  - {question: "What is balloting in a housing scheme?", passage: legal.balloting}
+  - {question: "What is inteqal?", passage: legal.inteqal}
+  - {question: "What is a registry of a property?", passage: legal.registry}
+  - {question: "What is a fard?", passage: legal.fard}
+  - {question: "What is an allotment letter?", passage: legal.allotment-letter}
+  - {question: "What is an NOC?", passage: legal.noc}
+  - {question: "Does EstateAI verify the approval authority of my plot?", passage: legal.approval-authority}
+  - {question: "How many drafts can I have open?", passage: listing.draft-limit}
+  - {question: "Which fields are required to publish a listing?", passage: listing.required}
+  - {question: "How long can the title be?", passage: listing.title-rules}
+  - {question: "Can I write my phone number in the description?", passage: listing.no-contacts}
+  - {question: "How many images can I upload and in which formats?", passage: listing.images}
+  - {question: "How many publications do I get each month?", passage: publish.quota}
+  - {question: "Can I change the locality after publishing by mistake?", passage: publish.correction}
+  - {question: "Is republishing an archived listing free?", passage: publish.republish}
+  - {question: "How do I mark my house as sold?", passage: publish.sold-rented}
+  - {question: "Is my house number shown to the public?", passage: privacy.private-address}
+  - {question: "Will buyers see my phone number and email?", passage: privacy.phone}
+  - {question: "What does seller-declared mean?", passage: claims.seller-declared}
+  - {question: "Is it safe to type private details into the AI feature?", passage: privacy.ai-external}
+  - {question: "What should a good description include?", passage: describe.basics}
+  - {question: "How should I describe a plot for sale?", passage: describe.plot}
+off_topic:
+  - "Who won the cricket world cup?"
+  - "Give me a recipe for chicken biryani."
+  - "What is the capital of France?"
+  - "How do I fix a flat bicycle tyre?"
+  - "Explain quantum entanglement."

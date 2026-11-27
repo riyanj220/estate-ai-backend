@@ -1,15 +1,27 @@
 """Write path for catalog data. Only this module (and data migrations) writes catalog tables."""
 
 import re
+import time
 import unicodedata
 
 from django.db import IntegrityError, transaction
 from django.db.models.functions import Lower
 
-from apps.catalog.models import AMENITY_KINDS, LOCALITY_KINDS, Amenity, City, Locality
+from apps.catalog import knowledge
+from apps.catalog.models import (
+    AMENITY_KINDS,
+    LOCALITY_KINDS,
+    Amenity,
+    City,
+    KnowledgeChunk,
+    KnowledgeDocument,
+    Locality,
+)
 from apps.catalog.selectors import AmenityRef, CityRef, LocalityRef, get_city
 from apps.kernel import audit
-from apps.kernel.actor import Actor, require_admin
+from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
+from apps.kernel.ai import gateway
+from apps.kernel.ai.redaction import KnownValues, redact
 from apps.kernel.errors import DomainError
 
 NAME_MIN, NAME_MAX = 2, 80
@@ -135,3 +147,64 @@ def create_amenity(
             raise DomainError("validation_error") from None
         audit.record(actor, "amenity.created", "amenity", row.id)
     return AmenityRef(code=row.code, label=row.label, kind=row.kind, group=row.group)
+
+
+KNOWLEDGE_BATCH = 50  # passages per embedding request
+
+
+class KnowledgeIndexError(Exception):
+    """The passages could not be embedded; the existing index is unchanged."""
+
+    def __init__(self, outcome: str) -> None:
+        super().__init__(f"embedding failed: {outcome}")
+        self.outcome = outcome
+
+
+def rebuild_knowledge_index(actor: Actor, *, pause: float = 0.0) -> int:
+    """Embed every authored passage through the gateway (flag, budget, request log) and replace
+    the index in one transaction; returns the number of passages. System or administrator only.
+    `pause` seconds are waited between requests, for a provider's per-minute limit. Any failure
+    raises `KnowledgeIndexError` and leaves the previous index in place."""
+    require_signed_in(actor)
+    if actor.kind not in (ActorKind.SYSTEM, ActorKind.ADMIN):
+        raise DomainError("not_found")
+    documents = knowledge.load_documents()
+    passages = [(d, p) for d in documents for p in d.passages]
+    model = gateway.embedding_model_key()
+    vectors: list[list[float]] = []
+    for start in range(0, len(passages), KNOWLEDGE_BATCH):
+        if start and pause:
+            time.sleep(pause)
+        # Our own authored text: there are no account values to scrub.
+        texts = [
+            redact(f"{p.title}. {p.text}", KnownValues())
+            for _, p in passages[start : start + KNOWLEDGE_BATCH]
+        ]
+        result = gateway.embed(actor, texts)
+        if not result.ok:
+            raise KnowledgeIndexError(result.outcome)
+        if len(result.value) != len(texts):
+            raise KnowledgeIndexError("error")
+        vectors.extend(result.value)
+    if len({len(v) for v in vectors}) != 1 or not vectors[0]:
+        raise KnowledgeIndexError("error")
+    with transaction.atomic():
+        KnowledgeDocument.objects.all().delete()  # chunks cascade
+        KnowledgeDocument.objects.bulk_create(
+            KnowledgeDocument(
+                slug=d.slug, title=d.title, version=d.version, provenance=d.provenance
+            )
+            for d in documents
+        )
+        KnowledgeChunk.objects.bulk_create(
+            KnowledgeChunk(
+                passage_id=p.id,
+                document_id=d.slug,
+                title=p.title,
+                text=p.text,
+                embedding=vector,
+                embedding_model=model,
+            )
+            for (d, p), vector in zip(passages, vectors, strict=True)
+        )
+    return len(passages)

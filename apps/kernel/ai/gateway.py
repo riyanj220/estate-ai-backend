@@ -236,9 +236,16 @@ def transcribe(
     )
 
 
-def embed(actor: Actor, texts, *, now: datetime | None = None) -> AiResult:
-    """Flagged and logged, with no per-account limit. A local embedding model (AD-8) needs no
-    budget; a provider's counts against the open part of its daily budget."""
+def embedding_model_key() -> str:
+    """Names the model that `embed` would use now: vectors of different keys never compare."""
+    adapter = get_adapter()
+    return f"{adapter.provider}:{getattr(adapter, 'embedding_model', adapter.model)}"
+
+
+def embed(actor: Actor, texts, *, reserved: bool = False, now: datetime | None = None) -> AiResult:
+    """Flagged and logged, with no per-account limit. A local embedding model needs no budget; a
+    provider's counts one request against its daily budget, the open part of it unless `reserved`
+    (signed-in Listing creation only)."""
     texts = tuple(texts)
     require_redacted(*texts)
     adapter, started = get_adapter(), time.monotonic()
@@ -248,7 +255,8 @@ def embed(actor: Actor, texts, *, now: datetime | None = None) -> AiResult:
     if not flags.is_enabled(FLAG):
         return _fallback("embedding", logged, started, "fallback")
     if not adapter.local_embeddings:
-        refused = _spend("embedding", logged, started, reserved=False, now=now)
+        reserved = reserved and actor.account_id is not None
+        refused = _spend("embedding", logged, started, reserved=reserved, now=now)
         if refused:
             return refused
     return _call(

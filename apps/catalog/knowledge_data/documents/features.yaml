@@ -1,0 +1,61 @@
+title: "Rooms, features and amenities"
+version: 1
+provenance: "Original text written for EstateAI from the project's own documented behaviour and general usage; drafted with an AI assistant; owner review pending."
+passages:
+  - id: feature.bedrooms
+    title: "Counting bedrooms and bathrooms"
+    text: "Bedrooms and bathrooms are required to publish a house or apartment. Count rooms used for sleeping as bedrooms; drawing, dining and study rooms have their own fields."
+  - id: feature.drawing-room
+    title: "Drawing room and TV lounge"
+    text: "A drawing room is a sitting room usually kept for guests. A TV lounge is the family's everyday sitting area."
+  - id: feature.powder-room
+    title: "Powder room"
+    text: "A powder room is a small washroom with a toilet and basin and no shower, usually for guests."
+  - id: feature.servant-quarter
+    title: "Servant quarter"
+    text: "A servant quarter is a separate small room, often with its own washroom, for household staff."
+  - id: feature.other-rooms
+    title: "Other rooms in a house"
+    text: "House Listings can also count kitchens, study rooms, prayer rooms, store rooms, laundry rooms and say whether there is a basement."
+  - id: feature.condition
+    title: "Property condition"
+    text: "Condition is stated as new, excellent, good or needs renovation. Choose honestly; buyers check this on a visit."
+  - id: feature.furnishing
+    title: "Furnishing"
+    text: "Furnishing is unfurnished, semi-furnished or furnished. Mention in the description which furniture or appliances stay."
+  - id: feature.occupancy
+    title: "Occupancy status"
+    text: "Occupancy says whether the property is lived in by the owner, rented to a tenant or vacant."
+  - id: feature.parking
+    title: "Parking"
+    text: "Parking spaces is the number of vehicles that can be parked for this property."
+  - id: feature.utilities
+    title: "Electricity, water and gas connections"
+    text: "For plots, shops and offices you can say whether electricity, water and gas connections are available. Plots can also state sewerage."
+  - id: feature.backup-power
+    title: "Backup electricity"
+    text: "Backup electricity means a generator or similar supply keeps power on during outages. State it only if it works for this unit."
+  - id: feature.maintenance
+    title: "Maintenance charges"
+    text: "Maintenance charges are a regular monthly fee for shared services in a building, entered in rupees per month."
+  - id: feature.three-phase
+    title: "Three phase supply and power load"
+    text: "Commercial units can state a three phase electricity supply and the sanctioned power load in kilowatts, which matters for heavy equipment."
+  - id: feature.frontage
+    title: "Frontage and ceiling height"
+    text: "Frontage is the width of a shop's front in feet. Ceiling height in feet is optional for shops and offices."
+  - id: amenity.on-property
+    title: "Amenities on the property"
+    text: "On-property amenities include backup electricity, broadband internet, waste disposal, double-glazed windows, central air conditioning, central heating, elevator, lobby and intercom."
+  - id: amenity.community
+    title: "Community amenities"
+    text: "Community amenities include lawn, swimming pool, gym, daycare, children's play area, BBQ area, community mosque, medical facility and community centre."
+  - id: amenity.business
+    title: "Business amenities"
+    text: "Business amenities include a conference room, a business centre and an ATM in the building."
+  - id: amenity.nearby
+    title: "Nearby facilities"
+    text: "You can state whether a mosque, park, gym, school or hospital is nearby. These are your own claims, are labelled Seller-declared, show no distance and are not checked by EstateAI."
+  - id: amenity.unanswered
+    title: "Yes, none or not answered"
+    text: "An amenity can be marked present or none. Leaving it out means not answered, which is different from saying it is not there."

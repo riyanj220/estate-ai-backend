@@ -1,0 +1,31 @@
+title: "Describing a property well"
+version: 1
+provenance: "Original text written for EstateAI from the project's own documented behaviour and general usage; drafted with an AI assistant; owner review pending."
+passages:
+  - id: describe.basics
+    title: "What a good description covers"
+    text: "Say the property type and size, the area it is in, its rooms or plot features, condition, and what makes it practical to live or work there."
+  - id: describe.honest
+    title: "Be accurate"
+    text: "Write only what is true of this property. Do not claim approvals, possession or facilities you cannot support."
+  - id: describe.title
+    title: "Writing a clear title"
+    text: "A clear title names size, type and locality, for example: 120 square yard house in North Nazimabad."
+  - id: describe.order
+    title: "Order of information"
+    text: "Put the most important facts first: size, rooms, location and price terms. Then add extra features."
+  - id: describe.plot
+    title: "Describing a plot"
+    text: "For a plot mention size and dimensions, road width, corner or park facing position, utilities, development and possession status, and any dues."
+  - id: describe.commercial
+    title: "Describing a shop or office"
+    text: "For commercial space mention floor, frontage or layout, road access, parking, power supply and what uses suit it."
+  - id: describe.rental
+    title: "Describing a rental"
+    text: "For a rental state the rent period, deposit, advance, when it is available and which utilities are included."
+  - id: describe.photos
+    title: "Taking useful photos"
+    text: "Use clear, bright photos of the front, main rooms, kitchen and bathrooms, or of the plot and its road. Make the best one the cover."
+  - id: describe.avoid
+    title: "What to leave out"
+    text: "Leave out phone numbers, emails, exact house or street numbers, other people's names and promises about future prices."

@@ -1,0 +1,55 @@
+title: "Property types"
+version: 1
+provenance: "Original text written for EstateAI from the project's own documented behaviour and general usage; drafted with an AI assistant; owner review pending."
+passages:
+  - id: type.purpose
+    title: "Sale or rent"
+    text: "Every Listing is either for sale or for rent. The purpose is chosen when the Draft is started and cannot be changed afterwards."
+  - id: type.categories
+    title: "Categories and subtypes"
+    text: "The categories are House, Apartment, Plot and Commercial. Plots are Residential Plot, Commercial Plot or Plot File; Commercial units are Shop or Office. Category and subtype are fixed when the Draft is started."
+  - id: type.house
+    title: "House"
+    text: "A house is a building on its own plot used as a home. State the plot area, bedrooms and bathrooms, and add covered area, floors and construction year if you know them."
+  - id: type.apartment
+    title: "Apartment or flat"
+    text: "An apartment, also called a flat, is a home inside a larger building. Floor number, building floors, lift, backup electricity, security and maintenance charges help buyers."
+  - id: type.portion
+    title: "Portions"
+    text: "A portion usually means one floor or part of a house let or sold on its own. EstateAI has no separate portion type, so explain clearly in the title and description what is offered."
+  - id: type.studio
+    title: "Studio"
+    text: "A studio is a home where living and sleeping space are one room. Enter 0 bedrooms for a studio."
+  - id: type.residential-plot
+    title: "Residential plot"
+    text: "A residential plot is land meant for building a home. Useful details are size, dimensions, road width, corner position, development status and possession status."
+  - id: type.commercial-plot
+    title: "Commercial plot"
+    text: "A commercial plot is land meant for shops, offices or other business buildings."
+  - id: type.plot-file
+    title: "Plot file"
+    text: "A plot file is a claim to a plot in a scheme before a specific piece of land can be handed over. In EstateAI a Plot File is never possession-ready; its possession status is File only."
+  - id: type.shop
+    title: "Shop"
+    text: "A shop is a commercial unit for selling goods or serving customers. Frontage, floor, road access and business use are helpful details."
+  - id: type.office
+    title: "Office"
+    text: "An office is a commercial unit for work. Floor, lift, conference rooms, parking, security and business centre facilities are helpful details."
+  - id: type.corner
+    title: "Corner plot"
+    text: "A corner plot has roads or open sides on two edges because it sits where two streets meet."
+  - id: type.park-facing
+    title: "Park facing"
+    text: "A park facing plot has its front towards a park."
+  - id: type.main-boulevard
+    title: "Main boulevard"
+    text: "A plot on the main boulevard fronts the main wide road of a society or scheme."
+  - id: type.orientation
+    title: "Facing direction"
+    text: "Orientation says which way a plot faces: north, south, east, west or a combination such as north east."
+  - id: type.grey-structure
+    title: "Grey structure"
+    text: "A grey structure is a building whose frame, walls and roof are built but whose finishing, such as flooring, paint and fittings, is not done."
+  - id: type.construction-status
+    title: "Construction status"
+    text: "For a house you can state completed, under construction or grey structure."

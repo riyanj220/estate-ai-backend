@@ -1,5 +1,6 @@
 import uuid
 
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.db.models.functions import Lower
 
@@ -86,3 +87,26 @@ class Amenity(models.Model):
                 name="catalog_amenity_group_shape",
             ),
         ]
+
+
+class KnowledgeDocument(models.Model):
+    """One authored knowledge source (Story 5.5). Written only by `catalog.services` from the
+    files in `catalog/knowledge_data`."""
+
+    slug = models.CharField(max_length=64, primary_key=True)
+    title = models.CharField(max_length=120)
+    version = models.PositiveIntegerField()
+    provenance = models.CharField(max_length=300)
+
+
+class KnowledgeChunk(models.Model):
+    """One indexed passage and its vector. The vector is a plain float array compared in process
+    (a knowledge base this small needs no vector index); `embedding_model` names the model that
+    made it, so vectors of different models are never compared."""
+
+    passage_id = models.CharField(max_length=64, primary_key=True)
+    document = models.ForeignKey(KnowledgeDocument, on_delete=models.CASCADE, related_name="chunks")
+    title = models.CharField(max_length=120)
+    text = models.TextField()
+    embedding = ArrayField(models.FloatField())
+    embedding_model = models.CharField(max_length=100)

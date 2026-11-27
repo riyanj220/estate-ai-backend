@@ -1,0 +1,46 @@
+title: "Creating and editing a Listing"
+version: 1
+provenance: "Original text written for EstateAI from the project's own documented behaviour and general usage; drafted with an AI assistant; owner review pending."
+passages:
+  - id: listing.start
+    title: "Starting a Draft"
+    text: "To create a Listing, choose sale or rent, a category and a subtype. This starts a private Draft that only you can see until you publish it."
+  - id: listing.draft-limit
+    title: "How many Drafts you can keep"
+    text: "An account can have up to 20 open Drafts. Publish or delete one before starting another when the limit is reached."
+  - id: listing.draft-expiry
+    title: "Idle Drafts are removed"
+    text: "A Draft with no activity for 180 days gets a notice and is deleted 30 days later unless you open or edit it."
+  - id: listing.required
+    title: "Required fields to publish"
+    text: "To publish you need a title, asking price, price basis, area value and unit, city, locality and at least one image. Rent also needs a rental period; houses and apartments need bedrooms and bathrooms."
+  - id: listing.optional
+    title: "Optional and recommended details"
+    text: "Missing optional details never block publication. Recommended details, such as a description, make the Listing more useful to buyers."
+  - id: listing.title-rules
+    title: "Title length"
+    text: "A title must be 10 to 100 characters. Say what the property is and where, in plain words."
+  - id: listing.description-rules
+    title: "Description length"
+    text: "A description can be up to 5,000 characters. It is recommended but not required."
+  - id: listing.no-contacts
+    title: "No contact details in text"
+    text: "Phone numbers, email addresses and private addresses are refused in Listing titles and descriptions."
+  - id: listing.location
+    title: "City and locality"
+    text: "Choose the city and then the locality from the lists. Changing the city clears the locality. Society, phase, sector and block are optional public text."
+  - id: listing.images
+    title: "Photo rules"
+    text: "A Listing can have up to 10 images in JPEG, PNG or WebP, each at most 5 MB and at least 200 pixels on each side. At least one image is needed to publish."
+  - id: listing.cover
+    title: "Cover image and order"
+    text: "The first image uploaded is the cover. You can reorder images and choose a different cover."
+  - id: listing.saving-conflict
+    title: "Editing in two places"
+    text: "If a Listing changed since you opened it, your save is refused as out of date. Review the current values and save again."
+  - id: listing.rent-terms
+    title: "Rent terms"
+    text: "A rent can also state security deposit, advance rent, availability date, minimum lease, notice period, included utilities, pets and who may rent."
+  - id: listing.price-estimate
+    title: "AI price estimate"
+    text: "A price estimate is offered only for sales of houses, apartments and residential plots in Karachi. It comes from a model trained on synthetic data and is not a valuation or a market price."

@@ -1,0 +1,40 @@
+title: "Publishing, quota and lifecycle"
+version: 1
+provenance: "Original text written for EstateAI from the project's own documented behaviour and general usage; drafted with an AI assistant; owner review pending."
+passages:
+  - id: publish.who
+    title: "Who can publish"
+    text: "You need an active account with a verified email to publish. An unverified account can prepare Drafts but not publish them."
+  - id: publish.visibility
+    title: "When a Listing is public"
+    text: "A Listing is public only while it is published, not restricted and its owner's account is active."
+  - id: publish.quota
+    title: "Monthly publication allowance"
+    text: "By default an individual account has 2 publications and an agency 10 in each calendar month, counted in Karachi time. An administrator can change these limits."
+  - id: publish.quota-used
+    title: "When the allowance is used up"
+    text: "When no publications remain, publishing is refused and the Draft is kept. The allowance renews with the next calendar month. Archiving or selling does not give one back."
+  - id: publish.locked-fields
+    title: "Fields locked after publishing"
+    text: "While a Listing is published you cannot change its purpose, category, subtype, city, locality, area value or area unit. Price, text, images and other details can still be edited."
+  - id: publish.correction
+    title: "Correcting locality or area"
+    text: "Within 24 hours of a counted publication you get one correction of the locality, area value and area unit without using another publication."
+  - id: publish.published-edits
+    title: "Editing a published Listing"
+    text: "An edit must leave a published Listing complete, and it must keep at least one image."
+  - id: publish.archive
+    title: "Archiving"
+    text: "Archiving takes a published, sold or rented Listing out of public view. You still see it."
+  - id: publish.sold-rented
+    title: "Marking sold or rented"
+    text: "A published sale can be marked sold and a published rental can be marked rented. Such a Listing is view only; from there it can be archived."
+  - id: publish.republish
+    title: "Republishing"
+    text: "An archived Listing can be republished. It is free if its last counted publication was in the same month and its key identity fields are unchanged; otherwise it uses one publication."
+  - id: publish.delete
+    title: "Deleting a Draft"
+    text: "You can delete a Draft, which also removes its images. Published Listings are archived rather than deleted."
+  - id: publish.suspended
+    title: "Suspended accounts"
+    text: "A suspended account cannot publish or edit Listings and its Listings leave public view. It can still view them and archive."

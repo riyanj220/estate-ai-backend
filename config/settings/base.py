@@ -87,7 +87,7 @@ GEMINI_API_KEY = env("GEMINI_API_KEY", "")  # secret: never log or print it
 GEMINI_MODEL = env("GEMINI_MODEL", "gemini-3.5-flash-lite")
 GEMINI_EMBEDDING_MODEL = env("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
 # Provider requests allowed per UTC day; at least half is kept for signed-in Listing creation.
-AI_DAILY_BUDGET = env_int("AI_DAILY_BUDGET", 1000)
+AI_DAILY_BUDGET = env_int("AI_DAILY_BUDGET", 450)
 AI_RESERVED_PERCENT = env_int("AI_RESERVED_PERCENT", 50)
 
 # Mail (Story 1.13). Delivery is off the request thread unless MAIL_SEND_INLINE (tests).

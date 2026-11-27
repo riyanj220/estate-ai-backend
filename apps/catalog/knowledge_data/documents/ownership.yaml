@@ -1,0 +1,61 @@
+title: "Possession, balloting and records"
+version: 1
+provenance: "Original text written for EstateAI from the project's own documented behaviour and general usage; drafted with an AI assistant; owner review pending."
+passages:
+  - id: legal.possession
+    title: "What possession means"
+    text: "Possession means actual handover of the property so the owner can use it or build on it. Owning papers for a plot does not always mean possession has been given."
+  - id: legal.possession-status
+    title: "Possession status of a plot"
+    text: "A plot Listing can state possession ready or possession pending; a Plot File states File only. This is the seller's statement and EstateAI does not verify it."
+  - id: legal.possession-availability
+    title: "When a buyer can take possession"
+    text: "A sale can say possession is available now, within one month, within three months or later. It is a seller-declared statement."
+  - id: legal.balloting
+    title: "What balloting means"
+    text: "Balloting is a draw a housing scheme holds to assign specific plot numbers and locations to members or file holders."
+  - id: legal.balloting-status
+    title: "Balloting status"
+    text: "Balloting status is not applicable, balloting pending or balloted. It is declared by the seller; ask the scheme itself to confirm it."
+  - id: legal.allotment-letter
+    title: "Allotment letter"
+    text: "An allotment letter is a document from a housing scheme or authority saying a plot or unit has been allotted to a person."
+  - id: legal.possession-letter
+    title: "Possession letter"
+    text: "A possession letter is a document from a scheme or developer recording that possession of a plot or unit has been offered or handed over."
+  - id: legal.open-file
+    title: "Open file"
+    text: "An open file generally means a file that has not yet been transferred into a particular buyer's name. Check with the scheme how transfers work and what risk this carries."
+  - id: legal.registry
+    title: "Registry"
+    text: "In everyday use, registry means a sale deed registered with the government's registration office, usually the sub-registrar. It records the transaction; it is general information here, not legal advice."
+  - id: legal.inteqal
+    title: "Inteqal (mutation)"
+    text: "Inteqal, also written intiqal, is mutation: updating the revenue land record to show the new owner after a sale, gift or inheritance. It is separate from a registry."
+  - id: legal.fard
+    title: "Fard"
+    text: "A fard is an extract from the revenue land record showing details of a piece of land and who is recorded as its owner."
+  - id: legal.transfer
+    title: "Transfer in a society"
+    text: "Many housing societies keep their own records and issue a transfer letter when a plot or unit changes hands. Ask the society for its procedure and dues."
+  - id: legal.lease
+    title: "Leasehold and lease documents"
+    text: "Leasehold means the holder has rights to land for a term under a lease rather than outright ownership. The lease document states the term and conditions."
+  - id: legal.noc
+    title: "NOC"
+    text: "NOC means no objection certificate, a statement from an authority or body that it does not object to something, such as a scheme or a transfer. Check which authority issued it and for what."
+  - id: legal.approval-authority
+    title: "Approval authority"
+    text: "A plot Listing can name an approval authority such as KDA, LDA, CDA, RDA, a private society, none or other. It is seller-declared and EstateAI does not verify any approval."
+  - id: legal.development-status
+    title: "Development status"
+    text: "Development status says whether a plot's area is developed, partially developed or undeveloped, for example whether roads and services are in place. It is seller-declared."
+  - id: legal.development-charges
+    title: "Development charges"
+    text: "Development charges are amounts a scheme or authority asks for building roads and services. Say in the description whether they are paid or still due."
+  - id: legal.file-status
+    title: "Plot file status"
+    text: "A Plot File can state open file, allocation letter or possession letter. This is the seller's statement."
+  - id: legal.due-diligence
+    title: "Checking before you pay"
+    text: "EstateAI does not verify titles, approvals or possession. Before paying, check documents with the relevant office or society and consider a qualified professional."

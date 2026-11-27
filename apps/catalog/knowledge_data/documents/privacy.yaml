@@ -1,0 +1,28 @@
+title: "Privacy and seller-declared claims"
+version: 1
+provenance: "Original text written for EstateAI from the project's own documented behaviour and general usage; drafted with an AI assistant; owner review pending."
+passages:
+  - id: privacy.private-address
+    title: "What stays private"
+    text: "Street, house or plot number and map coordinates are private. Only you see them; they are never part of the public Listing."
+  - id: privacy.public-location
+    title: "What location the public sees"
+    text: "The public sees the city, locality and any society, phase, sector and block you enter. Do not put a house number or street in those fields."
+  - id: privacy.phone
+    title: "Your phone and email"
+    text: "Your account phone number and email address are not shown on public Listings."
+  - id: privacy.advertiser
+    title: "What others see about you"
+    text: "A public Listing says whether the advertiser is an individual or an agency. Agencies also show their agency name and logo; an individual's personal name is not shown."
+  - id: privacy.photos
+    title: "Information inside photos"
+    text: "Uploaded images are processed again and hidden data such as camera location is removed. Check that the picture itself shows nothing private, like a number plate or document."
+  - id: privacy.ai-external
+    title: "AI features use an external service"
+    text: "AI features may send your text to an external provider. Known contact details are removed first, but this is not perfect, so do not type private or sensitive information. Audio cannot be redacted."
+  - id: claims.seller-declared
+    title: "What Seller-declared means"
+    text: "Seller-declared marks something the owner states and EstateAI has not checked, such as possession, balloting, approval authority, development status or nearby facilities."
+  - id: claims.no-verification
+    title: "No platform verification of property"
+    text: "A published Listing is not proof of ownership, approval or possession. EstateAI never marks a property claim as verified."

@@ -1,0 +1,52 @@
+title: "Areas, units and money"
+version: 1
+provenance: "Original text written for EstateAI from the project's own documented behaviour and general usage; drafted with an AI assistant; owner review pending."
+passages:
+  - id: area.marla
+    title: "What a marla is"
+    text: "A marla is a traditional unit of land area used in Pakistan. Its size in square feet differs between places and schemes, so a Listing in marla also states the marla basis."
+  - id: area.marla-basis
+    title: "Marla basis: 225, 250 or 272.25"
+    text: "The marla basis is the number of square feet in one marla. EstateAI accepts 225, 250 or 272.25. Use the basis that your society, scheme or documents use."
+  - id: area.kanal
+    title: "What a kanal is"
+    text: "A kanal is 20 marla. Its size in square feet therefore depends on the marla basis: 4,500, 5,000 or 5,445 square feet."
+  - id: area.square-yard
+    title: "Square yard (gaz)"
+    text: "One square yard is 9 square feet. It is often called a gaz and is a common way to state plot and house sizes in Karachi, for example a 120 square yard house."
+  - id: area.square-foot
+    title: "Square foot"
+    text: "The square foot is the base unit EstateAI converts every area into, so Listings stated in different units can be compared and filtered."
+  - id: area.acre
+    title: "Acre"
+    text: "One acre is 43,560 square feet, which is 4,840 square yards. It is mostly used for large or agricultural pieces of land."
+  - id: area.units
+    title: "Area units you can choose"
+    text: "A Listing area can be given in square feet, square yards, marla, kanal or acres. Enter the number and choose the unit; do not type the unit into the number."
+  - id: area.conversion
+    title: "How EstateAI converts areas"
+    text: "Square yards are multiplied by 9, acres by 43,560, marla by the marla basis, and kanal by 20 times the basis. The result is shown in square feet."
+  - id: area.missing-basis
+    title: "Marla without a basis"
+    text: "If an area is in marla or kanal and no marla basis is given, the square foot area is not calculated. Such a Listing can miss area range searches and cannot get a price estimate."
+  - id: area.covered
+    title: "Covered area"
+    text: "Covered area is the built-up floor space of a house or apartment. It is always entered in square feet and is different from the plot or total area."
+  - id: area.plot-dimensions
+    title: "Plot width and depth"
+    text: "Plot width and plot depth are the side lengths of a plot in feet, for example 30 by 60. They are optional extra detail and do not replace the area."
+  - id: area.road-width
+    title: "Road width"
+    text: "Road width is the width in feet of the road in front of a plot. A wider road is often seen as a plus."
+  - id: money.currency
+    title: "Prices are in Pakistani rupees"
+    text: "All prices, deposits and charges are in Pakistani rupees (PKR). Enter plain digits for the full amount."
+  - id: money.lakh-crore
+    title: "Lakh and crore"
+    text: "A lakh is 100,000 and a crore is 10,000,000. A price of one crore twenty lakh is 12,000,000 rupees."
+  - id: money.price-basis
+    title: "Price basis"
+    text: "A sale price is either a total price or a price per unit of area. A rent is always a price per rental period."
+  - id: money.rental-period
+    title: "Rental period"
+    text: "A rent must say its period: day, week, month or year. Most homes are rented by the month."
