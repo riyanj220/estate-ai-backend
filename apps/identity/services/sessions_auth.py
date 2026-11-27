@@ -30,6 +30,7 @@ from apps.identity.selectors import (
     summarise,
 )
 from apps.identity.services._common import _end_open_sessions, _lock_key, _require_system
+from apps.identity.services.second_factor import _use_code_at_sign_in
 from apps.identity.state import AccountState
 from apps.kernel import audit, ratelimit
 from apps.kernel.actor import Actor, require_signed_in
@@ -70,12 +71,12 @@ def _count_failure(scope: str, key: str, account_key: str | None, now) -> bool:
     return ratelimit.hit(ADMIN_ACCOUNT_SCOPE, account_key, now).allowed
 
 
-def _audit_failed_admin_sign_in(account_id, request_id: str) -> None:
+def _audit_failed_admin_sign_in(account_id, request_id: str, action: str) -> None:
     """Written after the failure count has committed, so an audit fault can neither undo the
     count nor turn the generic 401 into a 500. Logged by exception class only."""
     try:
         with transaction.atomic():
-            audit.record(Actor.visitor(request_id), "admin.sign_in_failed", "account", account_id)
+            audit.record(Actor.visitor(request_id), action, "account", account_id)
     except Exception as exc:
         logger.warning(
             "admin_sign_in_audit_failure",
@@ -86,7 +87,15 @@ def _audit_failed_admin_sign_in(account_id, request_id: str) -> None:
 # The two doors share this one function on purpose: the only differences are the account-type
 # test, the extra per-account ceiling and the audit records, all keyed off `admin`.
 def _attempt(
-    scope: str, key: str, email: str, password: str, current_token, now, admin: bool, request_id=""
+    scope: str,
+    key: str,
+    email: str,
+    password: str,
+    current_token,
+    now,
+    admin: bool,
+    request_id="",
+    code="",
 ) -> SignedIn | None:
     """One sign-in attempt under the per-key lock. None means failed; a failure has been counted
     and committed (nothing here raises out of the transaction after counting).
@@ -96,9 +105,13 @@ def _attempt(
     is checked instead, so timing does not tell them apart). The administrator door also keeps a
     per-account failure ceiling (by email only, any network) that answers silently like the
     per-(email, network) cap. A throttled attempt still costs one dummy-hash comparison.
+
+    An enrolled administrator (Story 10.10) also needs `code`. A missing, wrong or spent code
+    counts and answers like a wrong password, so the door never says the password was right.
     """
     account_key = ratelimit.derive_key(ADMIN_ACCOUNT_SCOPE, email.lower()) if admin else None
     failed_admin_id = None
+    failure = "admin.sign_in_failed"
     with transaction.atomic():
         if account_key is not None:  # fixed lock order: account, then (email, network)
             _lock_key(account_key)
@@ -137,31 +150,37 @@ def _attempt(
             ):
                 _count_failure(scope, key, account_key, now)  # changed under us: stale password
                 return None
-            if sessions.well_formed(current_token):
-                Session.objects.filter(
-                    token_hash=sessions.hash_token(current_token), ended_at__isnull=True
-                ).update(ended_at=now, ended_reason="replaced")
-            token = sessions.new_token()
-            Session.objects.create(
-                account=locked,
-                token_hash=sessions.hash_token(token),
-                created_at=now,
-                last_seen_at=now,
-                expires_at=now + sessions.absolute_lifetime_for(locked.account_type),
-            )
-            _cap_open_sessions(locked.id, now)
-            if admin:
-                audit.record(
-                    Actor.admin(locked.id, request_id), "admin.signed_in", "account", locked.id
+            second = _use_code_at_sign_in(locked.id, code, now) if admin else None
+            if second is False:
+                if _count_failure(scope, key, account_key, now):
+                    failed_admin_id, failure = locked.id, "admin.second_factor_failed"
+            else:
+                if sessions.well_formed(current_token):
+                    Session.objects.filter(
+                        token_hash=sessions.hash_token(current_token), ended_at__isnull=True
+                    ).update(ended_at=now, ended_reason="replaced")
+                token = sessions.new_token()
+                Session.objects.create(
+                    account=locked,
+                    token_hash=sessions.hash_token(token),
+                    created_at=now,
+                    last_seen_at=now,
+                    expires_at=now + sessions.absolute_lifetime_for(locked.account_type),
                 )
-            return SignedIn(token=token, summary=summarise(locked))
+                _cap_open_sessions(locked.id, now)
+                if admin:
+                    signed = Actor.admin(locked.id, request_id)
+                    audit.record(signed, "admin.signed_in", "account", locked.id)
+                    if second:
+                        audit.record(signed, "admin.second_factor_used", "account", locked.id)
+                return SignedIn(token=token, summary=summarise(locked))
     if failed_admin_id is not None:
-        _audit_failed_admin_sign_in(failed_admin_id, request_id)
+        _audit_failed_admin_sign_in(failed_admin_id, request_id, failure)
     return None
 
 
 def _sign_in(
-    scope: str, actor: Actor, email, password, network: str, current_token, admin: bool
+    scope: str, actor: Actor, email, password, network: str, current_token, admin: bool, code=""
 ) -> SignedIn:
     if not isinstance(email, str) or not isinstance(password, str):
         raise DomainError("validation_error")
@@ -170,7 +189,9 @@ def _sign_in(
         raise DomainError("invalid_credentials")
     now = timezone.now()
     key = ratelimit.derive_key(scope, email.lower(), network)
-    result = _attempt(scope, key, email, password, current_token, now, admin, actor.request_id)
+    result = _attempt(
+        scope, key, email, password, current_token, now, admin, actor.request_id, code
+    )
     if result is None:
         raise DomainError("invalid_credentials")
     return result
@@ -191,16 +212,22 @@ def sign_in(actor: Actor, email, password, network: str, current_token=None) -> 
     return _sign_in("sign_in", actor, email, password, network, current_token, admin=False)
 
 
-def admin_sign_in(actor: Actor, email, password, network: str, current_token=None) -> SignedIn:
+def admin_sign_in(
+    actor: Actor, email, password, network: str, current_token=None, code=""
+) -> SignedIn:
     """Start an administrator session (Story 1.22), or raise the same `invalid_credentials`.
 
     The mirror of `sign_in`: only an administrator account that is not Deactivated can succeed;
     every other outcome (stranger, wrong password, disabled, throttled) is identical. Failures
     are throttled under `admin_sign_in` and counted only; the cap answers silently. A success is
     audited as `admin.signed_in`, a failure against an existing active administrator as
-    `admin.sign_in_failed`; unknown emails and non-administrators write nothing.
+    `admin.sign_in_failed`; unknown emails and non-administrators write nothing. An enrolled
+    administrator also needs a one-time `code`: `admin.second_factor_used` on success,
+    `admin.second_factor_failed` when the password was right but the code was not.
     """
-    return _sign_in("admin_sign_in", actor, email, password, network, current_token, admin=True)
+    return _sign_in(
+        "admin_sign_in", actor, email, password, network, current_token, admin=True, code=code
+    )
 
 
 def sign_out(actor: Actor, session_id) -> None:

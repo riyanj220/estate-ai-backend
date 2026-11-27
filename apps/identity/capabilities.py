@@ -59,6 +59,7 @@ PENDING_CAPABILITIES: frozenset[Capability] = _ALL - {
     _C.SEND_MESSAGES,  # Story 7.1
     _C.READ_CONVERSATIONS,  # Story 7.1
     _C.REPORT,  # Story 9.1
+    _C.REQUEST_SUPPORT,  # Story 10.9
     _C.REQUEST_DEACTIVATION,  # Story 10.1
 }
 

@@ -1,5 +1,5 @@
-"""Reads for Agency Verification (Stories 8.3 and 8.4), and the reasoned read of a
-Conversation Report (Story 9.5)."""
+"""Reads for Agency Verification (Stories 8.3 and 8.4), and the reasoned reads of a
+Conversation Report (Story 9.5) and a support request (Story 10.9)."""
 
 import uuid
 from dataclasses import dataclass, field
@@ -10,6 +10,7 @@ from django.db.models import Q
 from apps.governance.models import (
     REQUEST_STATUSES,
     Report,
+    SupportRequest,
     VerificationDecision,
     VerificationRequest,
 )
@@ -212,6 +213,15 @@ def admin_read_conversation_report(actor: Actor, reason: str, report_id: uuid.UU
     if row is None:
         raise DomainError("not_found")
     return ReportContent(row.description, row.snapshot["messages"])
+
+
+def admin_read_support_request(actor: Actor, reason: str, request_id: uuid.UUID) -> str:
+    """A reasoned private read (`docs/audit.md`) of one support request's message."""
+    record_private_read(actor, reason, ("support_request", request_id))
+    row = SupportRequest.objects.filter(id=request_id).first()
+    if row is None:
+        raise DomainError("not_found")
+    return row.message
 
 
 def pending_verification_count(actor: Actor) -> int:

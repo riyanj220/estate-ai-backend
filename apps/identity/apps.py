@@ -50,6 +50,10 @@ class IdentityConfig(AppConfig):
             "admin.password_reset",
             "admin.signed_in",
             "admin.sign_in_failed",
+            "admin.second_factor_enrolled",
+            "admin.second_factor_used",
+            "admin.second_factor_failed",
+            "admin.second_factor_reset",
         ):
             audit.register_action(action, {})  # no metadata: never an email, password or hash
 

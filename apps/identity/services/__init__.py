@@ -22,6 +22,7 @@ from apps.identity.services.admin import (
     provision_admin,
     remove_admin,
     reset_admin_password,
+    reset_second_factor,
 )
 from apps.identity.services.agency_verification import set_agency_verification
 from apps.identity.services.anonymisation import DELETED_AGENCY_NAME, anonymise_account
@@ -64,6 +65,12 @@ from apps.identity.services.registration import (
     register_individual,
 )
 from apps.identity.services.sample import create_sample_account, remove_sample_account
+from apps.identity.services.second_factor import (
+    Enrolment,
+    confirm_second_factor,
+    second_factor_enrolled,
+    start_second_factor,
+)
 from apps.identity.services.sessions_auth import (
     SignedIn,
     admin_sign_in,
@@ -86,6 +93,7 @@ __all__ = [
     "AgencyProfile",
     "EmailChangeDelivery",
     "EmailChangeToken",
+    "Enrolment",
     "FieldsInvalid",
     "IndividualProfile",
     "PasswordInvalid",
@@ -100,6 +108,7 @@ __all__ = [
     "confirm_email",
     "confirm_email_change",
     "confirm_password_reset",
+    "confirm_second_factor",
     "create_account",
     "create_sample_account",
     "deactivate",
@@ -126,14 +135,17 @@ __all__ = [
     "request_email_change",
     "request_password_reset",
     "request_verification_link",
+    "second_factor_enrolled",
     "require_agency",
     "require_profile_image_access",
     "reset_admin_password",
+    "reset_second_factor",
     "selectors",
     "set_agency_verification",
     "set_profile_image",
     "sign_in",
     "sign_out",
+    "start_second_factor",
     "suspend_account",
     "timezone",
     "update_agency_profile",

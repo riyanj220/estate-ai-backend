@@ -53,6 +53,16 @@ from apps.presentation.adminapi.reports import (
     ReportResolveView,
     ReportStartView,
 )
+from apps.presentation.adminapi.second_factor import (
+    SecondFactorConfirmView,
+    SecondFactorStartView,
+    SecondFactorView,
+)
+from apps.presentation.adminapi.support import (
+    SupportCloseView,
+    SupportQueueView,
+    SupportReadView,
+)
 from apps.presentation.adminapi.verification import (
     VerificationApproveView,
     VerificationQueueView,
@@ -152,6 +162,7 @@ from apps.presentation.api.reports import ConversationReportsView, ListingReport
 from apps.presentation.api.schema import PublicSchemaView
 from apps.presentation.api.search import PublicSearchTranscriptionView, PublicSearchView
 from apps.presentation.api.sessions import AdminSessionView, CsrfView, MeView, SessionView
+from apps.presentation.api.support import SupportRequestDetailView, SupportRequestsView
 from apps.presentation.api.verifications import ConfirmEmailView, VerificationRequestView
 
 handler400 = bad_request
@@ -192,6 +203,38 @@ urlpatterns = [
     path("api/v1/session", SessionView.as_view(), name="session"),
     path("api/v1/admin-session", AdminSessionView.as_view(), name="admin-session"),
     path("api/v1/admin/me", AdminMeView.as_view(), name="admin-me"),
+    path("api/v1/admin/second-factor", SecondFactorView.as_view(), name="admin-second-factor"),
+    path(
+        "api/v1/admin/second-factor/enrolment",
+        SecondFactorStartView.as_view(),
+        name="admin-second-factor-enrolment",
+    ),
+    path(
+        "api/v1/admin/second-factor/confirm",
+        SecondFactorConfirmView.as_view(),
+        name="admin-second-factor-confirm",
+    ),
+    path("api/v1/me/support-requests", SupportRequestsView.as_view(), name="me-support-requests"),
+    path(
+        "api/v1/me/support-requests/<str:request_id>",
+        SupportRequestDetailView.as_view(),
+        name="me-support-request",
+    ),
+    path(
+        "api/v1/admin/support-requests",
+        SupportQueueView.as_view(),
+        name="admin-support-requests",
+    ),
+    path(
+        "api/v1/admin/support-requests/<str:request_id>/read",
+        SupportReadView.as_view(),
+        name="admin-support-read",
+    ),
+    path(
+        "api/v1/admin/support-requests/<str:request_id>/close",
+        SupportCloseView.as_view(),
+        name="admin-support-close",
+    ),
     path("api/v1/admin/quota-policy", QuotaPolicyView.as_view(), name="admin-quota-policy"),
     path(
         "api/v1/admin/quota-policy/<str:account_type>",

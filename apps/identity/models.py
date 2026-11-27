@@ -113,6 +113,19 @@ class AgencyProfile(models.Model):
         ]
 
 
+class SecondFactor(models.Model):
+    """An administrator's TOTP enrolment (Story 10.10). `secret_encrypted` never holds the plain
+    secret. Until `confirmed_at` is set the enrolment is pending and sign-in ignores it."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account = models.OneToOneField(Account, on_delete=models.CASCADE, related_name="second_factor")
+    secret_encrypted = models.CharField(max_length=255)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    last_used_step = models.BigIntegerField(null=True, blank=True)  # replay protection
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class EmailVerificationToken(models.Model):
     """A single-use verification link. Only the SHA-256 hash of the token is ever stored."""
 

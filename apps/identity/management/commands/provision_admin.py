@@ -1,6 +1,8 @@
 """The only way an administrator account comes into existence or is recovered (Story 1.22).
 
-    python manage.py provision_admin <create|disable|enable|remove|reset-password> --email <address>
+    python manage.py provision_admin <action> --email <address>
+
+where <action> is create, disable, enable, remove, reset-password or reset-second-factor.
 
 The password for `create` and `reset-password` is read from a hidden prompt (asked twice) or, for
 automation, one line of standard input with `--password-stdin`. It is never an argument, never
@@ -18,7 +20,7 @@ from apps.identity.passwords import PASSWORD_MAX
 from apps.kernel.actor import Actor
 from apps.kernel.errors import DomainError, field_message
 
-ACTIONS = ("create", "disable", "enable", "remove", "reset-password")
+ACTIONS = ("create", "disable", "enable", "remove", "reset-password", "reset-second-factor")
 _FORCEABLE = {"disable", "remove"}
 _NEEDS_PASSWORD = {"create", "reset-password"}
 _ARGUMENT_ERROR = "invalid arguments (see --help); a password is never accepted on the command line"
@@ -34,7 +36,7 @@ _REFUSALS = {
 
 class Command(BaseCommand):
     help = (
-        "Provision administrators: create, disable, remove or reset-password. "
+        "Provision administrators: create, disable, remove, reset-password or reset-second-factor. "
         "Passwords come from a prompt or --password-stdin, never from an argument."
     )
 
@@ -108,6 +110,13 @@ class Command(BaseCommand):
             elif action == "remove":
                 services.remove_admin(system, email, force_last=options["force_last"])
                 self.stdout.write("Administrator removed.")
+            elif action == "reset-second-factor":
+                changed = services.reset_second_factor(system, email)
+                self.stdout.write(
+                    "Second factor removed; every session of that administrator ended."
+                    if changed
+                    else "That administrator has no second factor."
+                )
             else:
                 services.reset_admin_password(
                     system, email, self._password(options["password_stdin"])

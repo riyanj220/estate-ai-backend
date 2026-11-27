@@ -16,6 +16,7 @@ dependencies = [
     "numpy>=2,<3",
     "threadpoolctl>=3.8.0",
     "channels>=4.3,<5",
+    "cryptography>=46",
 ]
 
 [dependency-groups]

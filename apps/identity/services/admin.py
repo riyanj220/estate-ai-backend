@@ -13,6 +13,7 @@ from apps.identity.models import (
     AccountType,
     EmailVerificationToken,
     PasswordResetToken,
+    SecondFactor,
 )
 from apps.identity.selectors import (
     AccountView,
@@ -204,3 +205,18 @@ def reset_admin_password(actor: Actor, email, password) -> None:
         _end_open_sessions(account.id, "password_changed", now=now)
         _void_account_tokens(account, now)
         audit.record(actor, "admin.password_reset", "account", account.id)
+
+
+def reset_second_factor(actor: Actor, email) -> bool:
+    """Remove an administrator's second factor and end every open session: the only recovery for
+    a lost authenticator (Story 10.10). True when there was an enrolment (confirmed or pending).
+    Audit `admin.second_factor_reset`.
+    """
+    _require_system(actor)
+    with transaction.atomic():
+        account = _find_admin(email)
+        if not SecondFactor.objects.filter(account=account).delete()[0]:
+            return False
+        _end_open_sessions(account.id, "replaced")
+        audit.record(actor, "admin.second_factor_reset", "account", account.id)
+        return True

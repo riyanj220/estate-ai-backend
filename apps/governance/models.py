@@ -256,3 +256,41 @@ class ClosureRequest(models.Model):
                 fields=["account_id", "-submitted_at"], name="governance_closure_account_idx"
             ),
         ]
+
+
+SUPPORT_CATEGORIES = ["account", "decision", "technical", "other"]
+SUPPORT_STATUSES = ["open", "closed"]
+
+
+class SupportRequest(models.Model):
+    """A message to the platform team (Story 10.9). `message` is private: its author, and
+    administrators through a reasoned read. Account closure empties it."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account_id = models.UUIDField()
+    category = models.CharField(max_length=16)
+    message = models.CharField(max_length=2000, blank=True, default="")
+    status = models.CharField(max_length=8, default="open")
+    submitted_at = models.DateTimeField()
+    closed_at = models.DateTimeField(null=True, blank=True)
+    closed_by_account_id = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(category__in=SUPPORT_CATEGORIES),
+                name="governance_support_category_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=SUPPORT_STATUSES),
+                name="governance_support_status_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["status", "submitted_at", "id"], name="governance_support_queue_idx"
+            ),
+            models.Index(
+                fields=["account_id", "-submitted_at"], name="governance_support_account_idx"
+            ),
+        ]

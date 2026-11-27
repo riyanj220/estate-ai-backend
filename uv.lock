@@ -282,6 +282,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "channels" },
+    { name = "cryptography" },
     { name = "daphne" },
     { name = "django" },
     { name = "djangorestframework" },
@@ -307,6 +308,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "channels", specifier = ">=4.3,<5" },
+    { name = "cryptography", specifier = ">=46" },
     { name = "daphne", specifier = ">=4.1" },
     { name = "django", specifier = ">=5.2,<5.3" },
     { name = "djangorestframework", specifier = ">=3.16,<4" },

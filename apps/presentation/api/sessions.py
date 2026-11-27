@@ -30,6 +30,7 @@ class SignInSerializer(serializers.Serializer):
 
     email = serializers.CharField(help_text="The account email; matched case-insensitively.")
     password = serializers.CharField(help_text="The account password.")
+    optional_fields: tuple[str, ...] = ()
 
     def to_internal_value(self, data):
         if not isinstance(data, Mapping):
@@ -43,12 +44,23 @@ class SignInSerializer(serializers.Serializer):
         errors = {}
         for name in self.fields:
             if name not in data:
-                errors[name] = [ErrorDetail("required", code="required")]
+                if name not in self.optional_fields:
+                    errors[name] = [ErrorDetail("required", code="required")]
             elif not isinstance(data[name], str):
                 errors[name] = [ErrorDetail("invalid", code="invalid")]
         if errors:
             raise serializers.ValidationError(errors)
-        return {name: data[name] for name in self.fields}
+        return {name: data[name] for name in self.fields if name in data}
+
+
+class AdminSignInSerializer(SignInSerializer):
+    """`email` and `password`, plus the one-time `code` of an enrolled administrator."""
+
+    code = serializers.CharField(
+        required=False,
+        help_text="Six digits from the authenticator; only for an enrolled administrator.",
+    )
+    optional_fields = ("code",)
 
 
 class ActorSummarySerializer(serializers.Serializer):
@@ -90,10 +102,10 @@ def _clear_cookie(response) -> None:
     response.set_cookie(COOKIE_NAME, "", max_age=0, expires=_EPOCH, **cookie_kwargs())
 
 
-def _sign_in_response(request, sign_in):
+def _sign_in_response(request, sign_in, serializer_class=SignInSerializer):
     """Shared by both sign-in doors: CSRF, strict body, the service, then the cookie."""
     enforce_csrf(request)
-    serializer = SignInSerializer(data=request.data)
+    serializer = serializer_class(data=request.data)
     serializer.is_valid(raise_exception=True)
     result = sign_in(
         get_actor(request),
@@ -101,6 +113,7 @@ def _sign_in_response(request, sign_in):
         serializer.validated_data["password"],
         ratelimit.client_network(request),
         request.COOKIES.get(COOKIE_NAME),
+        **{k: v for k, v in serializer.validated_data.items() if k == "code"},
     )
     rotate_token(request._request)  # the pre-login token must not survive the login
     response = Response(_summary_data(result.summary), headers=NO_STORE)
@@ -173,14 +186,16 @@ class AdminSessionView(APIView):
             "administrator accounts. Needs `X-CSRFToken`. Anything but an active administrator "
             "with the right password (wrong password, unknown email, an Individual or Agency "
             "account, a disabled administrator, a throttled attempt) answers the same "
-            "`401 invalid_credentials`; the throttle is silent, never 429. Administrator sessions "
+            "`401 invalid_credentials`; the throttle is silent, never 429. An administrator with "
+            "a second factor must also send a current, unused `code`; without it the answer is "
+            "the same `401`. Administrator sessions "
             "expire after 30 idle minutes or 8 hours."
         ),
-        request=SignInSerializer,
+        request=AdminSignInSerializer,
         responses={200: OpenApiResponse(ActorSummarySerializer, description="Signed in")},
     )
     def post(self, request):
-        return _sign_in_response(request, services.admin_sign_in)
+        return _sign_in_response(request, services.admin_sign_in, AdminSignInSerializer)
 
 
 class MeView(APIView):

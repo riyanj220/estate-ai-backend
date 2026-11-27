@@ -222,6 +222,9 @@ SPECTACULAR_SETTINGS = {
         "VerificationActionEnum": ["approved", "rejected", "revoked", "withdrawn"],
         "ClosureKindEnum": ["deactivation", "deletion"],
         "ClosureStatusEnum": ["pending", "approved", "rejected"],
+        "CategoryEnum": ["house", "apartment", "plot", "commercial"],
+        "SupportCategoryEnum": ["account", "decision", "technical", "other"],
+        "SupportStatusEnum": ["open", "closed"],
         "ReportStatusEnum": ["pending", "reviewing", "resolved", "dismissed"],
         "ReasonEnum": [
             "rent_not_supported",

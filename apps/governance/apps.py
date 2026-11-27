@@ -7,7 +7,7 @@ class GovernanceConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):
-        from apps.governance import closure, erasure, reports, subscribers
+        from apps.governance import closure, erasure, reports, subscribers, support
         from apps.governance.moderation import NOTIFICATION_KINDS
         from apps.identity.events import AccountSessionEnded
         from apps.kernel import audit, events, notifications, retention
@@ -61,5 +61,10 @@ class GovernanceConfig(AppConfig):
         for action in ("closure.requested", "closure.approved", "closure.rejected"):
             audit.register_action(action, {"kind": closure.KINDS})
         notifications.register_kind(closure.REJECTED_NOTIFICATION, {})
+        # Support requests (Story 10.9): never the message.
+        for action in ("support.submitted", "support.closed"):
+            audit.register_action(action, {})
+        register_private_target("support_request", "The message of a support request")
+        notifications.register_kind(support.CLOSED_NOTIFICATION, {})
         audit.register_action("governance.account_erased", {})
         erasers.register("governance", erasure.erase_account_data)
