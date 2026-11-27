@@ -14,7 +14,12 @@ from apps.kernel import runtime
 future = runtime.submit_heavy(resize_image, path)      # returns at once; ExecutorBusy if heavy slots are full
 future = runtime.submit_interactive(short_task)        # not limited by the heavy slots
 result = await runtime.run_heavy(call_model, prompt)   # async views: awaits without holding a thread
+future = runtime.submit_background(recompute, key)     # nobody waits: one worker of its own, bounded queue
 ```
+
+- Work that no request waits for (the price estimate after publication or an edit) uses `submit_background`: one
+  separate thread with up to `BACKGROUND_QUEUE_LIMIT` (100) tasks queued, so it never takes a heavy slot. Before
+  this, estimates started by a few publications could make the next image upload answer `busy`.
 
 - Heavy submission never blocks and never queues. On `ExecutorBusy` the caller falls back (FR-38): tell the user
   the feature is busy, or use the non-AI path.

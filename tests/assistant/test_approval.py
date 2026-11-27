@@ -51,6 +51,17 @@ def test_nearby_facilities_are_merged_and_unknown_ones_reported():
     assert "bakery" in turn["notices"][0] and "invented" not in turn["notices"][0]
 
 
+def test_an_on_property_amenity_is_sent_to_the_form_not_called_unknown():
+    account, draft, client, session_id = start()
+    stub.reply = turn_answer(unmatched=["electricity backup", "cinema"])
+    turn = say(client, session_id, "it has electricity backup and a cinema nearby").json()["turn"]
+    assert current(account, draft).fields["amenities"] is None
+    notice = turn["notices"][0]
+    form, unknown = notice.split("I have no list entry for:")
+    assert "Amenities section: electricity backup." in form and "cinema" not in form
+    assert unknown.strip().startswith("cinema.") and "electricity" not in unknown
+
+
 def test_a_correction_replaces_the_value_and_keeps_the_rest():
     account, draft, client, session_id = start()
     stub.reply = turn_answer({"bedrooms": 4, "bathrooms": 3})

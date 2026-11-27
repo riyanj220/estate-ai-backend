@@ -56,6 +56,38 @@ def test_reserved_worker_stays_free_for_interactive_work():
         future.result(timeout=5)
 
 
+@sized(3, 1)
+def test_background_work_takes_no_heavy_slot_and_runs_one_at_a_time():
+    gate = threading.Event()
+    queued = [runtime.submit_background(gate.wait, 5) for _ in range(5)]
+    # every heavy slot is still free while background work is running and waiting
+    held = [runtime.submit_heavy(lambda: 1) for _ in range(2)]
+    assert [future.result(timeout=5) for future in held] == [1, 1]
+    assert sum(future.running() for future in queued) == 1
+    gate.set()
+    for future in queued:
+        future.result(timeout=5)
+    name = runtime.submit_background(lambda: threading.current_thread().name).result(timeout=5)
+    assert name.startswith("estate-background")
+
+
+def test_background_queue_is_bounded_and_frees_up(monkeypatch):
+    runtime.shutdown()
+    monkeypatch.setattr(runtime, "BACKGROUND_QUEUE_LIMIT", 2)
+    gate = threading.Event()
+    try:
+        held = [runtime.submit_background(gate.wait, 5) for _ in range(2)]
+        with pytest.raises(runtime.ExecutorBusy):
+            runtime.submit_background(lambda: None)
+        gate.set()
+        for future in held:
+            future.result(timeout=5)
+        assert runtime.submit_background(lambda: 3).result(timeout=5) == 3
+    finally:
+        gate.set()
+        runtime.shutdown()
+
+
 def test_task_sees_the_callers_context_variables():
     token = var.set("req-123")
     try:

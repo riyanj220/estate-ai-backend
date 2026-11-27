@@ -433,6 +433,27 @@ def test_contact_details_are_rejected_in_location_text(name, value):
 
 
 @pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("street", "Plum Street 12"),
+        ("street", "Lane 4"),
+        ("street", "14th Street"),
+        ("house_number", "House 45-B"),
+        ("house_number", "Flat 3"),
+    ],
+)
+def test_the_private_address_fields_accept_street_addresses(name, value):
+    account, view = draft()
+    assert update(account, view, {name: value}).fields[name] == value
+
+
+@pytest.mark.parametrize("name", ["society", "phase", "sector", "block"])
+def test_public_location_text_still_refuses_a_street_address(name):
+    account, view = draft()
+    assert refused(account, view, {name: "Plum Street 12"}) == {name: "contains_contact_details"}
+
+
+@pytest.mark.parametrize(
     ("name", "limit"),
     [
         ("society", 60),

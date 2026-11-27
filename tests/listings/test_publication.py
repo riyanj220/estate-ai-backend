@@ -191,6 +191,7 @@ def test_nothing_external_happens_inside_the_transaction(monkeypatch):
     for module, name in (
         (runtime, "submit_heavy"),
         (runtime, "submit_interactive"),
+        (runtime, "submit_background"),
         (kernel_mail, "send"),
         (kernel_mail, "deliver"),
         (ai_log, "record_ai_call"),

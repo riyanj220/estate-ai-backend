@@ -166,7 +166,7 @@ model inputs changed since. Reading it computes nothing. Publication never depen
 ## Estimates of published Listings (Stories 4.5 to 4.7)
 
 - `listing.published` (also a republication) and `listing.model_inputs_changed` schedule the computation on the
-  runtime executor after commit; the request never waits. A Listing that is not publicly visible is skipped (a Draft
+  runtime executor's background worker after commit; the request never waits and no heavy slot is taken. A Listing that is not publicly visible is skipped (a Draft
   edit computes nothing). `VALUATION_BACKGROUND_ESTIMATES = False` (tests) runs it in the calling thread.
 - Only an estimate whose snapshot hash matches the saved model inputs is shown. A full executor, a failure or a lost
   event leaves the Listing without one (unavailable, never stale) until it is repaired.

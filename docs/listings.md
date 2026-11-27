@@ -343,7 +343,8 @@ purpose, category and Subtype, in `section: location`.
   locality in the same write** and reports it among the changed fields (and in the revision `changes`), so a stale pair
   is never stored. Sending a new city with a locality of the new city is fine.
 - Text fields use the existing text rules and the shared contact-detail check (`contains_contact_details`, `too_long`
-  and so on); messages are static and never echo a value.
+  and so on); messages are static and never echo a value. The private `street` and `house_number` refuse phone numbers
+  and email addresses only: a street address ("Street 12", "House 45") is what they are for.
 - **Accepted window**: the city and locality are resolved against the catalog while the Listing row is locked, but the
   catalog row itself is not locked. A locality deactivated between that check and the commit is saved (the write is
   still a valid choice made a moment earlier, and a stored inactive id remains re-saveable, see above).

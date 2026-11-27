@@ -72,3 +72,20 @@ grants the runtime role per database, so nothing needs setting up per worker. Th
 ## Sample data in tests
 
 `apps/listings/sample_data.py` (`seed`, `reset`, `reseed`, `row_for`) is callable without the CLI; `tests/listings/test_sample_data.py` shows the setup (`seed_cap()` and `seed_media_policies()`). A 12-Listing run takes about 3 seconds and 60 about 13, so use `seed(5)` unless a test needs the spread across categories. See `docs/sample-data.md`.
+
+## Real-stack smoke test
+
+`scripts/smoke.py` drives the main flows over plain HTTP against a running server (cookies, CSRF, Mailpit links), which
+the test suite does not: it uses the runtime database role, background work and a real server. It creates accounts and
+Listings and changes (then restores) a quota limit, so run it only against a throwaway database:
+
+1. In the Compose Postgres, create `estate_ai_smoke` owned by `migrator`, with the grants and extensions of
+   `docker/postgres/create_roles.sh`.
+2. Export `POSTGRES_DB=estate_ai_smoke`, a temporary `MEDIA_ROOT` and `AI_PROVIDER=stub`, then run
+   `migrate --database=migrator`, `register_valuation_model` and `rebuild_knowledge_index`.
+3. Start the server with the local settings on another port: `DJANGO_PORT=8100 scripts/dev_server.sh`.
+4. In a shell with the same exports: `uv run python scripts/smoke.py --base-url http://127.0.0.1:8100 --provision-admin`.
+5. Drop the database afterwards.
+
+The base URL may also be a frontend that proxies to that server. Registration is limited to 10 an hour per client and
+one run uses three. With the stub provider the assistant extracts nothing and cannot write a description.

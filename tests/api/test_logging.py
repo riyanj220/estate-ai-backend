@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -100,3 +101,10 @@ def test_settings_silence_path_logging_loggers(settings):
     for name in ("django.request", "django.server", "django.channels.server", "daphne.server"):
         assert settings.LOGGING["loggers"][name]["propagate"] is False
     assert settings.LOGGING["root"]["handlers"] == ["stdout"]
+
+
+def test_the_server_script_discards_daphnes_own_access_log():
+    """Daphne logs every path with its query string unless told otherwise (AD-26)."""
+    script = (Path(__file__).resolve().parents[2] / "scripts" / "dev_server.sh").read_text()
+    command = next(line for line in script.splitlines() if line.startswith("exec "))
+    assert "--access-log /dev/null" in command

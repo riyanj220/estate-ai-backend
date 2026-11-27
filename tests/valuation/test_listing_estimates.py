@@ -168,7 +168,8 @@ def test_publication_is_unchanged_when_the_handler_fails(owner, commit, monkeypa
 def test_publication_only_hands_the_work_over(owner, commit, settings, monkeypatch):
     settings.VALUATION_BACKGROUND_ESTIMATES = True
     handed = []
-    monkeypatch.setattr(runtime, "submit_heavy", lambda *args: handed.append(args))
+    monkeypatch.setattr(runtime, "submit_background", lambda *args: handed.append(args))
+    monkeypatch.setattr(runtime, "submit_heavy", lambda *args: pytest.fail("heavy slot used"))
     view = draft(owner)
     publish(owner, view, commit)
     assert handed[0][2] == view.id and not PriceEstimate.objects.exists()
@@ -176,7 +177,7 @@ def test_publication_only_hands_the_work_over(owner, commit, settings, monkeypat
     def busy(*args):
         raise runtime.ExecutorBusy()
 
-    monkeypatch.setattr(runtime, "submit_heavy", busy)
+    monkeypatch.setattr(runtime, "submit_background", busy)
     services.schedule_listing_estimate(SYSTEM, view.id)  # dropped quietly
     task, *args = handed[0]
     task(*args)
