@@ -132,8 +132,8 @@ development_status:
   6-4-search-availability-and-abuse-control: review
   epic-6-retrospective: optional
 
-  epic-7: backlog
-  7-1-start-an-inquiry: backlog
+  epic-7: in-progress
+  7-1-start-an-inquiry: in-progress
   7-2-websocket-consumer-authentication-and-event-schema: backlog
   7-3-live-delivery-and-frontend-connection: backlog
   7-4-chat-latency-under-load: backlog
