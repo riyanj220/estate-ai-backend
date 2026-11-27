@@ -161,22 +161,35 @@ def stated_nearby(items: list, message: str) -> dict[str, str]:
 
 def unmatched_notice(items: list, message: str) -> str:
     """What to tell the Seller about a facility that matches no catalogue entry. Only words taken
-    from the (redacted) message are repeated."""
+    from the (redacted) message are repeated. An on-property amenity does have a list entry, but
+    chat records nearby facilities only, so the Seller is sent to the form for it."""
     facilities = nearby_facilities()
     known = [SYNONYMS.get(code, (label_,)) for code, label_ in facilities.items()]
-    names = []
+    in_form = tuple(a.label for a in catalog.list_amenities() if a.kind != "nearby")
+    names, for_form = [], []
     for item in items:
         name = " ".join(item.split()) if isinstance(item, str) else ""
         if not name or len(name) > 40 or name.lower() not in message.lower():
             continue
-        if not any(mentions(words, name) for words in known):
-            names.append(name)
-    if not names:
-        return ""
-    return (
-        f"I have no list entry for: {', '.join(dict.fromkeys(names[:MAX_UNMATCHED]))}. "
-        f"Nothing was saved for it. I can record: {', '.join(facilities.values()).lower()}."
-    )
+        if any(mentions(words, name) for words in known):
+            continue
+        (for_form if mentions(in_form, name) else names).append(name)
+
+    def listed(found: list) -> str:
+        return ", ".join(dict.fromkeys(found[:MAX_UNMATCHED]))
+
+    parts = []
+    if for_form:
+        parts.append(
+            f"Please tick these in the form's Amenities section: {listed(for_form)}. "
+            "I do not record them from chat."
+        )
+    if names:
+        parts.append(
+            f"I have no list entry for: {listed(names)}. "
+            f"Nothing was saved for it. I can record: {', '.join(facilities.values()).lower()}."
+        )
+    return " ".join(parts)
 
 
 def _merged(view: ListingView, nearby: dict[str, str]) -> dict[str, str]:

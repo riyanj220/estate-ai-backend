@@ -107,16 +107,17 @@ def recompute_public_listing(actor: Actor, listing_id) -> EstimateOutcome:
 
 
 def schedule_listing_estimate(actor: Actor, listing_id) -> None:
-    """`recompute_public_listing` without making the caller wait: on the runtime executor (in the
-    calling thread when `VALUATION_BACKGROUND_ESTIMATES` is off, as in tests). When it cannot run
+    """`recompute_public_listing` without making the caller wait: on the runtime executor's
+    background worker, so it never takes a heavy slot a waiting user needs (in the calling
+    thread when `VALUATION_BACKGROUND_ESTIMATES` is off, as in tests). When it cannot run
     or fails, the Listing has no current estimate until `current_estimate` or the owner repairs
     it."""
     if not settings.VALUATION_BACKGROUND_ESTIMATES:
         _scheduled(actor, listing_id, _infer_now)
         return
     try:
-        # already on a heavy slot: inference runs in this task, not in a second one
-        runtime.submit_heavy(_scheduled, actor, listing_id, _infer_now)
+        # already on a worker: inference runs in this task, not in a second one
+        runtime.submit_background(_scheduled, actor, listing_id, _infer_now)
     except runtime.ExecutorBusy:
         logger.warning("estimate_not_scheduled", extra={"event": "estimate_not_scheduled"})
 

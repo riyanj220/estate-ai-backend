@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Start Daphne: a single process, a single worker, bound to loopback by default.
+# Daphne's own access log is discarded: it records paths with their query strings. The request
+# middleware logs the route template instead (AD-26).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [ -f .env ]; then
@@ -14,4 +16,4 @@ if [ -f .env ]; then
   done < .env
 fi
 export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings.local}"
-exec uv run daphne -b "${DJANGO_BIND_HOST:-127.0.0.1}" -p "${DJANGO_PORT:-8000}" config.asgi:application
+exec uv run daphne --access-log /dev/null -b "${DJANGO_BIND_HOST:-127.0.0.1}" -p "${DJANGO_PORT:-8000}" config.asgi:application

@@ -456,9 +456,8 @@ def _make_listing(index: int, owner: Actor, city, localities: dict, report: Repo
 
 @contextlib.contextmanager
 def _estimates_in_this_thread():
-    """Publishing starts a price estimate on the runtime executor, and those estimates hold the
-    heavy slots the next image upload needs (`busy`). A one-process tool has nobody waiting, so
-    here each estimate runs in the calling thread."""
+    """Publishing starts a price estimate in the background. A one-process tool has nobody
+    waiting, so here each estimate runs in the calling thread and is stored when it returns."""
     before = settings.VALUATION_BACKGROUND_ESTIMATES
     settings.VALUATION_BACKGROUND_ESTIMATES = False
     try:

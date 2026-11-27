@@ -6,6 +6,9 @@ of them, enforced by a semaphore, so the reserved workers are always free for in
 work such as chat and sign-in. Heavy submission never blocks: it returns a future at once or
 raises `ExecutorBusy`, and the caller falls back (FR-38) instead of queueing.
 
+Work nobody waits for (an estimate after publication) goes to a separate single background
+worker with a bounded queue, so it can never take the heavy slots a waiting user needs.
+
 Tasks run with a copy of the caller's context variables (for example the request id). A
 failing task leaves its exception on the future; only the exception class is logged.
 """
@@ -23,6 +26,8 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import close_old_connections
 
 logger = logging.getLogger("estate.runtime")
+
+BACKGROUND_QUEUE_LIMIT = 100  # background tasks waiting or running; more are refused
 
 
 class ExecutorBusy(Exception):
@@ -45,14 +50,22 @@ class _Executor:
         validate_limits(total, reserved)
         self._pool = ThreadPoolExecutor(max_workers=total, thread_name_prefix="estate-runtime")
         self._heavy_slots = threading.BoundedSemaphore(total - reserved)
+        self._background = ThreadPoolExecutor(max_workers=1, thread_name_prefix="estate-background")
+        self._background_slots = threading.BoundedSemaphore(BACKGROUND_QUEUE_LIMIT)
 
     def submit(self, fn: Callable[..., Any], args: tuple, kwargs: dict, *, heavy: bool) -> Future:
-        if heavy and not self._heavy_slots.acquire(blocking=False):
-            raise ExecutorBusy("heavy capacity is full")
+        return self._submit(self._pool, self._heavy_slots if heavy else None, fn, args, kwargs)
+
+    def submit_background(self, fn: Callable[..., Any], args: tuple, kwargs: dict) -> Future:
+        return self._submit(self._background, self._background_slots, fn, args, kwargs)
+
+    def _submit(self, pool, slots, fn, args, kwargs) -> Future:
+        if slots and not slots.acquire(blocking=False):
+            raise ExecutorBusy("capacity is full")
         context = contextvars.copy_context()
-        release = self._release_once() if heavy else None
+        release = self._release_once(slots) if slots else None
         try:
-            future = self._pool.submit(self._run, context, fn, args, kwargs, release)
+            future = pool.submit(self._run, context, fn, args, kwargs, release)
         except BaseException:
             if release:
                 release()
@@ -62,7 +75,8 @@ class _Executor:
             future.add_done_callback(lambda _future: release())
         return future
 
-    def _release_once(self) -> Callable[[], None]:
+    @staticmethod
+    def _release_once(slots) -> Callable[[], None]:
         lock = threading.Lock()
         released = False
 
@@ -72,7 +86,7 @@ class _Executor:
                 if released:
                     return
                 released = True
-            self._heavy_slots.release()
+            slots.release()
 
         return release
 
@@ -92,6 +106,7 @@ class _Executor:
 
     def shutdown(self) -> None:
         self._pool.shutdown(wait=True, cancel_futures=True)
+        self._background.shutdown(wait=True, cancel_futures=True)
 
 
 _executor: _Executor | None = None
@@ -118,6 +133,12 @@ def submit_heavy(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Future:
 def submit_interactive(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Future:
     """Run short interactive work (chat, sign-in); not limited by the heavy slots."""
     return _get().submit(fn, args, kwargs, heavy=False)
+
+
+def submit_background(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Future:
+    """Queue work nobody waits for on the one background worker; raises `ExecutorBusy` when
+    `BACKGROUND_QUEUE_LIMIT` tasks are already queued."""
+    return _get().submit_background(fn, args, kwargs)
 
 
 async def run_heavy(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

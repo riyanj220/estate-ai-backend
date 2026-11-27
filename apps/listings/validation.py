@@ -14,7 +14,11 @@ from decimal import Decimal, InvalidOperation
 
 from apps.catalog import registry
 from apps.catalog.selectors import parse_uuid
-from apps.kernel.privacy.patterns import reject_contact_details
+from apps.kernel.privacy.patterns import (
+    ContactKind,
+    find_contact_details,
+    reject_contact_details,
+)
 from apps.listings.area import MARLA_UNITS
 from apps.listings.fields import EDITABLE_FIELDS
 
@@ -111,7 +115,11 @@ def check_text(
         return None, "too_short"
     if not _has_letter_or_digit(text):
         return None, "invalid"
-    if reject_contact_details(text) is not None:
+    refused = reject_contact_details(text) is not None
+    if refused and definition.field_class == "private":
+        # the private address fields exist to hold an address; phone and email stay refused
+        refused = any(f.kind is not ContactKind.ADDRESS for f in find_contact_details(text))
+    if refused:
         return None, "contains_contact_details"
     return text, None
 
