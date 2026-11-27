@@ -9,6 +9,7 @@ class IdentityConfig(AppConfig):
     def ready(self):
         from apps.identity import (
             email_change,
+            erasure,
             password_reset,
             passwords,
             sessions,
@@ -18,6 +19,7 @@ class IdentityConfig(AppConfig):
         from apps.identity.models import AccountType
         from apps.identity.selectors import known_private_values
         from apps.kernel import audit, notifications, retention
+        from apps.kernel import erasure as erasers
         from apps.kernel.ai import known_values
         from apps.kernel.privacy.reads import register_private_target
 
@@ -29,6 +31,7 @@ class IdentityConfig(AppConfig):
             "account.reactivated",
             "account.deactivated",
             "account.sample_removed",
+            "identity.account_erased",
         ):
             audit.register_action(action, {})
         for action in ("account.password_reset", "account.password_changed"):
@@ -66,6 +69,7 @@ class IdentityConfig(AppConfig):
 
         known_values.register("identity", known_private_values)
         subscribers.register()
+        erasers.register("identity", erasure.erase_account_data)
         retention.register("identity.email_verification_tokens", verification.purge_expired)
         retention.register("identity.password_reset_tokens", password_reset.purge_expired)
         retention.register("identity.email_change_tokens", email_change.purge_expired)

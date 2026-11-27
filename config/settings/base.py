@@ -220,6 +220,8 @@ SPECTACULAR_SETTINGS = {
             "withdrawn",
         ],
         "VerificationActionEnum": ["approved", "rejected", "revoked", "withdrawn"],
+        "ClosureKindEnum": ["deactivation", "deletion"],
+        "ClosureStatusEnum": ["pending", "approved", "rejected"],
         "ReportStatusEnum": ["pending", "reviewing", "resolved", "dismissed"],
         "ReasonEnum": [
             "rent_not_supported",

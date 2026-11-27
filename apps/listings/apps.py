@@ -9,9 +9,10 @@ class ListingsConfig(AppConfig):
     def ready(self):
         from apps.catalog import registry
         from apps.kernel import audit, notifications, retention
+        from apps.kernel import erasure as erasers
         from apps.kernel.ai import known_values
         from apps.kernel.privacy.reads import register_private_target
-        from apps.listings import lifecycle
+        from apps.listings import erasure, lifecycle
         from apps.listings import retention as draft_retention
         from apps.listings.models import QUOTA_ACCOUNT_TYPES
         from apps.listings.selectors import known_private_addresses
@@ -55,6 +56,8 @@ class ListingsConfig(AppConfig):
         )
         audit.register_action("listing.draft_deleted", {"reason": ["owner", "retention"]})
         audit.register_action("listing.sample_removed", {})  # sample-data reset: the id only
+        audit.register_action("listings.account_erased", {})  # the account id is the target
+        erasers.register("listings", erasure.erase_account_data)
         # An administrator's limit change; the target is the new policy row.
         audit.register_action(
             "quota.policy_changed",

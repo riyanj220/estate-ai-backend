@@ -585,13 +585,16 @@ def restore_after_moderation(
     """An administrator returns a Removed Listing to Published (Story 9.4, AD-7).
 
     Visitor `unauthenticated`; non-administrator and unknown id `not_found`; not Removed
-    `conflict`. Writes one uncounted `restore` event (no allowance read or used), the status, a
+    `conflict`, and so is a Listing whose owner is Deactivated.
+    Writes one uncounted `restore` event (no allowance read or used), the status, a
     revision and the audit record. A restriction stays in force, so a restricted Listing returns
     to Published but not to public view. No `listing.published` event: nothing new was published.
     """
     require_admin(actor)
     with transaction.atomic():
         row = moderation.locked_for_moderation(actor, listing_id, lifecycle.RESTORE)
+        if lock_account(row.owner_account_id).state is AccountState.DEACTIVATED:
+            raise DomainError("conflict")  # a closed account's Listing never returns
         before = row.status
         now = now if now is not None else timezone.now()
         PublicationEvent.objects.create(

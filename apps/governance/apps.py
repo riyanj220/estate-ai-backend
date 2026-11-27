@@ -7,10 +7,11 @@ class GovernanceConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):
-        from apps.governance import reports, subscribers
+        from apps.governance import closure, erasure, reports, subscribers
         from apps.governance.moderation import NOTIFICATION_KINDS
         from apps.identity.events import AccountSessionEnded
         from apps.kernel import audit, events, notifications, retention
+        from apps.kernel import erasure as erasers
         from apps.kernel.privacy.reads import register_private_target
         from apps.listings.events import ListingDeleted, ListingPublished
 
@@ -56,3 +57,9 @@ class GovernanceConfig(AppConfig):
                 kind,
                 {"listing_id": notifications.UUID_TEXT, "reason": notifications.SHORT_TEXT},
             )
+        # Account closure (Stories 10.1 to 10.3): the kind only, never the reason.
+        for action in ("closure.requested", "closure.approved", "closure.rejected"):
+            audit.register_action(action, {"kind": closure.KINDS})
+        notifications.register_kind(closure.REJECTED_NOTIFICATION, {})
+        audit.register_action("governance.account_erased", {})
+        erasers.register("governance", erasure.erase_account_data)

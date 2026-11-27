@@ -24,6 +24,7 @@ from apps.identity.services.admin import (
     reset_admin_password,
 )
 from apps.identity.services.agency_verification import set_agency_verification
+from apps.identity.services.anonymisation import DELETED_AGENCY_NAME, anonymise_account
 from apps.identity.services.email_changes import (
     EmailChangeDelivery,
     confirm_email_change,
@@ -79,6 +80,7 @@ from apps.identity.services.suspension import (
 from apps.kernel import audit, ratelimit
 
 __all__ = [
+    "DELETED_AGENCY_NAME",
     "Account",
     "AdminRefused",
     "AgencyProfile",
@@ -92,6 +94,7 @@ __all__ = [
     "SuspensionView",
     "_view",
     "admin_sign_in",
+    "anonymise_account",
     "audit",
     "change_password",
     "confirm_email",

@@ -122,3 +122,13 @@ def archive_removed(actor: Actor, listing_id) -> Moderated:
         return ["status", "removal_reason"], {"status": ListingStatus.ARCHIVED.value}
 
     return _apply(actor, listing_id, lifecycle.ARCHIVE_REMOVED, "listing.removal_archived", change)
+
+
+def archive_removed_of(actor: Actor, account_id) -> None:
+    """Account closure (FR-8): archive every Removed Listing of the account."""
+    require_admin(actor)
+    ids = PropertyListing.objects.filter(
+        owner_account_id=account_id, status=ListingStatus.REMOVED.value
+    ).order_by("id")
+    for listing_id in list(ids.values_list("id", flat=True)):
+        archive_removed(actor, listing_id)

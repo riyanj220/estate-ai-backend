@@ -5,6 +5,11 @@ from apps.presentation.adminapi.accounts import (
     AccountReactivateView,
     AccountSuspendView,
 )
+from apps.presentation.adminapi.closure import (
+    ClosureApproveView,
+    ClosureQueueView,
+    ClosureRejectView,
+)
 from apps.presentation.adminapi.flags import AdminFlagsView
 from apps.presentation.adminapi.listings import (
     AdminDraftReadView,
@@ -53,6 +58,7 @@ from apps.presentation.api.assistant import (
     AssistantSessionView,
     AssistantTurnsView,
 )
+from apps.presentation.api.closure import ClosureRequestDetailView, ClosureRequestsView
 from apps.presentation.api.conversations import (
     ConversationDetailView,
     ConversationMessagesView,
@@ -225,6 +231,31 @@ urlpatterns = [
         "api/v1/me/agency-verification/withdraw",
         AgencyVerificationWithdrawView.as_view(),
         name="me-agency-verification-withdraw",
+    ),
+    path(
+        "api/v1/me/closure-requests",
+        ClosureRequestsView.as_view(),
+        name="me-closure-requests",
+    ),
+    path(
+        "api/v1/me/closure-requests/<str:request_id>",
+        ClosureRequestDetailView.as_view(),
+        name="me-closure-request",
+    ),
+    path(
+        "api/v1/admin/closure-requests",
+        ClosureQueueView.as_view(),
+        name="admin-closure-requests",
+    ),
+    path(
+        "api/v1/admin/closure-requests/<str:request_id>/approve",
+        ClosureApproveView.as_view(),
+        name="admin-closure-approve",
+    ),
+    path(
+        "api/v1/admin/closure-requests/<str:request_id>/reject",
+        ClosureRejectView.as_view(),
+        name="admin-closure-reject",
     ),
     path("api/v1/admin/reports", ReportQueueView.as_view(), name="admin-reports"),
     path("api/v1/admin/reports/<str:report_id>", ReportDetailView.as_view(), name="admin-report"),

@@ -18,6 +18,7 @@ from apps.identity.selectors import (
 from apps.identity.services._common import (
     EMAIL_CONSTRAINT,
     _email_taken,
+    _end_open_sessions,
     _locked,
     _require_system,
     _view,
@@ -82,7 +83,8 @@ def create_account(actor: Actor, email: str, password: str, account_type: str) -
 
 
 def deactivate(actor: Actor, account_id) -> AccountView:
-    """Deactivate an account for good and end its sessions once the change commits."""
+    """Deactivate an account for good and end its sessions. The event, after commit, closes
+    live connections."""
     require_admin(actor)
     with transaction.atomic():
         account = _locked(account_id)
@@ -90,6 +92,7 @@ def deactivate(actor: Actor, account_id) -> AccountView:
         account.deactivated_at = timezone.now()
         account.save(update_fields=["deactivated_at", "updated_at"])
         _void_email_change_links(account, account.deactivated_at)
+        _end_open_sessions(account.id, "deactivated", now=account.deactivated_at)
         purge_profile_image(actor, account.id)  # AD-23: the picture or logo goes with the account
         audit.record(actor, "account.deactivated", "account", account.id)
         emit_session_ended(account.id, "deactivated")

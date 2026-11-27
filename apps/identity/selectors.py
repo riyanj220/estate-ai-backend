@@ -206,6 +206,13 @@ def masked_contacts(account_ids) -> dict[uuid.UUID, MaskedContact]:
     return {key: MaskedContact(kind, mask_email(email)) for key, kind, email in rows}
 
 
+def email_for_notice(actor: Actor, account_id) -> str | None:
+    """The sign-in address, only to send that account a platform email (closure decisions).
+    Administrators only; it is never returned to a client."""
+    require_admin(actor)
+    return Account.objects.filter(id=account_id).values_list("email", flat=True).first()
+
+
 def suspended_or_deactivated_account_ids():
     """A lazy queryset of the ids of every Suspended or Deactivated account, for `listings`
     retention to leave their Drafts alone."""

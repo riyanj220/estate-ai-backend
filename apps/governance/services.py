@@ -188,3 +188,24 @@ def revoke_verification(actor: Actor, request_id, reason):
         _decide(request, actor, "revoked", "revoked", reason)
         notifications.notify(account.id, "verification.revoked", {})  # last
     return request
+
+
+_CLOSED_REASON = "The account was closed."
+
+
+def erase_verification(actor: Actor, account_id) -> None:
+    """Account closure: withdraw a pending request, revoke an approval (clearing the verified
+    flag) and blank the submitted details of every request. The rows and their decision history
+    stay. Inside the closure's transaction."""
+    require_admin(actor)
+    requests = VerificationRequest.objects.select_for_update().filter(agency_account_id=account_id)
+    for request in requests.order_by("id"):
+        if request.status == "pending":
+            _decide(request, actor, "withdrawn", "withdrawn", _CLOSED_REASON)
+        elif request.status == "verified":
+            _decide(request, actor, "revoked", "revoked", _CLOSED_REASON)
+    requests.update(
+        business_name=identity_services.DELETED_AGENCY_NAME, registration_number="", note=""
+    )
+    if account_id in identity.agency_facts([account_id]):
+        identity_services.set_agency_verification(actor, account_id, False)

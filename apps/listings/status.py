@@ -18,7 +18,7 @@ from apps.identity.capabilities import Access, Capability, matrix_access
 from apps.identity.policy import can
 from apps.identity.selectors import ADMIN_ACCOUNT_TYPE, lock_account
 from apps.kernel import audit
-from apps.kernel.actor import Actor, ActorKind, require_signed_in
+from apps.kernel.actor import Actor, ActorKind, require_admin, require_signed_in
 from apps.kernel.errors import DomainError
 from apps.kernel.events import emit
 from apps.listings import lifecycle
@@ -128,3 +128,36 @@ def change_status(actor: Actor, listing_id, base_revision, target):
         view = view_of(row, with_private=True)
         emit(ListingStatusChanged(listing_id=row.id, account_id=account.id, status=row.status))
     return view
+
+
+def archive_for_closed_account(actor: Actor, account_id) -> None:
+    """Account closure (FR-8, FR-75): the system archives every Published, Sold and Rented
+    Listing of the account, restricted ones included (a restriction stays in force). Inside the
+    closure's transaction, which already holds the account lock."""
+    require_admin(actor)
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError("archive_for_closed_account must run inside the closure's transaction")
+    rows = (
+        PropertyListing.objects.select_for_update()
+        .filter(owner_account_id=account_id, status__in=lifecycle.MOVE_SOURCES)
+        .order_by("id")
+    )
+    for row in rows:
+        previous = row.status
+        now = timezone.now()
+        row.status = _WRITABLE["archived"]
+        row.revision += 1
+        row.updated_at = now
+        row.save(update_fields=["status", "revision", "updated_at"])
+        ListingRevision.objects.create(
+            listing=row,
+            revision=row.revision,
+            origin=Origin.MANUAL.value,
+            actor_account_id=actor.account_id,
+            changes={"status": _WRITABLE["archived"]},
+            created_at=now,
+        )
+        audit.record(
+            actor, "listing.status_changed", "listing", row.id, {"from": previous, "to": row.status}
+        )
+        emit(ListingStatusChanged(listing_id=row.id, account_id=account_id, status=row.status))

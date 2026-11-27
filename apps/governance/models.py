@@ -213,3 +213,46 @@ class ListingFlag(models.Model):
             ),
         ]
         indexes = [models.Index(fields=["-created_at", "-id"], name="governance_flag_list_idx")]
+
+
+CLOSURE_KINDS = ["deactivation", "deletion"]
+CLOSURE_STATUSES = ["pending", "approved", "rejected"]
+
+
+class ClosureRequest(models.Model):
+    """A request to close an account (Story 10.1) and its one decision (Story 10.2). It holds no
+    personal text; the decision reason is the administrator's and is shown to the account. Both
+    kinds are carried out the same way (deactivation with anonymisation)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account_id = models.UUIDField()
+    kind = models.CharField(max_length=16)
+    status = models.CharField(max_length=16, default="pending")
+    submitted_at = models.DateTimeField()
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decided_by_account_id = models.UUIDField(null=True, blank=True)
+    decision_reason = models.CharField(max_length=500, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(kind__in=CLOSURE_KINDS), name="governance_closure_kind_valid"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=CLOSURE_STATUSES),
+                name="governance_closure_status_valid",
+            ),
+            models.UniqueConstraint(
+                fields=["account_id"],
+                condition=models.Q(status="pending"),
+                name="governance_closure_one_pending",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["status", "submitted_at", "id"], name="governance_closure_queue_idx"
+            ),
+            models.Index(
+                fields=["account_id", "-submitted_at"], name="governance_closure_account_idx"
+            ),
+        ]
