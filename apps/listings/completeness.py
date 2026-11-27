@@ -18,6 +18,16 @@ from apps.listings.selectors import ListingView
 
 # The field ids that are fixed at creation: always present, never re-judged as input.
 _CREATION_FIELDS = frozenset({"purpose", "category", "subtype"})
+# The values a Seller must have confirmed before an AI-supplied one can be published (Story 5.12).
+SENSITIVE_FIELDS = (
+    "purpose",
+    "category",
+    "subtype",
+    "asking_price",
+    "locality",
+    "area_value",
+    "area_unit",
+)
 
 
 def _resolve(kind: str, key: uuid.UUID) -> uuid.UUID | None:
@@ -78,7 +88,11 @@ def problems_of(
         definition = registry.field(name) if isinstance(name, str) else None
         if (
             definition is not None
-            and (definition.quota_identity or definition.field_class == "private")
+            and (
+                definition.quota_identity
+                or definition.field_class == "private"
+                or name in SENSITIVE_FIELDS
+            )
             and definition.applies_to(row.purpose, row.category, row.subtype)
             and view.fields.get(name) is not None  # an empty field has nothing to confirm
             and isinstance(entry, dict)

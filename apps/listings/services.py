@@ -3,7 +3,7 @@
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ImproperlyConfigured
@@ -322,6 +322,41 @@ def apply_updates(
         if written.model_inputs_changed:
             emit(ListingModelInputsChanged(listing_id=row.id))  # last: after-commit
     return written.view
+
+
+def confirm_fields(actor: Actor, listing_id, base_revision, field_ids) -> ListingView:
+    """The owner's explicit confirmation of values already on a Draft (Story 5.12): the STORED
+    value of each named field is saved again as a manual write, so the client sends field names
+    only and the flag and origin are the service's. Refusals as `apply_updates`, plus `conflict`
+    for a Listing that is not a Draft, `fields` `invalid` for a bad list and `required` for a
+    named field that holds no value. `base_revision` proves the owner saw what is confirmed."""
+    current = require_draft(actor, listing_id)
+    if (
+        not isinstance(field_ids, list)
+        or not 0 < len(field_ids) <= len(EDITABLE_FIELDS)
+        or not all(isinstance(name, str) for name in field_ids)
+    ):
+        raise FieldsInvalid({"fields": "required" if field_ids is None else "invalid"})
+    if isinstance(base_revision, int) and current.revision != base_revision:
+        raise StaleRevision(current)
+    updates = {name: _as_input(current.fields.get(name)) for name in field_ids}
+    problems = validation.check_shape(base_revision, updates)
+    if not problems:
+        problems = {name: "required" for name, value in updates.items() if value is None}
+    if problems:
+        raise FieldsInvalid(problems)
+    return apply_updates(actor, current.id, base_revision, updates, Origin.MANUAL)
+
+
+def _as_input(value):
+    """A value of a `ListingView` in the shape `apply_updates` accepts."""
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, uuid.UUID | Decimal):
+        return str(value)
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
 
 
 def write_locked(

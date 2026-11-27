@@ -52,6 +52,14 @@ ASSISTANT_TURN = Feature(
     account_scope="assistant_messages",
     reserved=True,
 )
+DESCRIPTION = Feature(  # shares the assistant's hourly limit
+    "listing_description",
+    timeout=20.0,
+    max_chars=2000,
+    signed_in_only=True,
+    account_scope="assistant_messages",
+    reserved=True,
+)
 SEARCH_QUERY = Feature(
     "search_query",
     timeout=12.0,

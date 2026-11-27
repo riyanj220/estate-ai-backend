@@ -10,9 +10,19 @@ from rest_framework.views import APIView
 
 from apps.assistant import selectors, services
 from apps.catalog.selectors import KNOWLEDGE_NOTICE
-from apps.listings.services import FieldsInvalid
+from apps.listings.services import FieldsInvalid, StaleRevision
 from apps.presentation.api.actors import get_actor
-from apps.presentation.api.bodies import exact_fields, field_errors, single_field
+from apps.presentation.api.bodies import (
+    ConflictWithCurrent,
+    exact_fields,
+    field_errors,
+    single_field,
+)
+from apps.presentation.api.listings import (
+    ListingConflictSerializer,
+    ListingSerializer,
+    listing_data,
+)
 from apps.presentation.api.passwords import NoStoreMixin
 from apps.presentation.api.permissions import RequireSignedIn
 from apps.presentation.api.serializers import ErrorBodySerializer
@@ -50,6 +60,12 @@ class AssistantNextStepSerializer(serializers.Serializer):
     in_form = serializers.BooleanField(help_text="True when only the manual form can set it.")
 
 
+class AssistantFactSerializer(serializers.Serializer):
+    field = serializers.CharField(help_text="A registry field id.")
+    value = serializers.CharField(help_text="Plain text.")
+    confirmed = serializers.BooleanField(help_text="False for an unconfirmed assistant value.")
+
+
 class AssistantTurnSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     sequence = serializers.IntegerField()
@@ -80,6 +96,7 @@ class AssistantSessionSerializer(serializers.Serializer):
     next_step = AssistantNextStepSerializer(
         allow_null=True, help_text="Null when the Listing is no longer a Draft."
     )
+    summary = AssistantFactSerializer(many=True, help_text="What the Listing holds now.")
 
 
 class AssistantTurnResultSerializer(serializers.Serializer):
@@ -91,6 +108,43 @@ class AssistantTurnResultSerializer(serializers.Serializer):
         allow_null=True, help_text="Null unless `success`: nothing was stored."
     )
     next_step = AssistantNextStepSerializer(allow_null=True, help_text="Null unless `success`.")
+    summary = AssistantFactSerializer(many=True, help_text="Empty unless `success`.")
+
+
+class AssistantDescriptionBodySerializer(serializers.Serializer):
+    base_revision = serializers.IntegerField(
+        min_value=1, help_text="The `revision` of the Draft the client last read."
+    )
+    replace = serializers.BooleanField(
+        required=False, help_text="True to overwrite a description the Seller wrote."
+    )
+
+    def to_internal_value(self, data):
+        values = exact_fields(data, ("base_revision", "replace"))
+        return {
+            "base_revision": values.get("base_revision"),
+            "replace": values.get("replace", False),
+        }
+
+
+class AssistantClaimSerializer(serializers.Serializer):
+    text = serializers.CharField(help_text="One sentence of the description. Plain text.")
+    fields = serializers.ListField(
+        child=serializers.CharField(), help_text="The confirmed fields it rests on."
+    )
+
+
+class AssistantDescriptionResultSerializer(serializers.Serializer):
+    outcome = serializers.ChoiceField(choices=OUTCOMES)
+    message = serializers.CharField(allow_blank=True)
+    listing = ListingSerializer(
+        allow_null=True,
+        help_text="With the saved description (unconfirmed); null unless `success`.",
+    )
+    claims = AssistantClaimSerializer(many=True, help_text="The per-claim checklist.")
+    left_out = serializers.ListField(
+        child=serializers.CharField(), help_text="Fields not used: not confirmed yet."
+    )
 
 
 class AssistantSessionOpenSerializer(serializers.Serializer):
@@ -194,3 +248,46 @@ class AssistantTurnsView(_AssistantView):
         except FieldsInvalid as exc:
             raise field_errors(exc.fields) from None
         return Response(AssistantTurnResultSerializer(result).data)
+
+
+class AssistantDescriptionView(_AssistantView):
+    @extend_schema(
+        operation_id="write_assistant_description",
+        summary="Write the description from the confirmed details",
+        description=(
+            "Needs `X-CSRFToken`. One model call; counts as an assistant message. The text is "
+            "saved to the Draft as an unconfirmed assistant value. Nothing is published."
+        ),
+        request=AssistantDescriptionBodySerializer,
+        responses={
+            200: AssistantDescriptionResultSerializer,
+            409: OpenApiResponse(ListingConflictSerializer, "`stale_revision` or `conflict`"),
+            **_errors(
+                **_ACCESS,
+                e400="`validation_error`: `description` is `manual_description` (send "
+                "`replace`) or `nothing_confirmed`",
+                e429="`throttled`: the assistant message limit; with `Retry-After`",
+            ),
+        },
+    )
+    def post(self, request, session_id):
+        body = AssistantDescriptionBodySerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        values = body.validated_data
+        try:
+            result = services.write_description(
+                get_actor(request), session_id, values["base_revision"], values["replace"]
+            )
+        except FieldsInvalid as exc:
+            raise field_errors(exc.fields) from None
+        except StaleRevision as exc:
+            raise ConflictWithCurrent(listing_data(exc.current)) from None
+        return Response(
+            {
+                "outcome": result.outcome,
+                "message": result.message,
+                "listing": listing_data(result.listing) if result.listing else None,
+                "claims": [{"text": c.text, "fields": list(c.fields)} for c in result.claims],
+                "left_out": list(result.left_out),
+            }
+        )

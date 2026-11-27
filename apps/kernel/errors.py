@@ -120,6 +120,8 @@ FIELD_MESSAGES: dict[str, str] = {
     "images_required": "Add at least one image.",
     "no_change": "Nothing would change. Enter a different locality or area.",
     "confirm_required": "Confirm this value before publishing.",
+    "manual_description": "You wrote this description. Choose to replace it.",
+    "nothing_confirmed": "Fill in and confirm some details first.",
 }
 DEFAULT_FIELD_MESSAGE = "Enter a valid value."
 

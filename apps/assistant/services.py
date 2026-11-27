@@ -15,8 +15,10 @@ from django.db import IntegrityError, transaction
 from django.db.models import Max
 from django.utils import timezone
 
+from apps.assistant import description as describing
 from apps.assistant import extraction as extracting
 from apps.assistant import planner, prompts
+from apps.assistant.facts import Fact, facts_of
 from apps.assistant.models import AssistantSession, AssistantTurn
 from apps.assistant.selectors import (
     SessionView,
@@ -35,7 +37,8 @@ from apps.kernel.ai.ports import LLMRequest, Message
 from apps.kernel.ai.redaction import KnownValues, RedactedText, redact
 from apps.kernel.errors import DomainError
 from apps.listings import services as listings
-from apps.listings.selectors import canonical_uuid
+from apps.listings.lifecycle import Origin
+from apps.listings.selectors import ListingView, canonical_uuid
 
 logger = logging.getLogger("estate.assistant")
 
@@ -64,6 +67,18 @@ class TurnResult:
     message: str
     turn: TurnView | None
     next_step: planner.NextStep | None = None
+    summary: tuple[Fact, ...] = ()  # what the Draft holds now (Story 5.11)
+
+
+@dataclass(frozen=True)
+class DescriptionResult:
+    """`listing` is None when nothing was written; `message` then says why."""
+
+    outcome: str
+    message: str
+    listing: ListingView | None = None
+    claims: tuple[describing.Claim, ...] = ()
+    left_out: tuple[str, ...] = ()  # fields not used because they are not confirmed
 
 
 def open_session(actor: Actor, listing_id) -> tuple[SessionView, bool]:
@@ -200,7 +215,9 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
     safe = redact(text, values)
     turn, is_new = _claim(session, key, safe.value)
     if not is_new:
-        return TurnResult("success", "", turn_view(turn), planner.next_step(listing))
+        return TurnResult(
+            "success", "", turn_view(turn), planner.next_step(listing), facts_of(listing)
+        )
     pending = AssistantTurn.objects.filter(pk=turn.pk, reply_text="")
     answered = False
     try:
@@ -214,7 +231,9 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
         parsed = extracting.parse(result.value.text)
         if parsed is None:
             return TurnResult("error", gateway.MESSAGES["error"], None)
-        reply = _clean_reply(parsed.reply, values) or ("Noted." if parsed.fields else "")
+        reply = _clean_reply(parsed.reply, values) or (
+            "Noted." if parsed.fields or parsed.nearby else ""
+        )
         if not reply:
             return TurnResult("error", gateway.MESSAGES["error"], None)
         turn.reply_text = reply
@@ -222,12 +241,14 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
             {"title": p.title, "source": p.source, "version": p.version} for p in knowledge.passages
         ]
         with transaction.atomic():  # the Draft changes only if the turn is kept
-            written = extracting.apply(actor, listing, parsed.fields, values)
+            nearby = extracting.stated_nearby(parsed.nearby, safe.value)
+            written = extracting.apply(actor, listing, parsed.fields, values, nearby)
             notices = []
             if safe.value != text:
                 notices.append(extracting.CONTACT_NOTICE)
             if parsed.clarify:
                 notices.append(_clean_reply(parsed.clarify, values))
+            notices.append(extracting.unmatched_notice(parsed.unmatched, safe.value))
             turn.result = written.as_json([n for n in notices if n])
             if not pending.update(
                 reply_text=turn.reply_text, sources=turn.sources, result=turn.result
@@ -239,4 +260,69 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
             pending.delete()
     notice = "" if knowledge.ok else knowledge.message
     after = listings.require_draft(actor, session.listing_id)
-    return TurnResult("success", notice, turn_view(turn), planner.next_step(after))
+    return TurnResult("success", notice, turn_view(turn), planner.next_step(after), facts_of(after))
+
+
+DESCRIPTION_FAILED = (
+    "I could not write a description from your confirmed details. Confirm more details or write "
+    "it yourself."
+)
+_FIXED = frozenset({"purpose", "category", "subtype"})  # chosen when the Draft starts
+
+
+def _is_manual(listing: ListingView) -> bool:
+    if not listing.fields.get("description"):
+        return False
+    return listing.provenance.get("description", {}).get("origin") != Origin.AI.value
+
+
+def write_description(actor: Actor, session_id, base_revision, replace=False) -> DescriptionResult:
+    """Write a description from the confirmed details and save it as an unconfirmed AI value
+    (Story 5.13), with one model call. Refusals as for a turn, then invalid input, a stale
+    `base_revision` (also when the Draft changes while the model works), a description of the
+    Seller's own without `replace`, nothing confirmed to write from, and the message limit."""
+    session = owned_session(actor, session_id)
+    listing = listings.require_draft(actor, session.listing_id)
+    if isinstance(base_revision, bool) or not isinstance(base_revision, int) or base_revision < 1:
+        raise listings.FieldsInvalid({"base_revision": "invalid"})
+    if not isinstance(replace, bool):
+        raise listings.FieldsInvalid({"replace": "invalid"})
+    if listing.revision != base_revision:
+        raise listings.StaleRevision(listing)
+    if _is_manual(listing) and not replace:
+        raise listings.FieldsInvalid({"description": "manual_description"})
+    values = known_values_for(actor)
+    facts, lines, left_out = [], [], []
+    for fact in facts_of(listing):
+        if not fact.confirmed:
+            left_out.append(fact.field)
+            continue
+        line = redact(f"{fact.field}: {fact.value}", values)
+        if line.value == f"{fact.field}: {fact.value}":  # never a value redaction would change
+            facts.append(fact)
+            lines.append(line)
+    if not {f.field for f in facts} - _FIXED:
+        raise listings.FieldsInvalid({"description": "nothing_confirmed"})
+    facts = tuple(facts)
+    request = LLMRequest(
+        system=redact(describing.SYSTEM, KnownValues()),
+        input=redact("Write the description.", KnownValues()),
+        context=tuple(lines),
+        schema=describing.schema(facts),
+    )
+    result = gateway.complete(actor, gateway.DESCRIPTION, request)
+    if not result.ok:
+        if result.outcome == "blocked":
+            raise ratelimit.RateLimited(result.retry_after)
+        return DescriptionResult(result.outcome, result.message)
+    answer = describing.read(result.value.text, facts, values)
+    if answer is None:
+        return DescriptionResult("error", DESCRIPTION_FAILED, left_out=tuple(left_out))
+    text, claims = answer
+    try:
+        view = listings.apply_updates(
+            actor, listing.id, listing.revision, {"description": text}, Origin.AI
+        )
+    except listings.FieldsInvalid:
+        return DescriptionResult("error", DESCRIPTION_FAILED, left_out=tuple(left_out))
+    return DescriptionResult("success", "", view, claims, tuple(left_out))

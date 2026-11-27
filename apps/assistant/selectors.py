@@ -6,6 +6,7 @@ from dataclasses import field as dataclass_field
 from datetime import datetime
 
 from apps.assistant import planner
+from apps.assistant.facts import Fact, facts_of
 from apps.assistant.models import AssistantSession, AssistantTurn
 from apps.assistant.planner import NextStep
 from apps.kernel.actor import Actor, require_signed_in
@@ -56,6 +57,7 @@ class SessionView:
     created_at: datetime
     turns: tuple[TurnView, ...]
     next_step: NextStep | None = None
+    summary: tuple[Fact, ...] = ()
 
 
 def turn_view(row: AssistantTurn) -> TurnView:
@@ -83,6 +85,7 @@ def session_view(row: AssistantSession, listing: listings.ListingView) -> Sessio
         created_at=row.created_at,
         turns=tuple(turn_view(turn) for turn in row.turns.exclude(reply_text="")),
         next_step=planner.next_step(listing),
+        summary=facts_of(listing),
     )
 
 

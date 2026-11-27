@@ -12,6 +12,7 @@ from apps.presentation.adminapi.quota import (
     QuotaUsageView,
 )
 from apps.presentation.api.assistant import (
+    AssistantDescriptionView,
     AssistantSessionsView,
     AssistantSessionView,
     AssistantTurnsView,
@@ -35,6 +36,7 @@ from apps.presentation.api.listing_images import (
 )
 from apps.presentation.api.listings import (
     DraftCreateView,
+    ListingConfirmView,
     ListingCorrectionView,
     ListingDetailView,
     ListingPreviewView,
@@ -204,6 +206,11 @@ urlpatterns = [
         name="listing-publish",
     ),
     path(
+        "api/v1/listings/<str:listing_id>/confirm",
+        ListingConfirmView.as_view(),
+        name="listing-confirm",
+    ),
+    path(
         "api/v1/listings/<str:listing_id>/republish",
         ListingRepublishView.as_view(),
         name="listing-republish",
@@ -248,6 +255,11 @@ urlpatterns = [
         "api/v1/assistant/sessions/<str:session_id>/turns",
         AssistantTurnsView.as_view(),
         name="assistant-turns",
+    ),
+    path(
+        "api/v1/assistant/sessions/<str:session_id>/description",
+        AssistantDescriptionView.as_view(),
+        name="assistant-description",
     ),
     path(
         "api/v1/public/listings/<str:listing_id>/estimate",

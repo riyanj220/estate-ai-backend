@@ -383,6 +383,20 @@ class PublishBodySerializer(serializers.Serializer):
         return {"base_revision": exact_fields(data, ("base_revision",)).get("base_revision")}
 
 
+class ListingConfirmSerializer(serializers.Serializer):
+    base_revision = serializers.IntegerField(
+        min_value=1, help_text="The `revision` of the Draft whose values the owner saw."
+    )
+    fields = serializers.ListField(
+        child=serializers.CharField(), help_text="Registry field ids that hold a value."
+    )
+
+    def to_internal_value(self, data):
+        # Names only: values, `origin` and `confirmed` are never client input.
+        values = exact_fields(data, UPDATE_BODY)
+        return {name: values.get(name) for name in UPDATE_BODY}
+
+
 class QuotaDetailsSerializer(serializers.Serializer):
     limit = serializers.IntegerField(help_text="The caller's monthly limit.")
     used = serializers.IntegerField(help_text="The caller's counted publications this month.")
@@ -1057,6 +1071,45 @@ class ListingPublishView(NoStoreMixin, APIView):
                 exc.code,
                 {"limit": exc.limit, "used": exc.used, "resets_at": exc.resets_at.isoformat()},
             ) from None
+        return Response(listing_data(view))
+
+
+class ListingConfirmView(NoStoreMixin, APIView):
+    permission_classes = [RequireSignedIn]
+
+    @extend_schema(
+        operation_id="confirm_listing_fields",
+        summary="Confirm values on one of the signed-in account's own Drafts",
+        description=(
+            "Needs `X-CSRFToken`. Marks the stored value of each named field as confirmed by "
+            "the owner. An unconfirmed assistant value of a sensitive field blocks publication."
+        ),
+        request=ListingConfirmSerializer,
+        responses={
+            200: OpenApiResponse(ListingSerializer, description="The Draft"),
+            400: OpenApiResponse(ErrorBodySerializer, description="`validation_error`"),
+            401: OpenApiResponse(ErrorBodySerializer, description="`unauthenticated`"),
+            403: OpenApiResponse(ErrorBodySerializer, description="`forbidden`"),
+            404: OpenApiResponse(ErrorBodySerializer, description="`not_found`"),
+            409: OpenApiResponse(
+                ListingConflictSerializer, description="`stale_revision` or `conflict`"
+            ),
+        },
+    )
+    def post(self, request, listing_id):
+        body = ListingConfirmSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        try:
+            view = services.confirm_fields(
+                get_actor(request),
+                listing_id,
+                body.validated_data["base_revision"],
+                body.validated_data["fields"],
+            )
+        except services.FieldsInvalid as exc:
+            raise field_errors(exc.fields) from None
+        except services.StaleRevision as exc:
+            raise ConflictWithCurrent(listing_data(exc.current)) from None
         return Response(listing_data(view))
 
 

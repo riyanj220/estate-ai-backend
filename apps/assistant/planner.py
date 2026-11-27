@@ -8,6 +8,7 @@ only the form can. When nothing required is missing, review is offered with opti
 from dataclasses import dataclass
 
 from apps.catalog import registry
+from apps.listings.completeness import SENSITIVE_FIELDS
 from apps.listings.selectors import ListingView
 
 _FIXED = frozenset({"purpose", "category", "subtype"})  # chosen when the Draft starts
@@ -71,6 +72,13 @@ def next_step(listing: ListingView) -> NextStep | None:
         if spec.ai_extractable and spec.id != "description"
     )[:OPTIONAL_LIMIT]
     question = "All required details are filled in. You can review your listing now."
+    unconfirmed = [
+        label(name)
+        for name in SENSITIVE_FIELDS
+        if listing.provenance.get(name, {}).get("confirmed") is False
+    ]
+    if unconfirmed:
+        question += f" Please confirm there: {', '.join(unconfirmed)}."
     if not listing.media:
         question += " Add at least one photo before publishing."
     if optional:
