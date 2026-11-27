@@ -263,12 +263,14 @@ def test_capped_response_is_the_same_for_a_new_and_an_existing_email(client, bod
     assert new.status_code == existing.status_code == 429
 
     def comparable(response):
-        headers = {k: v for k, v in response.headers.items() if k not in {"X-Request-ID", "Date"}}
+        skip = {"X-Request-ID", "Date", "Retry-After"}  # the countdown may tick between the two
+        headers = {k: v for k, v in response.headers.items() if k not in skip}
         content = response.json()
         content["error"].pop("request_id", None)
         return headers, content
 
     assert comparable(new) == comparable(existing)
+    assert abs(int(new["Retry-After"]) - int(existing["Retry-After"])) <= 2
 
 
 def test_nothing_private_is_logged_returned_mailed_or_emitted(
