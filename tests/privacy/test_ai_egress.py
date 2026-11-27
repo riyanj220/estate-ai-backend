@@ -7,9 +7,12 @@ function `(actor, message)` to `ENTRY_POINTS` that drives it end to end.
 
 import logging
 import re
+import uuid
 
 import pytest
 
+from apps.assistant import services as assistant
+from apps.assistant.models import AssistantTurn
 from apps.catalog import selectors as catalog_selectors
 from apps.catalog import services as catalog_services
 from apps.catalog.models import City
@@ -79,11 +82,29 @@ def knowledge_retrieval(actor, message):
     return catalog_selectors.retrieve_knowledge(actor, message)
 
 
+def assistant_turn(actor, message):
+    """The real turn (Story 5.8): a second turn sends the first one back as history. Neither the
+    stored history nor a reply that quotes the values keeps them."""
+    catalog_services.rebuild_knowledge_index(Actor.system())
+    draft = services.create_draft(actor, "sale", "house", "house")
+    session, _ = assistant.open_session(actor, draft.id)
+    stub.reply = message
+    for _ in range(2):
+        result = assistant.send_turn(
+            actor, session.id, "What is a marla? " + message, str(uuid.uuid4())
+        )
+    stored = AssistantTurn.objects.values_list("user_text", "reply_text")
+    assert stored and all(leaks(text) == [] for row in stored for text in row)
+    assert leaks(result.turn.message + result.turn.reply) == []
+    return result
+
+
 ENTRY_POINTS = [
     pytest.param(llm_assistant_turn, id="assistant-turn-port"),
     pytest.param(llm_search_query, id="search-query-port"),
     pytest.param(embeddings, id="embeddings-port"),
     pytest.param(knowledge_retrieval, id="knowledge-retrieval"),
+    pytest.param(assistant_turn, id="assistant-turn"),
 ]
 
 
@@ -133,7 +154,8 @@ def test_no_canary_reaches_the_adapter_or_the_logs(entry, kind, caplog):
     if kind == "individual":  # no office address is theirs, so nothing could match it exactly
         message = message.replace("Canarymarket Square at Canaryoffice Tower", "the market")
     with caplog.at_level(logging.DEBUG):
-        assert entry(actor, message).ok
+        result = entry(actor, message)
+        assert getattr(result, "ok", None) or getattr(result, "outcome", None) == "success"
 
     assert stub.requests
     sent = "\n".join(text for request in stub.requests for text in request.texts)

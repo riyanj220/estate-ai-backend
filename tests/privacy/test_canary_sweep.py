@@ -153,6 +153,7 @@ def seed(canaries):
         {"city_id": AgencyProfile.objects.filter(account_id__in=owners)[0].city_id},
         {"notification_id": uuid.UUID(int=1)},
         {"account_type": "individual"},
+        {"session_id": uuid.UUID(int=1)},
     ]
     return {
         "contexts": contexts,

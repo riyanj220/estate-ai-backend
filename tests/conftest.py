@@ -66,3 +66,17 @@ def _no_provider_network(monkeypatch):
         raise AssertionError("a test tried to open a provider connection")
 
     monkeypatch.setattr(transport, "_connect", refuse)
+
+
+@pytest.fixture(autouse=True)
+def _restore_event_subscriptions():
+    """Some tests call `events.clear()`. Without this, every later test of the same worker would
+    run without the subscribers registered at startup (so results depended on test scheduling)."""
+    from apps.kernel import events
+
+    before = {event: list(handlers) for event, handlers in events._registry.items()}
+    registry = events._registry
+    yield
+    events._registry = registry
+    registry.clear()
+    registry.update(before)
