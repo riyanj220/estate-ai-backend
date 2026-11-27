@@ -316,6 +316,8 @@ def apply_updates(
             raise StaleRevision(view_of(row, with_private=True))
         if not lifecycle.owner_may_edit(row):
             raise DomainError("forbidden")
+        if origin is Origin.AI and row.status != ListingStatus.DRAFT.value:
+            raise DomainError("conflict")  # the Assistant only ever fills a Draft
         written = write_locked(actor, row, updates, origin)
         if written.model_inputs_changed:
             emit(ListingModelInputsChanged(listing_id=row.id))  # last: after-commit

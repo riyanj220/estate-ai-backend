@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from apps.kernel.ai.ports import Audio, LLMRequest, LLMResponse, require_redacted
 
+DEFAULT_REPLY = "This is a stub reply."
 HISTORY = 1000  # a long-running development server must not grow without bound
 EMBEDDING_DIMENSIONS = 768
 _STOPWORDS = frozenset(
@@ -57,7 +58,7 @@ class RecordedStub:
 
     def reset(self) -> None:
         self.requests.clear()
-        self.reply = "This is a stub reply."
+        self.reply = DEFAULT_REPLY
         self.fail_with: Exception | None = None
         self.delay = 0.0
 

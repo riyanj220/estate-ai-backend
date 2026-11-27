@@ -39,6 +39,8 @@ class AssistantTurn(models.Model):
     user_text = models.TextField()
     reply_text = models.TextField(blank=True, default="")
     sources = models.JSONField(default=list)  # [{title, source, version}] of retrieved passages
+    # what the turn did to the Draft (Story 5.9): {applied, rejected, conflicts, notices}
+    result = models.JSONField(default=dict)
     created_at = models.DateTimeField()
 
     class Meta:

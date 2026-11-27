@@ -1,8 +1,9 @@
 """The write path of the Assistant (Story 5.8): sessions and turns.
 
-A turn calls the model once. A message that looks like a question also embeds it once for
-knowledge retrieval. Only redacted text is stored, and only for a turn that was answered. The
-Listing is never read into the prompt and never changed here.
+A turn calls the model once: the same answer carries the reply and the extracted fields. A
+message that looks like a question also embeds it once for knowledge retrieval. Only redacted
+text is stored, and only for a turn that was answered. No Listing value is read into the prompt,
+and the Listing changes only through `listings.services.apply_updates` (`extraction`).
 """
 
 import logging
@@ -14,7 +15,8 @@ from django.db import IntegrityError, transaction
 from django.db.models import Max
 from django.utils import timezone
 
-from apps.assistant import prompts
+from apps.assistant import extraction as extracting
+from apps.assistant import planner, prompts
 from apps.assistant.models import AssistantSession, AssistantTurn
 from apps.assistant.selectors import (
     SessionView,
@@ -55,11 +57,13 @@ _QUESTION = re.compile(
 @dataclass(frozen=True)
 class TurnResult:
     """`turn` is None when the model could not answer: nothing was stored and `message` says why.
-    On success `message` is empty unless explanations were unavailable."""
+    On success `message` is empty unless explanations were unavailable, and `next_step` is what
+    the Draft still needs (Story 5.10)."""
 
     outcome: str
     message: str
     turn: TurnView | None
+    next_step: planner.NextStep | None = None
 
 
 def open_session(actor: Actor, listing_id) -> tuple[SessionView, bool]:
@@ -71,7 +75,7 @@ def open_session(actor: Actor, listing_id) -> tuple[SessionView, bool]:
     mine = AssistantSession.objects.filter(listing_id=listing.id, closed_at__isnull=True)
     row = mine.first()
     if row is not None:
-        return session_view(row), False
+        return session_view(row, listing), False
     try:
         with transaction.atomic():
             row = AssistantSession.objects.create(
@@ -82,8 +86,8 @@ def open_session(actor: Actor, listing_id) -> tuple[SessionView, bool]:
                 created_at=timezone.now(),
             )
     except IntegrityError:  # a concurrent request opened it
-        return session_view(mine.get()), False
-    return session_view(row), True
+        return session_view(mine.get(), listing), False
+    return session_view(row, listing), True
 
 
 def _check(message, client_turn_id) -> tuple[str, object]:
@@ -146,7 +150,9 @@ def _knowledge(actor: Actor, text: str) -> catalog.KnowledgeResult:
     return catalog.retrieve_knowledge(actor, text[: catalog.KNOWLEDGE_MAX_QUESTION])
 
 
-def _request(values: KnownValues, turn: AssistantTurn, safe: RedactedText, passages) -> LLMRequest:
+def _request(
+    values: KnownValues, turn: AssistantTurn, safe: RedactedText, passages, listing
+) -> LLMRequest:
     earlier = list(
         AssistantTurn.objects.filter(session_id=turn.session_id, sequence__lt=turn.sequence)
         .exclude(reply_text="")
@@ -157,6 +163,9 @@ def _request(values: KnownValues, turn: AssistantTurn, safe: RedactedText, passa
         for row in reversed(earlier)
         for role, text in (("user", row.user_text), ("assistant", row.reply_text))
     )
+    asked = planner.next_step(listing)
+    if asked is not None:  # our own words (field names only), so "five" has a question
+        history += (Message("assistant", redact(asked.question, KnownValues())),)
     context = tuple(
         redact(f"{p.title} (source: {p.source}, version {p.version})\n{p.text}", KnownValues())
         for p in passages
@@ -166,6 +175,7 @@ def _request(values: KnownValues, turn: AssistantTurn, safe: RedactedText, passa
         input=safe,
         history=history,
         context=context,
+        schema=extracting.turn_schema(listing.fields["purpose"], listing.fields["subtype"]),
     )
 
 
@@ -181,37 +191,52 @@ def send_turn(actor: Actor, session_id, message, client_turn_id) -> TurnResult:
     `conflict` while another turn is in flight or the session is full, `idempotency_key_reused`
     for a repeated `client_turn_id` with another message, and `throttled` over the message limit.
 
-    A repeat of an answered turn returns it without calling the model."""
+    A repeat of an answered turn returns it without calling the model. The extracted fields are
+    written against the revision read BEFORE the model call, in the same transaction as the turn."""
     session = owned_session(actor, session_id)
-    listings.require_draft(actor, session.listing_id)
+    listing = listings.require_draft(actor, session.listing_id)
     text, key = _check(message, client_turn_id)
     values = known_values_for(actor)
     safe = redact(text, values)
     turn, is_new = _claim(session, key, safe.value)
     if not is_new:
-        return TurnResult("success", "", turn_view(turn))
+        return TurnResult("success", "", turn_view(turn), planner.next_step(listing))
     pending = AssistantTurn.objects.filter(pk=turn.pk, reply_text="")
     answered = False
     try:
         knowledge = _knowledge(actor, safe.value)
-        request = _request(values, turn, safe, knowledge.passages)
+        request = _request(values, turn, safe, knowledge.passages, listing)
         result = gateway.complete(actor, gateway.ASSISTANT_TURN, request)
         if not result.ok:
             if result.outcome == "blocked":
                 raise ratelimit.RateLimited(result.retry_after)
             return TurnResult(result.outcome, result.message, None)
-        reply = _clean_reply(result.value.text, values)
+        parsed = extracting.parse(result.value.text)
+        if parsed is None:
+            return TurnResult("error", gateway.MESSAGES["error"], None)
+        reply = _clean_reply(parsed.reply, values) or ("Noted." if parsed.fields else "")
         if not reply:
             return TurnResult("error", gateway.MESSAGES["error"], None)
         turn.reply_text = reply
         turn.sources = [
             {"title": p.title, "source": p.source, "version": p.version} for p in knowledge.passages
         ]
-        if not pending.update(reply_text=turn.reply_text, sources=turn.sources):
-            raise DomainError("not_found")  # the Draft was deleted meanwhile
+        with transaction.atomic():  # the Draft changes only if the turn is kept
+            written = extracting.apply(actor, listing, parsed.fields, values)
+            notices = []
+            if safe.value != text:
+                notices.append(extracting.CONTACT_NOTICE)
+            if parsed.clarify:
+                notices.append(_clean_reply(parsed.clarify, values))
+            turn.result = written.as_json([n for n in notices if n])
+            if not pending.update(
+                reply_text=turn.reply_text, sources=turn.sources, result=turn.result
+            ):
+                raise DomainError("not_found")  # the Draft was deleted meanwhile
         answered = True
     finally:
         if not answered:
             pending.delete()
     notice = "" if knowledge.ok else knowledge.message
-    return TurnResult("success", notice, turn_view(turn))
+    after = listings.require_draft(actor, session.listing_id)
+    return TurnResult("success", notice, turn_view(turn), planner.next_step(after))

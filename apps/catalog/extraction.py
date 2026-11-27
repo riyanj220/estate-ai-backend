@@ -6,7 +6,9 @@ and no length or range constraint. The registry's rules still judge every propos
 from apps.catalog import registry
 
 # Bumped when the shape of the extraction schema changes; sessions record it.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+# The description is written from confirmed details (Story 5.13), never picked out of chat.
+_NOT_EXTRACTED = frozenset({"description"})
 _JSON_TYPES = {"integer": "integer", "boolean": "boolean"}  # everything else is text
 
 
@@ -27,7 +29,9 @@ def extraction_schema(purpose: str, subtype: str) -> dict:
     properties = {
         spec.id: _property(spec, purpose, subtype)
         for spec in registry.fields()
-        if spec.ai_extractable and spec.applies_to(purpose, category, subtype)
+        if spec.ai_extractable
+        and spec.id not in _NOT_EXTRACTED
+        and spec.applies_to(purpose, category, subtype)
     }
     return {
         "type": "object",

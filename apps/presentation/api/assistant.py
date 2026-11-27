@@ -27,6 +27,29 @@ class AssistantSourceSerializer(serializers.Serializer):
     version = serializers.IntegerField()
 
 
+class AssistantAppliedSerializer(serializers.Serializer):
+    field = serializers.CharField(help_text="A registry field id.")
+    value = serializers.JSONField(help_text="As on the Listing: text, integer or boolean.")
+
+
+class AssistantRejectedSerializer(serializers.Serializer):
+    field = serializers.CharField()
+    code = serializers.CharField(help_text="The same codes as a Listing edit.")
+
+
+class AssistantNextStepSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=["required", "review"])
+    question = serializers.CharField(help_text="Plain text.")
+    fields_asked = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="The missing required fields asked about; empty for `review`.",
+    )
+    optional = serializers.ListField(
+        child=serializers.CharField(), help_text="Missing optional fields the Seller may add."
+    )
+    in_form = serializers.BooleanField(help_text="True when only the manual form can set it.")
+
+
 class AssistantTurnSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     sequence = serializers.IntegerField()
@@ -37,6 +60,13 @@ class AssistantTurnSerializer(serializers.Serializer):
         many=True, help_text="Knowledge base passages given to the assistant for this reply."
     )
     created_at = serializers.DateTimeField()
+    applied = AssistantAppliedSerializer(many=True, help_text="Saved to the Draft, unconfirmed.")
+    rejected = AssistantRejectedSerializer(many=True, help_text="Understood but not saved.")
+    conflicts = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Fields the Seller changed while the assistant worked: left as they were.",
+    )
+    notices = serializers.ListField(child=serializers.CharField(), help_text="Plain text.")
 
 
 class AssistantSessionSerializer(serializers.Serializer):
@@ -47,6 +77,9 @@ class AssistantSessionSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField()
     knowledge_notice = serializers.CharField(help_text="Show it beside any source.")
     turns = AssistantTurnSerializer(many=True, help_text="Oldest first.")
+    next_step = AssistantNextStepSerializer(
+        allow_null=True, help_text="Null when the Listing is no longer a Draft."
+    )
 
 
 class AssistantTurnResultSerializer(serializers.Serializer):
@@ -57,6 +90,7 @@ class AssistantTurnResultSerializer(serializers.Serializer):
     turn = AssistantTurnSerializer(
         allow_null=True, help_text="Null unless `success`: nothing was stored."
     )
+    next_step = AssistantNextStepSerializer(allow_null=True, help_text="Null unless `success`.")
 
 
 class AssistantSessionOpenSerializer(serializers.Serializer):
