@@ -1152,6 +1152,56 @@ def known_private_addresses(owner_account_id: uuid.UUID) -> KnownValues:
     return KnownValues(addresses=tuple(addresses))
 
 
+# --- review flags (Story 9.6) --------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DuplicateCandidate:
+    """The facts of a Published Listing that the duplicate rule compares."""
+
+    id: uuid.UUID
+    owner_account_id: uuid.UUID
+    purpose: str
+    category: str
+    locality: uuid.UUID
+    area_sqft: Decimal
+    price: Decimal | None
+    title: str | None
+
+
+def duplicate_candidates(actor: Actor, same_owner_as=None) -> list[DuplicateCandidate]:
+    """Published Listings with a locality and an area, oldest first (system actor only); with
+    `same_owner_as`, only those of that Listing's owner."""
+    if actor.kind is not ActorKind.SYSTEM:
+        raise DomainError("forbidden")
+    rows = PropertyListing.objects.filter(
+        status=ListingStatus.PUBLISHED.value,
+        location__locality__isnull=False,
+        area__area_sqft__isnull=False,
+    )
+    if same_owner_as is not None:
+        owner = PropertyListing.objects.filter(id=same_owner_as).values("owner_account_id")
+        rows = rows.filter(owner_account_id__in=owner)
+    values = rows.order_by("created_at", "id").values_list(
+        "id",
+        "owner_account_id",
+        "purpose",
+        "category",
+        "location__locality",
+        "area__area_sqft",
+        "terms__asking_price",
+        "title",
+    )
+    return [DuplicateCandidate(*row) for row in values]
+
+
+def admin_listing_rows(actor: Actor, listing_ids) -> dict[uuid.UUID, "AdminListingRow"]:
+    """The review-list row of each of these Listings that exists; a Draft without its title."""
+    require_admin(actor)
+    rows = PropertyListing.objects.filter(id__in=list(listing_ids))
+    return {r.id: _admin_row(r, with_title=r.status != ListingStatus.DRAFT.value) for r in rows}
+
+
 # --- moderation review (Story 9.3): administrators only ------------------------------------------
 
 

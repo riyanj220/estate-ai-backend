@@ -1,14 +1,17 @@
-"""Administrator review of Reports (Story 9.2). Rules live in `governance`.
+"""Administrator review of Reports (Stories 9.2 and 9.5). Rules live in `governance`.
 
-A Listing Report's snapshot holds public content only, so it is a plain read.
+A Listing Report's snapshot holds public content only, so it is a plain read. A Conversation
+Report's Messages and description come only from the reasoned POST `.../read`.
 """
+
+from dataclasses import replace
 
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.governance import reports
+from apps.governance import reports, selectors
 from apps.governance.services import FieldsInvalid
 from apps.presentation.api.actors import get_actor
 from apps.presentation.api.authentication import SessionAuthentication
@@ -16,11 +19,13 @@ from apps.presentation.api.bodies import exact_fields, field_errors
 from apps.presentation.api.listings import _link
 from apps.presentation.api.passwords import NoStoreMixin
 from apps.presentation.api.permissions import RequireAdmin
-from apps.presentation.api.reports import REASONS, STATUSES
+from apps.presentation.api.private_reads import ReasonedReadMixin, ReasonedReadSerializer
+from apps.presentation.api.reports import REASONS, STATUSES, TARGETS
 
 
 class _RowSerializer(serializers.Serializer):
     id = serializers.UUIDField()
+    target_type = serializers.ChoiceField(choices=TARGETS)
     listing_id = serializers.UUIDField()
     title = serializers.CharField(allow_null=True, help_text="As it was when reported.")
     reason = serializers.ChoiceField(choices=REASONS)
@@ -71,20 +76,37 @@ class ReportMoveSerializer(serializers.Serializer):
     by_account_id = serializers.UUIDField()
 
 
+class ReportedMessageSerializer(serializers.Serializer):
+    seq = serializers.IntegerField()
+    sender = serializers.ChoiceField(choices=["reporter", "reported", reports.DELETED_SENDER])
+    selected = serializers.BooleanField(help_text="Reported; the others are context.")
+    body = serializers.CharField()
+    sent_at = serializers.DateTimeField()
+
+
 class ReportDetailSerializer(serializers.Serializer):
     id = serializers.UUIDField()
+    target_type = serializers.ChoiceField(choices=TARGETS)
     listing_id = serializers.UUIDField()
+    conversation_id = serializers.UUIDField(allow_null=True)
     reason = serializers.ChoiceField(choices=REASONS)
     status = serializers.ChoiceField(choices=STATUSES)
-    description = serializers.CharField(allow_blank=True)
-    snapshot = ReportSnapshotSerializer()
+    description = serializers.CharField(
+        allow_blank=True, help_text="Empty for a Conversation Report until it is read."
+    )
+    snapshot = ReportSnapshotSerializer(allow_null=True, help_text="Listing Reports only.")
+    messages = ReportedMessageSerializer(
+        many=True,
+        allow_null=True,
+        help_text="Conversation Reports, and only from the reasoned read.",
+    )
     created_at = serializers.DateTimeField()
     closed_at = serializers.DateTimeField(allow_null=True)
     reporter = AccountRefSerializer(allow_null=True)
-    owner = AccountRefSerializer(allow_null=True)
+    owner = AccountRefSerializer(allow_null=True, help_text="The reported account.")
     owner_account_id = serializers.UUIDField()
     history = ReportMoveSerializer(many=True)
-    open_for_listing = serializers.IntegerField(help_text="Open Reports on this Listing.")
+    open_for_listing = serializers.IntegerField(help_text="Open Reports on this target.")
 
 
 class ReportNotesSerializer(serializers.Serializer):
@@ -115,7 +137,7 @@ def _detail(view) -> Response:
 class ReportQueueView(_AdminView):
     @extend_schema(
         operation_id="list_admin_reports",
-        summary="Listing Reports in one status, oldest first, with unresolved counts",
+        summary="Reports in one status, oldest first, with unresolved counts",
         description=(
             "20 per page; `next` is a link, `previous` is always null. `status` defaults to "
             "`pending`. " + _REFUSALS
@@ -161,6 +183,31 @@ class ReportDetailView(_AdminView):
     )
     def get(self, request, report_id):
         return _detail(reports.report_detail(get_actor(request), report_id))
+
+
+class ReportReadView(ReasonedReadMixin, _AdminView):
+    @extend_schema(
+        operation_id="read_admin_report_messages",
+        summary="Read the reported Messages of a Conversation Report, with a recorded reason",
+        description=(
+            "Needs `X-CSRFToken`. Every read is audited with its reason. Returns the reported "
+            "Messages and the few before them, never the rest of the Conversation. A Listing "
+            "Report or an unknown id is `404 not_found`. " + _REFUSALS
+        ),
+        request=ReasonedReadSerializer,
+        responses={200: OpenApiResponse(ReportDetailSerializer, description="With Messages")},
+    )
+    def post(self, request, report_id):
+        actor = get_actor(request)
+        key = reports.conversation_report_id(actor, report_id)
+        content = selectors.admin_read_conversation_report(actor, self.read_reason(request), key)
+        return _detail(
+            replace(
+                reports.report_detail(actor, key),
+                description=content.description,
+                messages=content.messages,
+            )
+        )
 
 
 def _move(request, report_id, service) -> Response:

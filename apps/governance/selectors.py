@@ -1,4 +1,5 @@
-"""Reads for Agency Verification (Stories 8.3 and 8.4)."""
+"""Reads for Agency Verification (Stories 8.3 and 8.4), and the reasoned read of a
+Conversation Report (Story 9.5)."""
 
 import uuid
 from dataclasses import dataclass, field
@@ -6,7 +7,12 @@ from datetime import datetime
 
 from django.db.models import Q
 
-from apps.governance.models import REQUEST_STATUSES, VerificationDecision, VerificationRequest
+from apps.governance.models import (
+    REQUEST_STATUSES,
+    Report,
+    VerificationDecision,
+    VerificationRequest,
+)
 from apps.identity import selectors as identity
 from apps.identity import services as identity_services
 from apps.kernel.actor import Actor, require_admin
@@ -190,3 +196,19 @@ def admin_read_verification_request(
             HistoryEntry(d.action, d.created_at, d.actor_account_id, d.reason) for d in decisions
         ],
     )
+
+
+@dataclass(frozen=True)
+class ReportContent:
+    description: str = field(repr=False)
+    messages: list[dict] = field(repr=False)  # seq, sender, selected, body, sent_at
+
+
+def admin_read_conversation_report(actor: Actor, reason: str, report_id: uuid.UUID):
+    """A reasoned private read (`docs/audit.md`) of one Conversation Report's snapshot: the
+    reported Messages and the few before them, never the rest of the Conversation."""
+    record_private_read(actor, reason, ("report_snapshot", report_id))
+    row = Report.objects.filter(id=report_id, target_type="conversation").first()
+    if row is None:
+        raise DomainError("not_found")
+    return ReportContent(row.description, row.snapshot["messages"])

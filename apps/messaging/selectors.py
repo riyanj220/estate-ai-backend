@@ -3,7 +3,7 @@ administrator included, gets `not_found` (a Visitor `unauthenticated`)."""
 
 import base64
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from django.db.models import Count, F, Q
@@ -18,6 +18,8 @@ from apps.listings import selectors as listings
 from apps.messaging.models import Conversation, Message
 
 MESSAGE_PAGE = 200
+REPORT_SELECTED_MAX = 10
+REPORT_CONTEXT = 5  # Messages shown before the earliest reported one (FR-54)
 INBOX_PAGE = 20
 
 ROLE_INITIATOR = "initiator"
@@ -56,6 +58,29 @@ class InboxPage:
 
 class InvalidCursor(ValueError):
     pass
+
+
+class InvalidSelection(ValueError):
+    """A reported Message is not one the other participant sent in this Conversation."""
+
+
+@dataclass(frozen=True)
+class EvidenceMessage:
+    seq: int
+    from_reporter: bool
+    selected: bool
+    body: str = field(repr=False)
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class Evidence:
+    """What a Conversation Report keeps (Story 9.5): never the rest of the thread."""
+
+    conversation_id: uuid.UUID
+    listing_id: uuid.UUID
+    other_account_id: uuid.UUID
+    messages: tuple[EvidenceMessage, ...]
 
 
 @dataclass(frozen=True)
@@ -230,6 +255,35 @@ def messages_after(actor: Actor, conversation_id, after: int = 0) -> MessagePage
     )
     return MessagePage(
         tuple(message_view(actor, m) for m in found[:MESSAGE_PAGE]), len(found) > MESSAGE_PAGE
+    )
+
+
+def report_evidence(actor: Actor, conversation_id, message_ids) -> Evidence:
+    """For `governance`: the other participant's Messages with these ids, plus up to
+    `REPORT_CONTEXT` Messages sent just before the earliest of them. Only a participant may ask
+    (`not_found` otherwise); an id that is not such a Message raises `InvalidSelection`."""
+    row = participating(actor, conversation_id)
+    wanted = set(message_ids)
+    thread = Message.objects.filter(conversation_id=row.id)
+    other = counterpart_id(row, actor.account_id)
+    selected = list(thread.filter(id__in=wanted, sender_account_id=other).order_by("seq"))
+    if not wanted or len(selected) != len(wanted):
+        raise InvalidSelection
+    before = list(thread.filter(seq__lt=selected[0].seq).order_by("-seq")[:REPORT_CONTEXT])
+    return Evidence(
+        row.id,
+        row.listing_id,
+        other,
+        tuple(
+            EvidenceMessage(
+                m.seq,
+                m.sender_account_id == actor.account_id,
+                m.id in wanted,
+                m.body,
+                m.created_at,
+            )
+            for m in [*reversed(before), *selected]
+        ),
     )
 
 

@@ -1,4 +1,5 @@
-"""Agency Verification (Stories 8.3 and 8.4), Reports and moderation decisions (Epic 9).
+"""Agency Verification (Stories 8.3 and 8.4), Reports, moderation decisions and review flags
+(Epic 9).
 
 Account and Listing ids are plain columns. The verified flag lives on the identity profile and is
 changed only through `identity.services`; a Listing's moderation state lives in `listings` and is
@@ -67,7 +68,6 @@ class VerificationDecision(models.Model):
         ]
 
 
-# `conversation` Reports arrive with Story 9.5; the shape already holds them.
 REPORT_TARGETS = ["listing", "conversation"]
 REPORT_REASONS = [
     "misleading",
@@ -83,7 +83,8 @@ OPEN_REPORT_STATUSES = ["pending", "reviewing"]
 
 class Report(models.Model):
     """One user's Report. `snapshot` is the evidence at submission: for a Listing its public-view
-    content only. The reporter is never shown to anyone but administrators."""
+    content only; for a Conversation the selected Messages and a few before them (private: read
+    only with a recorded reason). The reporter is never shown to anyone but administrators."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     target_type = models.CharField(max_length=16, default="listing")
@@ -176,3 +177,39 @@ class ModerationAction(models.Model):
         indexes = [
             models.Index(fields=["listing_id", "-created_at"], name="governance_moderation_idx")
         ]
+
+
+FLAG_KINDS = ["duplicate", "suspicious"]
+
+
+class ListingFlag(models.Model):
+    """An advisory flag for administrators (Story 9.6). Derived data: the rules in
+    `governance.flags` add and remove rows, and nothing else reads them. A `duplicate` row names
+    the newer Listing of a pair, with the older one in `other_listing_id`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kind = models.CharField(max_length=16)
+    listing_id = models.UUIDField()
+    other_listing_id = models.UUIDField(null=True, blank=True)  # duplicate only
+    matched_price = models.BooleanField(default=False)  # duplicate only
+    matched_title = models.BooleanField(default=False)  # duplicate only
+    reporter_count = models.PositiveIntegerField(default=0)  # suspicious only
+    created_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(kind__in=FLAG_KINDS), name="governance_flag_kind_valid"
+            ),
+            models.UniqueConstraint(
+                fields=["listing_id", "other_listing_id"],
+                condition=models.Q(kind="duplicate"),
+                name="governance_flag_one_per_pair",
+            ),
+            models.UniqueConstraint(
+                fields=["listing_id"],
+                condition=models.Q(kind="suspicious"),
+                name="governance_flag_one_suspicious",
+            ),
+        ]
+        indexes = [models.Index(fields=["-created_at", "-id"], name="governance_flag_list_idx")]

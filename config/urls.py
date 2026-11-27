@@ -5,6 +5,7 @@ from apps.presentation.adminapi.accounts import (
     AccountReactivateView,
     AccountSuspendView,
 )
+from apps.presentation.adminapi.flags import AdminFlagsView
 from apps.presentation.adminapi.listings import (
     AdminDraftReadView,
     AdminListingsView,
@@ -25,6 +26,7 @@ from apps.presentation.adminapi.reports import (
     ReportDetailView,
     ReportDismissView,
     ReportQueueView,
+    ReportReadView,
     ReportResolveView,
     ReportStartView,
 )
@@ -122,7 +124,7 @@ from apps.presentation.api.public_listings import (
 from apps.presentation.api.reference import AmenityView, CityView, LocalityView
 from apps.presentation.api.registrations import AgencyRegistrationView, IndividualRegistrationView
 from apps.presentation.api.registry import RegistryView
-from apps.presentation.api.reports import ListingReportsView, OwnReportView
+from apps.presentation.api.reports import ConversationReportsView, ListingReportsView, OwnReportView
 from apps.presentation.api.schema import PublicSchemaView
 from apps.presentation.api.search import PublicSearchTranscriptionView, PublicSearchView
 from apps.presentation.api.sessions import AdminSessionView, CsrfView, MeView, SessionView
@@ -241,6 +243,12 @@ urlpatterns = [
         ReportDismissView.as_view(),
         name="admin-report-dismiss",
     ),
+    path(
+        "api/v1/admin/reports/<str:report_id>/read",
+        ReportReadView.as_view(),
+        name="admin-report-read",
+    ),
+    path("api/v1/admin/flags", AdminFlagsView.as_view(), name="admin-flags"),
     path("api/v1/admin/listings", AdminListingsView.as_view(), name="admin-listings"),
     path(
         "api/v1/admin/listings/<str:listing_id>", AdminListingView.as_view(), name="admin-listing"
@@ -281,6 +289,11 @@ urlpatterns = [
         name="listing-reports",
     ),
     path("api/v1/me/reports/<str:report_id>", OwnReportView.as_view(), name="me-report"),
+    path(
+        "api/v1/conversations/<str:conversation_id>/reports",
+        ConversationReportsView.as_view(),
+        name="conversation-reports",
+    ),
     path("api/v1/me", MeView.as_view(), name="me"),
     path("api/v1/me/password", ChangePasswordView.as_view(), name="me-password"),
     path("api/v1/me/profile", ProfileDetailView.as_view(), name="me-profile"),
