@@ -71,7 +71,7 @@ grants the runtime role per database, so nothing needs setting up per worker. Th
 
 ## Sample data in tests
 
-`apps/listings/sample_data.py` (`seed`, `reset`, `reseed`, `row_for`) is callable without the CLI; `tests/listings/test_sample_data.py` shows the setup (`seed_cap()` and `seed_media_policies()`). A 12-Listing run takes about 3 seconds and 60 about 13, so use `seed(5)` unless a test needs the spread across categories. See `docs/sample-data.md`.
+`apps/listings/sample_data.py` (accounts and published Listings: `seed`, `reset`, `reseed`, `row_for`) and `apps/governance/sample_data.py` (the same plus all the activity around them) are callable without the CLI; `tests/listings/test_sample_data.py` and `test_sample_marketplace.py` show the setup (`seed_cap()` and `seed_media_policies()`). Each Listing costs about 0.3 seconds, so use `seed(5)` unless a test needs the spread across categories. See `docs/sample-data.md`.
 
 ## Real-stack smoke test
 

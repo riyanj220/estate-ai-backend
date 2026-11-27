@@ -204,7 +204,7 @@ Administrators exist only through `python manage.py provision_admin <create|disa
 
 ## Sample data
 
-`python manage.py seed_sample_data [--reset] [--reseed] [--password-stdin] [--listings N]` creates 5 sample accounts (on the reserved `sample.estate-ai.invalid` domain) and published Listings with images for local development, safely repeatable, removable with `--reset`, and refused under the production settings. No default password exists: it is read from the prompt or `--password-stdin`, or generated and printed once. See `docs/sample-data.md`.
+`python manage.py seed_sample_data [--reset] [--reseed] [--yes] [--password-stdin] [--listings N]` loads a sample Karachi marketplace for local development: 14 sample accounts (on the reserved `sample.estate-ai.invalid` domain), Listings with drawn pictures, and the messages, reports, verification and other activity around them. It is safely repeatable, removable with `--reset`, and refused under the production settings. No default password exists: it is read from the prompt or `--password-stdin`, or generated and printed once. See `docs/sample-data.md`.
 
 ## Mail
 

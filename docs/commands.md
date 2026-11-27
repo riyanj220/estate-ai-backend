@@ -41,7 +41,7 @@ Run in this order.
 | Register the price model | BE | `uv run python manage.py register_valuation_model` |
 | Build the assistant's knowledge index | BE | `AI_PROVIDER=gemini uv run python manage.py rebuild_knowledge_index` |
 | Create an administrator | BE | `uv run python manage.py provision_admin create --email admin@example.com` |
-| Load sample accounts and listings | BE | `uv run python manage.py seed_sample_data` |
+| Load the sample marketplace (after the price model) | BE | `uv run python manage.py seed_sample_data` |
 | Install frontend dependencies | FE | `npm ci` |
 
 For the real AI, add `GEMINI_API_KEY=...` to `.env` yourself. Never commit or share `.env`.
@@ -50,13 +50,18 @@ For the real AI, add `GEMINI_API_KEY=...` to `.env` yourself. Never commit or sh
 
 | What | Command (BE) |
 | --- | --- |
-| Create 12 sample listings (default) | `uv run python manage.py seed_sample_data` |
-| Create more (1 to 60) | `uv run python manage.py seed_sample_data --listings 40` |
+| Load the sample marketplace, or add what is missing (40 listings) | `uv run python manage.py seed_sample_data` |
 | Delete the sample data and create it again | `uv run python manage.py seed_sample_data --reseed --yes` |
+| More listings (1 to 120) | `uv run python manage.py seed_sample_data --reseed --yes --listings 80` |
 | Delete the sample data only | `uv run python manage.py seed_sample_data --reset --yes` |
 
-Accounts are `sample.individual.1..3@sample.estate-ai.invalid` and `sample.agency.1..2@sample.estate-ai.invalid`. They
-share one password: you are asked for it, or a random one is printed once. `--reset` leaves your own accounts alone.
+A run takes about a minute. Use `--reseed --yes` if your database still has an older, smaller set of sample data.
+
+Accounts are `sample.individual.1..8@sample.estate-ai.invalid` and `sample.agency.1..6@sample.estate-ai.invalid`. They
+share one password: you are asked for it, or a random one is printed once. Start with `sample.agency.1` (verified seller
+with a busy inbox) and `sample.individual.1` (buyer); `sample.individual.8` is empty. The full list and what is created
+are in `sample-data.md`. `--reset` leaves your own accounts alone, but removes your conversations and reports that
+involve a sample account.
 
 ## 5. Administrator
 

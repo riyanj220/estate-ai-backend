@@ -936,7 +936,7 @@ refusals, complete validation, the audit record and `listing.published` after co
 
 `publication.remove_seed_events(actor, account_ids, using=...)` is the one place an event is deleted: system actor only,
 `kind=seed` and `counted=False` rows of the given accounts only. The runtime role cannot DELETE events (it may INSERT,
-SELECT and UPDATE only `correction_used` and `identity_fingerprint`), so the sample-data command passes the privileged connection alias (`sample_data.privileged_alias()`: `migrator` where the
+SELECT and UPDATE only `correction_used` and `identity_fingerprint`), so the sample-data command passes the privileged connection alias (`listings.sample_data.privileged_alias()`: `migrator` where the
 settings define it, i.e. local development, otherwise `default`, which is the schema owner under the test settings).
 Decision: seed events ARE removed on `--reset` (rather than left as harmless history) so a reset leaves no trace of the
 accounts that went away and a reseed never meets an old key; a seed idempotency key is `seed-<index>` per owner and a
