@@ -125,9 +125,9 @@ development_status:
   5-15-graceful-degradation-of-the-assistant: review
   epic-5-retrospective: optional
 
-  epic-6: backlog
-  6-1-natural-language-text-search: backlog
-  6-2-interpretation-transparency-and-unknown-data: backlog
+  epic-6: in-progress
+  6-1-natural-language-text-search: in-progress
+  6-2-interpretation-transparency-and-unknown-data: in-progress
   6-3-voice-search: backlog
   6-4-search-availability-and-abuse-control: backlog
   epic-6-retrospective: optional
