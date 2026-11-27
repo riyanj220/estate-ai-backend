@@ -141,11 +141,11 @@ development_status:
   7-6-conversation-continuity-and-restrictions: review
   epic-7-retrospective: optional
 
-  epic-8: in-progress
+  epic-8: done
   8-1-agency-dashboard: review
   8-2-listing-performance-statistics: review
-  8-3-request-agency-verification: in-progress
-  8-4-review-verification-and-verified-status: in-progress
+  8-3-request-agency-verification: review
+  8-4-review-verification-and-verified-status: review
   epic-8-retrospective: optional
 
   epic-9: backlog

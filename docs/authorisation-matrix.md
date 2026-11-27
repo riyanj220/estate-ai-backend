@@ -34,6 +34,11 @@ whose permission is not explicit.
 | `/api/v1/admin/quota-policy` | GET | admin | `apps.presentation.adminapi.quota.QuotaPolicyView` |
 | `/api/v1/admin/quota-policy/<str:account_type>` | PUT | admin | `apps.presentation.adminapi.quota.QuotaPolicyDetailView` |
 | `/api/v1/admin/quota-usage` | GET | admin | `apps.presentation.adminapi.quota.QuotaUsageView` |
+| `/api/v1/admin/verification-requests` | GET | admin | `apps.presentation.adminapi.verification.VerificationQueueView` |
+| `/api/v1/admin/verification-requests/<str:request_id>/approve` | POST | admin | `apps.presentation.adminapi.verification.VerificationApproveView` |
+| `/api/v1/admin/verification-requests/<str:request_id>/read` | POST | admin | `apps.presentation.adminapi.verification.VerificationReadView` |
+| `/api/v1/admin/verification-requests/<str:request_id>/reject` | POST | admin | `apps.presentation.adminapi.verification.VerificationRejectView` |
+| `/api/v1/admin/verification-requests/<str:request_id>/revoke` | POST | admin | `apps.presentation.adminapi.verification.VerificationRevokeView` |
 | `/api/v1/agencies/<str:agency_id>/logo` | GET, HEAD | public | `apps.presentation.api.profile_images.AgencyLogoView` |
 | `/api/v1/assistant/sessions` | POST | signed_in | `apps.presentation.api.assistant.AssistantSessionsView` |
 | `/api/v1/assistant/sessions/<str:session_id>` | GET | signed_in | `apps.presentation.api.assistant.AssistantSessionView` |
@@ -68,6 +73,9 @@ whose permission is not explicit.
 | `/api/v1/me/agency-profile` | GET, PATCH | signed_in | `apps.presentation.api.profile.AgencyProfileDetailView` |
 | `/api/v1/me/agency-profile/image` | DELETE, PUT | signed_in | `apps.presentation.api.profile_images.AgencyProfileImageView` |
 | `/api/v1/me/agency-profile/image/file` | GET, HEAD | public | `apps.presentation.api.profile_images.AgencyProfileImageFileView` |
+| `/api/v1/me/agency-verification` | GET | signed_in | `apps.presentation.api.agency_verification.AgencyVerificationView` |
+| `/api/v1/me/agency-verification/requests` | POST | signed_in | `apps.presentation.api.agency_verification.AgencyVerificationRequestView` |
+| `/api/v1/me/agency-verification/withdraw` | POST | signed_in | `apps.presentation.api.agency_verification.AgencyVerificationWithdrawView` |
 | `/api/v1/me/email-change` | POST | signed_in | `apps.presentation.api.profile.EmailChangeRequestView` |
 | `/api/v1/me/favourites` | GET | signed_in | `apps.presentation.api.favourites.FavouritesView` |
 | `/api/v1/me/favourites/<str:listing_id>` | DELETE, PUT | signed_in | `apps.presentation.api.favourites.FavouriteDetailView` |

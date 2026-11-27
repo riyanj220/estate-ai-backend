@@ -64,7 +64,8 @@ Shipped kinds (registered by `identity`, empty payloads): `account.password_chan
 password reset completed) and `account.email_changed` (an email change was confirmed). Both are raised in the
 service after the audit record and so exist only if the change commits. The old-address mail notices stay. Story 2.21 adds
 `account.suspended` and `account.reactivated` (empty payloads: the reason is read from the session summary, never carried
-here). Later features register their own kinds.
+here). Stories 8.3 and 8.4 (`governance`) add `verification.approved`,
+`verification.rejected` and `verification.revoked` (empty payloads). Later features register their own kinds.
 
 ## Reading and clearing
 
