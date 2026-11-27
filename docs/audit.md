@@ -77,6 +77,7 @@ characters). Reason text is stored permanently, so never put contact details in 
 Registered targets: `account` (Story 2.21, the administrator account lookup: `identity.selectors.admin_read_account`),
 `verification_request` (Story 8.4), `listing_draft` (Story 9.3, `listings.selectors.admin_read_draft_listing`) and
 `report_snapshot` (Story 9.5, `governance.selectors.admin_read_conversation_report`).
+Story 10.9 adds `support_request` (one message; `governance.selectors.admin_read_support_request`).
 Story 10.4 adds `account_contact` (email, phone, office address; `identity.selectors.admin_read_account_contact`) and
 `listing_address` (one Listing's Private address; `listings.selectors.admin_read_listing_address`). Administrators review
 the trail at `GET /api/v1/admin/audit-records` (Story 10.7), read only.

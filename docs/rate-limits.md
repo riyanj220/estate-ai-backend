@@ -13,7 +13,7 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | `conversations_new` | 20 | 1 day | account | messaging |
 | `favourites` | 500 | cap | account | favourites |
 | `reports` | 10 | 1 day | account | reporting |
-| `support_requests` | 5 | 1 day | account | support |
+| `support_requests` | 5 | 1 day | account | `POST /api/v1/me/support-requests` (Story 10.9); 429 with `Retry-After` |
 | `open_drafts` | 20 | cap | account | `listings.services.create_draft` (Story 2.1); see below |
 | `assistant_messages` | 30 | 1 hour | account | assistant |
 | `ai_search_visitor` | 10 | 1 minute | client | search |
@@ -34,6 +34,7 @@ Counters live in `kernel_ratelimitcounter` (PostgreSQL, no Redis).
 | `sign_in` | 5 | 15 minutes | client | `POST /api/v1/session` (Story 1.17); keyed by lowercased email plus client network; failures only; see `docs/sessions.md` |
 | `admin_sign_in` | 5 | 15 minutes | client | `POST /api/v1/admin-session` (Story 1.22); keyed by lowercased email plus client network; failures only; silent generic 401 at the cap, never 429; see `docs/administrators.md` |
 | `admin_sign_in_account` | 20 | 1 hour | account | `POST /api/v1/admin-session` (Story 1.22); per-account ceiling keyed by the lowercased email only (any network); failures only; silent generic 401 |
+| `admin_second_factor` | 5 | 15 minutes | account | enrolling a second factor (Story 10.10): wrong passwords and codes only; 429 with `Retry-After`. Wrong codes at sign-in count in the two `admin_sign_in` scopes |
 | `image_upload` | 30 | 1 hour | account | `POST /api/v1/listings/{id}/images` (Story 2.9); 429 with `Retry-After`; every attempt counts, accepted or not |
 | `image_order` | 120 | 1 hour | account | `PATCH /api/v1/listings/{id}/images` (Story 2.10); 429 with `Retry-After`; every attempt counts, accepted or not (the throttle runs before the ownership check, like `image_upload`) |
 | `profile_image_upload` | 10 | 1 hour | account | `PUT /api/v1/me/profile/image` and `PUT /api/v1/me/agency-profile/image` (Story 2.11); 429 with `Retry-After`; every `PUT` attempt counts, accepted or not; `DELETE` is not limited |

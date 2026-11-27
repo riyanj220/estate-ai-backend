@@ -82,6 +82,12 @@ whose permission is not explicit.
 | `/api/v1/admin/reports/<str:report_id>/read` | POST | admin | `apps.presentation.adminapi.reports.ReportReadView` |
 | `/api/v1/admin/reports/<str:report_id>/resolve` | POST | admin | `apps.presentation.adminapi.reports.ReportResolveView` |
 | `/api/v1/admin/reports/<str:report_id>/start` | POST | admin | `apps.presentation.adminapi.reports.ReportStartView` |
+| `/api/v1/admin/second-factor` | GET | admin | `apps.presentation.adminapi.second_factor.SecondFactorView` |
+| `/api/v1/admin/second-factor/confirm` | POST | admin | `apps.presentation.adminapi.second_factor.SecondFactorConfirmView` |
+| `/api/v1/admin/second-factor/enrolment` | POST | admin | `apps.presentation.adminapi.second_factor.SecondFactorStartView` |
+| `/api/v1/admin/support-requests` | GET | admin | `apps.presentation.adminapi.support.SupportQueueView` |
+| `/api/v1/admin/support-requests/<str:request_id>/close` | POST | admin | `apps.presentation.adminapi.support.SupportCloseView` |
+| `/api/v1/admin/support-requests/<str:request_id>/read` | POST | admin | `apps.presentation.adminapi.support.SupportReadView` |
 | `/api/v1/admin/verification-requests` | GET | admin | `apps.presentation.adminapi.verification.VerificationQueueView` |
 | `/api/v1/admin/verification-requests/<str:request_id>/approve` | POST | admin | `apps.presentation.adminapi.verification.VerificationApproveView` |
 | `/api/v1/admin/verification-requests/<str:request_id>/read` | POST | admin | `apps.presentation.adminapi.verification.VerificationReadView` |
@@ -140,6 +146,8 @@ whose permission is not explicit.
 | `/api/v1/me/profile/image/file` | GET, HEAD | public | `apps.presentation.api.profile_images.ProfileImageFileView` |
 | `/api/v1/me/publication-allowance` | GET | signed_in | `apps.presentation.api.listings.PublicationAllowanceView` |
 | `/api/v1/me/reports/<str:report_id>` | GET | signed_in | `apps.presentation.api.reports.OwnReportView` |
+| `/api/v1/me/support-requests` | GET, POST | signed_in | `apps.presentation.api.support.SupportRequestsView` |
+| `/api/v1/me/support-requests/<str:request_id>` | GET | signed_in | `apps.presentation.api.support.SupportRequestDetailView` |
 | `/api/v1/notifications` | GET | signed_in | `apps.presentation.api.notifications.NotificationListView` |
 | `/api/v1/notifications/<str:notification_id>/read` | POST | signed_in | `apps.presentation.api.notifications.MarkReadView` |
 | `/api/v1/notifications/read-all` | POST | signed_in | `apps.presentation.api.notifications.MarkAllReadView` |

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 11-19-2026 08:06
-last_updated: 11-20-2026 18:40
+last_updated: 11-27-2026 16:00
 project: estate-ai-backend
 project_key: NOKEY
 tracking_system: file-system
@@ -166,8 +166,8 @@ development_status:
   10-6-ai-and-ml-oversight: review
   10-7-audit-trail-review: review
   10-8-administrator-dashboard: review
-  10-9-support-requests: backlog
-  10-10-administrator-second-factor: backlog
+  10-9-support-requests: review
+  10-10-administrator-second-factor: review
   10-11-retention-jobs-for-kernel-data: backlog
   10-12-retention-jobs-for-app-owned-data: backlog
   10-13-audit-purge-with-its-own-database-role: backlog

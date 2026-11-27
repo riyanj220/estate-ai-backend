@@ -131,6 +131,13 @@ starts holding account data registers an eraser from its `AppConfig.ready`; the 
 `<app>.account_erased`, never deletes quota, moderation or audit history, and deletes files only after commit.
 `deactivate` on its own does not erase.
 
+## Support requests (Story 10.9)
+
+The `request_support` capability is live (`governance.support`): Email-unverified, Active and Suspended Individual and
+Agency accounts, at most 5 a day. The message is private (the author, and administrators through a reasoned read);
+closing notifies the author (`support.closed`, empty payload). Account closure empties the messages and closes the open
+ones; the rows are kept until retention (Story 10.12).
+
 ## Primitives and reads (`identity.selectors`)
 
 - `lock_account(account_id)` takes `SELECT ... FOR UPDATE` on the row, raises `RuntimeError` outside an open transaction and

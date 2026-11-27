@@ -1,13 +1,13 @@
 # Administrators (Story 1.22, backend)
 
 Administrator accounts are provisioned only by a platform command, sign in at their own endpoint, use short sessions and a
-strong password policy, and reach a protected `/api/v1/admin/*` API base. They cannot own Listings. Strengthened second-factor
-authentication (FR-10) is out of scope. The admin shell is Story 1.23.
+strong password policy, and reach a protected `/api/v1/admin/*` API base. They cannot own Listings. A second factor is
+optional (Story 10.10, below). The admin shell is Story 1.23.
 
 ## Provisioning command
 
 ```
-python manage.py provision_admin <create|disable|enable|remove|reset-password> --email <address> [--password-stdin] [--force-last]
+python manage.py provision_admin <create|disable|enable|remove|reset-password|reset-second-factor> --email <address> [--password-stdin] [--force-last]
 ```
 
 The command (`apps/identity/management/commands/provision_admin.py`) calls `identity.services` as the system actor and never
@@ -37,6 +37,10 @@ touches a model. It exits non-zero with a one-line message (no stack trace) on a
 - `disable`, `enable`, `remove` and `reset-password` refuse a non-administrator or unknown address ("not an administrator"), writing
   nothing. Unknown emails, refusals and policy failures write no audit record. The command never prints the email.
 
+- **`reset-second-factor`**: removes the second factor (confirmed or pending) and ends every open session. Does nothing,
+  and records nothing, when there is none. Audit `admin.second_factor_reset`. `reset-password`, `disable` and `enable`
+  keep the second factor.
+
 ### Recovery rule
 
 `reset-password` is the only way a forgotten administrator password is recovered. The public password reset treats an
@@ -47,6 +51,25 @@ administrator as unknown: the request answers the same `202` and sends nothing, 
 
 No setting, fixture, migration or seed contains an administrator. `tests/authz/test_admin_routes.py` checks that no
 migration, settings module or fixture refers to administrator creation and that no administrator exists after `migrate`.
+
+## Second factor (Story 10.10)
+
+Optional per administrator. Time-based one-time codes (RFC 6238: SHA-1, 6 digits, 30 seconds), implemented in
+`identity.totp`. No QR code is drawn and no outside service is called: the screen shows the secret and its `otpauth://`
+URI to type into an authenticator application.
+
+- **Enrol** (`/admin/second-factor`): `POST /api/v1/admin/second-factor/enrolment` `{password}` returns a new secret, which
+  stays pending; `POST .../confirm` `{code}` turns it on and ends the administrator's other sessions. Wrong passwords and
+  codes are throttled by `admin_second_factor`. `GET /api/v1/admin/second-factor` answers `{enrolled}`.
+- **Sign-in**: `POST /api/v1/admin-session` takes an optional `code`. An enrolled administrator needs it; a missing,
+  wrong or used code is the same `401 invalid_credentials` as a wrong password and counts in the same throttle. A code
+  within one step of the server clock is accepted once; the same or an earlier step never again.
+- **At rest**: encrypted (Fernet) with a key derived from `DJANGO_SECRET_KEY`, so there is no extra setting. Changing
+  that key makes every enrolled administrator's codes fail until `reset-second-factor` is run.
+- **Lost authenticator**: only `provision_admin reset-second-factor`. There is no recovery code and no web route.
+- **Audit**: `admin.second_factor_enrolled`, `admin.second_factor_used` (each sign-in with a code),
+  `admin.second_factor_failed` (right password, bad code, or a bad confirming code), `admin.second_factor_reset`. No
+  metadata.
 
 ## Strong password policy
 
