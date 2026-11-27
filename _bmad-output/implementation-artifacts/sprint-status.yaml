@@ -157,10 +157,10 @@ development_status:
   9-6-suspicious-and-duplicate-listing-flags: review
   epic-9-retrospective: optional
 
-  epic-10: backlog
-  10-1-request-account-deactivation-or-deletion: backlog
-  10-2-decide-and-execute-account-deactivation: backlog
-  10-3-erasure-by-messaging-assistant-and-governance: backlog
+  epic-10: in-progress
+  10-1-request-account-deactivation-or-deletion: review
+  10-2-decide-and-execute-account-deactivation: review
+  10-3-erasure-by-messaging-assistant-and-governance: review
   10-4-account-directory-and-review: backlog
   10-5-reference-data-management: backlog
   10-6-ai-and-ml-oversight: backlog

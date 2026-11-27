@@ -45,6 +45,9 @@ whose permission is not explicit.
 | `/api/v1/admin/accounts/<str:account_id>/reactivate` | POST | admin | `apps.presentation.adminapi.accounts.AccountReactivateView` |
 | `/api/v1/admin/accounts/<str:account_id>/suspend` | POST | admin | `apps.presentation.adminapi.accounts.AccountSuspendView` |
 | `/api/v1/admin/accounts/lookup` | POST | admin | `apps.presentation.adminapi.accounts.AccountLookupView` |
+| `/api/v1/admin/closure-requests` | GET | admin | `apps.presentation.adminapi.closure.ClosureQueueView` |
+| `/api/v1/admin/closure-requests/<str:request_id>/approve` | POST | admin | `apps.presentation.adminapi.closure.ClosureApproveView` |
+| `/api/v1/admin/closure-requests/<str:request_id>/reject` | POST | admin | `apps.presentation.adminapi.closure.ClosureRejectView` |
 | `/api/v1/admin/flags` | GET | admin | `apps.presentation.adminapi.flags.AdminFlagsView` |
 | `/api/v1/admin/listings` | GET | admin | `apps.presentation.adminapi.listings.AdminListingsView` |
 | `/api/v1/admin/listings/<str:listing_id>` | GET | admin | `apps.presentation.adminapi.listings.AdminListingView` |
@@ -108,6 +111,8 @@ whose permission is not explicit.
 | `/api/v1/me/agency-verification` | GET | signed_in | `apps.presentation.api.agency_verification.AgencyVerificationView` |
 | `/api/v1/me/agency-verification/requests` | POST | signed_in | `apps.presentation.api.agency_verification.AgencyVerificationRequestView` |
 | `/api/v1/me/agency-verification/withdraw` | POST | signed_in | `apps.presentation.api.agency_verification.AgencyVerificationWithdrawView` |
+| `/api/v1/me/closure-requests` | GET, POST | signed_in | `apps.presentation.api.closure.ClosureRequestsView` |
+| `/api/v1/me/closure-requests/<str:request_id>` | GET | signed_in | `apps.presentation.api.closure.ClosureRequestDetailView` |
 | `/api/v1/me/email-change` | POST | signed_in | `apps.presentation.api.profile.EmailChangeRequestView` |
 | `/api/v1/me/favourites` | GET | signed_in | `apps.presentation.api.favourites.FavouritesView` |
 | `/api/v1/me/favourites/<str:listing_id>` | DELETE, PUT | signed_in | `apps.presentation.api.favourites.FavouriteDetailView` |

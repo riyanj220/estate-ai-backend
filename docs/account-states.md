@@ -97,8 +97,8 @@ A restricted Listing may only be archived by its owner; a removed one cannot be 
 
 ### Pending capabilities
 
-Every capability except `sign_in`, `browse`, `view_drafts`, `edit_drafts`, `send_messages` and
-`read_conversations` depends on a later story and is in `PENDING_CAPABILITIES` (`identity/capabilities.py`), so `can`
+Every capability except `sign_in`, `browse`, `view_drafts`, `edit_drafts`, `send_messages`,
+`read_conversations`, `report` and `request_deactivation` (Story 10.1) depends on a later story and is in `PENDING_CAPABILITIES` (`identity/capabilities.py`), so `can`
 answers false for it today while the table still reads as FR-74. Story 2.1 activated `view_drafts` and `edit_drafts`
 (Draft creation and reads, `docs/listings.md`), Story 7.1 `send_messages` (Active only) and `read_conversations`
 (every state but Deactivated): `can` now follows the table for them, so a session's `capabilities` list includes them.
@@ -121,6 +121,15 @@ refuses (`validation_error`) the actor's own account or any `admin` account. Not
 `unauthenticated`, other callers `not_found`; an unknown account id is `not_found`, as is `deactivate` or
 verification on a deactivated account. Audit metadata holds only the account type on creation. Email, password hash and the suspension
 reasons (kept on the row; digit characters of any script are counted, seven or more are refused) never reach audit metadata or logs.
+
+## Account closure (Stories 10.1 to 10.3)
+
+An Individual or Agency (Suspended included) asks through `governance.closure.request_closure`; an administrator
+approves or rejects with a reason. An approval is one transaction: `identity.services.deactivate`, then every
+`kernel.erasure` eraser in layer order (governance, messaging, assistant, valuation, listings, identity). An app that
+starts holding account data registers an eraser from its `AppConfig.ready`; the eraser writes
+`<app>.account_erased`, never deletes quota, moderation or audit history, and deletes files only after commit.
+`deactivate` on its own does not erase.
 
 ## Primitives and reads (`identity.selectors`)
 

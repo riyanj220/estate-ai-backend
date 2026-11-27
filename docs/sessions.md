@@ -45,7 +45,7 @@ sign-out service (`unauthenticated` without a session) and by the CSRF check in 
 - **Ending**: `sign_out` ends the current session only. A `password_changed` or `deactivated` `account.session_ended` event
   (handler in `identity/subscribers.py`) ends every open session of the account, except `except_session_id` when the event
   carries one (a password change keeps the session it came from); `sign_out` events end nothing more. A
-  Deactivated account is also refused at authentication time, so there is no window before the event runs. A Suspended
+  Deactivated account is also refused at authentication time, so there is no window before the event runs. A deactivation also ends the sessions inside its own transaction. A Suspended
   account keeps its session; it is restricted by capability.
 - **Email change**: confirming an email change does not end any session (the request already required the current
   password). The sign-in address changes at confirmation; open sessions are tied to the account, not the address. See
