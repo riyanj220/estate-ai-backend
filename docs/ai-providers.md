@@ -58,7 +58,7 @@ for these models (read 2026-11-27, after a redirect to `aistudio.google.com`). I
 - the daily quota resets at midnight Pacific time; going over returns 429;
 - the project's actual limits are shown at <https://aistudio.google.com/rate-limit>.
 
-To do: read the project's limits there and set `AI_DAILY_BUDGET` to the requests-per-day figure.
+Free-tier limits read from the console on 2026-11-27: gemini-3.5-flash-lite 15 requests per minute and 500 per day (3.1 flash-lite the same; the larger flash models 20 per day). `AI_DAILY_BUDGET` defaults to 450, leaving a margin. Retrieval check on gemini-embedding-001: 40 of 40 labelled questions in the top 3; lowest correct score 0.717, highest off-topic 0.493, threshold 0.65.
 The default 1000 is not verified. The budget day is UTC, not Pacific, and counts a retried call once.
 
 ## Terms: retention and training use
@@ -76,3 +76,11 @@ read 2026-11-27), for unpaid use:
 addresses and names, and audio cannot be redacted at all. So the free tier suits development with
 synthetic data. Before real users' text or voice is sent, the owner should decide whether to move to
 the paid tier.
+
+## Knowledge base embeddings (Stories 5.5 to 5.7)
+
+The knowledge base uses the embeddings port, so with `AI_PROVIDER=gemini` it uses `gemini-embedding-001` (768
+dimensions), not the local model of AD-8 (see `spec-5-5-to-5-7-knowledge-base.md`). The redacted question of each
+retrieval goes to the provider. Vectors are a float array in PostgreSQL compared in process, without pgvector. Build
+the index with `manage.py rebuild_knowledge_index` (again after changing content, provider or model; `--pause 35`
+spaces the requests for a per-minute limit) and measure it with `manage.py evaluate_knowledge`.

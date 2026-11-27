@@ -56,3 +56,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-provider-adapters.md`
   summary: Before real user data reaches Gemini, decide on the paid tier and set `AI_DAILY_BUDGET` from the project's real limits.
   evidence: Unpaid-tier inputs may be used and human-reviewed and the terms forbid personal data; free-tier request limits are not published.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-to-5-7-knowledge-base.md`
+  summary: Measure SM-11 on Gemini with `evaluate_knowledge`, calibrate the 0.65 not-found threshold, and have the owner review the 114 passages.
+  evidence: Only the stub was measured; the threshold is a guess and the content was AI-drafted.
