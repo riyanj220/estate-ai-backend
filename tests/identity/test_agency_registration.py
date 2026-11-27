@@ -329,7 +329,7 @@ def test_failure_creating_the_profile_rolls_back_the_account(city, monkeypatch):
 def test_database_rejects_any_other_verification_status(city):
     register(city)
     with pytest.raises(IntegrityError), transaction.atomic():
-        AgencyProfile.objects.update(verification_status="verified")
+        AgencyProfile.objects.update(verification_status="pending")  # lives with the request
     assert AgencyProfile.objects.get().verification_status == "unverified"
 
 

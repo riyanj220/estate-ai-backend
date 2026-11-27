@@ -18,7 +18,9 @@ from urllib.parse import unquote
 import pytest
 from django.contrib.auth.hashers import make_password
 from django.test import Client
+from django.utils import timezone
 
+from apps.governance.models import VerificationRequest
 from apps.identity import selectors as identity
 from apps.identity import services
 from apps.identity.models import Account, AgencyProfile, IndividualProfile
@@ -165,6 +167,15 @@ def seed(canaries):
         owner_account_id=public[0].owner_account_id,
     )
     contexts += [{"conversation_id": conversation.id}]
+    # a Verification request: its registration number and note are private
+    verification = VerificationRequest.objects.create(
+        agency_account_id=public[1].owner_account_id,
+        business_name="Sample Business",
+        registration_number=canaries.address("REG-Canary-Number"),
+        note=canaries.address("Canarynote for the reviewer"),
+        submitted_at=timezone.now(),
+    )
+    contexts += [{"request_id": verification.id}]
     return {
         "contexts": contexts,
         "public": [str(x.id) for x in public],
