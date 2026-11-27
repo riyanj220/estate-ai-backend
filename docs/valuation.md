@@ -51,6 +51,14 @@ evenly; the locality is uniform. The manifest records the SHA-256 of the dataset
 
 The generator and split were not tuned to improve the metrics (SM-C2).
 
+To read the rows, export them as CSV (blank cell = not stated; `split` marks the held-out rows):
+
+```bash
+uv run python manage.py export_valuation_dataset
+```
+
+The file is written to `exports/valuation_dataset.csv` (not committed).
+
 ## Features (feature schema version 1)
 
 Only registry fields flagged `valuation_input` are read (`features.SOURCE_FIELDS`, guarded by

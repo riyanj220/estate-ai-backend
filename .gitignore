@@ -33,3 +33,6 @@ _bmad/render/
 # BMAD tooling (reinstallable; project documents live in _bmad-output and docs)
 .claude/skills/
 _bmad/
+
+# local exports (regenerated on demand)
+exports/
