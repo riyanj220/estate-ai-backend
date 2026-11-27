@@ -148,9 +148,9 @@ development_status:
   8-4-review-verification-and-verified-status: review
   epic-8-retrospective: optional
 
-  epic-9: backlog
-  9-1-report-a-listing: backlog
-  9-2-review-reports: backlog
+  epic-9: in-progress
+  9-1-report-a-listing: in-progress
+  9-2-review-reports: in-progress
   9-3-moderation-listing-review: backlog
   9-4-moderation-actions: backlog
   9-5-report-a-conversation-or-message: backlog
