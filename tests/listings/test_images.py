@@ -427,4 +427,4 @@ def test_an_upload_racing_an_edit_makes_the_editor_reload():
     # both based on revision 1: the upload needs no base, the edit is stale if it comes second
     assert outcomes.count("ok") >= 1
     assert revision(view) == 1 + outcomes.count("ok")
-    assert set(outcomes) <= {"ok", "StaleRevision"}
+    assert set(outcomes) <= {"ok", "stale_revision"}, outcomes
