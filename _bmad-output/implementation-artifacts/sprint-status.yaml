@@ -115,7 +115,7 @@ development_status:
   5-5-knowledge-base-index-and-embedding-runtime: review
   5-6-knowledge-base-content: review
   5-7-grounded-knowledge-retrieval: review
-  5-8-assistant-turn-endpoint-chat-shell-and-retrieval-integration: in-progress
+  5-8-assistant-turn-endpoint-chat-shell-and-retrieval-integration: review
   5-9-extraction-and-applying-updates: backlog
   5-10-follow-up-question-planning: backlog
   5-11-nearby-facilities-and-corrections: backlog

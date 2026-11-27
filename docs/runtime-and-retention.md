@@ -97,3 +97,6 @@ A job must return an int row count; anything else counts as a failed job. Runs m
 instance (there is no advisory lock yet). Purges delete in one statement for now, with no batching.
 
 The schedule (cron or a platform scheduler) is decided at deployment; nothing here schedules the command.
+
+Story 5.8 adds `assistant.history`: Assistant sessions and turns of deleted Listings (also removed at once on
+`listing.deleted`).

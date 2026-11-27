@@ -35,6 +35,9 @@ whose permission is not explicit.
 | `/api/v1/admin/quota-policy/<str:account_type>` | PUT | admin | `apps.presentation.adminapi.quota.QuotaPolicyDetailView` |
 | `/api/v1/admin/quota-usage` | GET | admin | `apps.presentation.adminapi.quota.QuotaUsageView` |
 | `/api/v1/agencies/<str:agency_id>/logo` | GET, HEAD | public | `apps.presentation.api.profile_images.AgencyLogoView` |
+| `/api/v1/assistant/sessions` | POST | signed_in | `apps.presentation.api.assistant.AssistantSessionsView` |
+| `/api/v1/assistant/sessions/<str:session_id>` | GET | signed_in | `apps.presentation.api.assistant.AssistantSessionView` |
+| `/api/v1/assistant/sessions/<str:session_id>/turns` | POST | signed_in | `apps.presentation.api.assistant.AssistantTurnsView` |
 | `/api/v1/csrf` | GET | public | `apps.presentation.api.sessions.CsrfView` |
 | `/api/v1/email-changes/confirm` | POST | public | `apps.presentation.api.profile.EmailChangeConfirmView` |
 | `/api/v1/email-verification-requests` | POST | public | `apps.presentation.api.verifications.VerificationRequestView` |
