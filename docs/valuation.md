@@ -107,7 +107,8 @@ uv run python manage.py train_valuation_model --model-version 2   # writes data/
 ## Forecast scenario parameters (version 1)
 
 Assumed yearly growth by locality tier, compounded over 5 years: `value(n) = estimate x (1 + rate) ^ n`. These are
-scenarios, not predictions or guaranteed returns. The computation arrives with Story 4.7.
+scenarios, not predictions or guaranteed returns. `forecasting.compute` gives low, base and high to the nearest
+PKR 1 000; they are stored with each estimate (`PriceEstimate.forecast`, with the parameter version).
 
 | Tier | Low | Base | High |
 | --- | --- | --- | --- |
@@ -123,7 +124,7 @@ A released file is never edited (a test pins its hash): add `forecast_v2.yaml` a
 | Route (signed in, `X-CSRFToken`) | Body |
 | --- | --- |
 | `POST /api/v1/estimates` | `{purpose, category, subtype, fields: {...}}`; `fields` takes only the model inputs |
-| `POST /api/v1/listings/{id}/estimate` | none; uses the saved Draft |
+| `POST /api/v1/listings/{id}/estimate` | none; uses the saved Draft or Published Listing (the owner's recompute) |
 
 Both answer `200` with `{status, estimated_value, currency, model_version, estimated_at, reason, message}`. `status` is
 `available` (`estimated_value` is a PKR decimal string rounded to 1 000; `reason`, `message` null) or `unavailable`
@@ -138,7 +139,7 @@ Both answer `200` with `{status, estimated_value, currency, model_version, estim
 | `temporarily_unavailable` | no registered model, executor full, timeout or failure |
 
 The first reason in that order wins. Errors: `400` (invalid or unaccepted values), `401` Visitor, `403` Suspended,
-Deactivated or administrator, `404` not the account's own Listing, `409` own Listing that is not a Draft, `429` more
+Deactivated or administrator, `404` not the account's own Listing, `409` own Listing that is Archived, Sold or Rented, `429` more
 than 20 requests an hour per account (scope `estimates`; every attempt counts, both routes together).
 
 - Inference (and the hash-checked load) runs on the heavy slots of the runtime executor, with a 20 second limit that
@@ -153,6 +154,27 @@ than 20 requests an hour per account (scope `estimates`; every attempt counts, b
 The Draft preview (`GET /api/v1/listings/{id}/preview`, Story 4.4) carries `estimate`: `{estimated_value, currency,
 model_version, estimated_at}` of the newest stored estimate of that Listing, or null when there is none or the saved
 model inputs changed since. Reading it computes nothing. Publication never depends on an estimate.
+
+## Estimates of published Listings (Stories 4.5 to 4.7)
+
+- `listing.published` (also a republication) and `listing.model_inputs_changed` schedule the computation on the
+  runtime executor after commit; the request never waits. A Listing that is not publicly visible is skipped (a Draft
+  edit computes nothing). `VALUATION_BACKGROUND_ESTIMATES = False` (tests) runs it in the calling thread.
+- Only an estimate whose snapshot hash matches the saved model inputs is shown. A full executor, a failure or a lost
+  event leaves the Listing without one (unavailable, never stale) until it is repaired.
+- `selectors.current_estimate` repairs: it computes a missing or outdated estimate for a signed-in reader. A Visitor
+  only reads what is stored. The owner may recompute at any time (the `POST` above, same throttle).
+- A new model version applies to estimates computed after it is deployed; stored ones are not rewritten.
+
+`GET /api/v1/public/listings/{id}/estimate` is public (`404` unless publicly visible, `Cache-Control: no-store`). It
+answers the estimate shape above plus:
+
+| Key | Meaning |
+| --- | --- |
+| `asking_total` | total Asking price; a `per_unit` price times the area in its unit; null for rent |
+| `comparison` | `{verdict, percent}`: the Asking price is `about_equal` (within 5% inclusive), `above` or `below` the estimate |
+| `forecast` | `{horizon_years, low, base, high}`; null whenever the estimate is unavailable |
+| `can_recompute` | true for the signed-in owner |
 
 No user-facing string may say "demo" or "demonstration" (SM-4c, `tests/architecture/test_no_demo_wording.py`; the
 frontend has its own scan).

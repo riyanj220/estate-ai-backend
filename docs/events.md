@@ -69,6 +69,9 @@ lost, something recomputes or the user can retry. A consequence that must not be
 erasure, a counted quota) is done by orchestration in the originating transaction (AD-23), not by an event.
 Audit records are written in the same transaction as the action. No external call occurs inside a transaction.
 
+`listing.published` and `listing.model_inputs_changed` are subscribed by `valuation`, which computes the estimate on
+the runtime executor (`docs/valuation.md`).
+
 `listing.deleted` (a Draft or sample Listing was removed) is subscribed by `valuation`, which deletes its stored
 estimates; its retention job repairs a lost event.
 

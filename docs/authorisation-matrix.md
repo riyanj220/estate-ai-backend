@@ -78,6 +78,7 @@ whose permission is not explicit.
 | `/api/v1/public/filters` | GET | public | `apps.presentation.api.public_listings.PublicFiltersView` |
 | `/api/v1/public/listings` | GET | public | `apps.presentation.api.public_listings.PublicListingsView` |
 | `/api/v1/public/listings/<str:listing_id>` | GET | public | `apps.presentation.api.public_listings.PublicListingDetailView` |
+| `/api/v1/public/listings/<str:listing_id>/estimate` | GET | public | `apps.presentation.api.estimates.PublicListingEstimateView` |
 | `/api/v1/reference/amenities` | GET | public | `apps.presentation.api.reference.AmenityView` |
 | `/api/v1/reference/cities` | GET | public | `apps.presentation.api.reference.CityView` |
 | `/api/v1/reference/cities/<str:city_id>/localities` | GET | public | `apps.presentation.api.reference.LocalityView` |
@@ -91,6 +92,11 @@ whose permission is not explicit.
 Routes shown as `public` whose owner check lives in a selector: the Listing media endpoint (`image_for_serving`, which asks `listings.policy.can_view`: an image of a public Listing goes to anyone, any other only to its owner, see `docs/visibility.md`), the owner
 file routes of Story 2.11 (`own_image_for_serving`: a Visitor, another account, the other type and an administrator get 404)
 and the public Agency logo (`logo_for_serving`: served only while the Agency account is Active, otherwise 404).
+
+The estimate of a Listing (`/api/v1/public/listings/{id}/estimate`, Stories 4.6 and 4.7) is public for a publicly
+visible Listing and `not_found` for everyone otherwise, the owner included (who sees it in the Draft preview). A
+Visitor reads only what is stored; recomputing (`POST /api/v1/listings/{id}/estimate`) is the owner's alone: Visitor
+401, another account 404, Suspended or Deactivated 403.
 
 Favourites (Story 3.7, `/api/v1/me/favourites*`) are the caller's own by construction: a Visitor gets 401, an administrator
 or Deactivated account 403, a Suspended account may view and remove but not save (403), and another account sees an empty
