@@ -27,11 +27,13 @@ from apps.kernel.errors import DomainError
 from apps.kernel.models import AuditRecord, MediaAsset, StorageUsage
 from apps.listings import publication, quota, sample_data, selectors, services
 from apps.listings.models import (
+    ListingFloorPlan,
     ListingImage,
     ListingPrivateAddress,
     PropertyListing,
     PublicationEvent,
 )
+from apps.valuation.data import localities
 from tests.listings.support import (
     PASSWORD,
     SYSTEM,
@@ -42,6 +44,26 @@ from tests.listings.support import (
     user,
 )
 
+ACCOUNTS = len(sample_data.ACCOUNTS)
+ACTIVITY = (
+    "verification requests created",
+    "profile pictures created",
+    "drafts created",
+    "views created",
+    "favourites created",
+    "messages created",
+    "conversations created",
+    "reports created",
+    "flags created",
+    "support requests created",
+    "closure requests created",
+    "suspended accounts created",
+    "listings sold created",
+    "listings rented created",
+    "listings archived created",
+    "listings taken down created",
+    "listings restricted created",
+)
 SAMPLE_EMAIL = f"sample.individual.9@{identity.SAMPLE_EMAIL_DOMAIN}"
 NOW = datetime(2026, 11, 15, 12, 0, tzinfo=UTC)
 ROOT = Path(__file__).resolve().parents[2]
@@ -104,21 +126,21 @@ def sample_draft(account):
 
 def test_a_first_run_creates_accounts_and_published_listings_with_images():
     report = sample_data.seed(12, PASSWORD)
-    assert (report.accounts_created, report.listings_created) == (5, 12)
-    assert Account.objects.filter(account_type="individual").count() == 3
-    assert Account.objects.filter(account_type="agency").count() == 2
-    assert IndividualProfile.objects.count() == 3 and AgencyProfile.objects.count() == 2
+    assert (report.accounts_created, report.listings_created) == (ACCOUNTS, 12)
+    assert Account.objects.filter(account_type="individual").count() == 8
+    assert Account.objects.filter(account_type="agency").count() == 6
+    assert IndividualProfile.objects.count() == 8 and AgencyProfile.objects.count() == 6
     owners = sample_owner_ids()
-    assert len(owners) == 5
+    assert len(owners) == ACCOUNTS
     rows = list(all_listings())
     assert len(rows) == 12 and {r.status for r in rows} == {"published"}
     assert {r.category for r in rows} == {"house", "apartment", "plot", "commercial"}
     assert {r.purpose for r in rows} == {"sale", "rent"}
     assert len({r.subtype for r in rows}) == 6
-    assert {r.owner_account_id for r in rows} == owners
+    assert len({r.owner_account_id for r in rows}) == 12
     for row in rows:
         links = ListingImage.objects.filter(listing=row)
-        assert 1 <= links.count() <= 3 and links.filter(is_cover=True).count() == 1
+        assert 2 <= links.count() <= 5 and links.filter(is_cover=True).count() == 1
     assert report.images_created == ListingImage.objects.count()
     store = storage.get_storage()
     for asset in MediaAsset.objects.all():
@@ -160,9 +182,8 @@ def test_a_larger_run_adds_only_what_is_missing():
 def test_a_draft_left_by_an_interrupted_run_is_made_again_not_duplicated():
     sample_data.seed(1, PASSWORD)
     row = sample_data.row_for(1)
-    owner = Actor.user(
-        identity.sample_account_ids()[sample_data.email_of(sample_data.ACCOUNTS[1][1]).lower()], "r"
-    )
+    email = sample_data.email_of(sample_data.owner_local(row))
+    owner = Actor.user(identity.sample_account_ids()[email], "r")
     draft = services.create_draft(owner, *row["kind"])
     services.apply_updates(owner, draft.id, 1, {"title": row["title"]})
     report = sample_data.seed(2)
@@ -173,7 +194,7 @@ def test_a_draft_left_by_an_interrupted_run_is_made_again_not_duplicated():
 
 
 def test_the_count_is_bounded():
-    for bad in (0, 61, -1, True, "5", None):
+    for bad in (0, sample_data.MAX_LISTINGS + 1, -1, True, "5", None):
         with pytest.raises(sample_data.SeedRefused):
             sample_data.seed(bad, PASSWORD)
     assert Account.objects.count() == 0
@@ -189,9 +210,26 @@ def test_the_data_is_deterministic_and_every_title_is_unique():
     assert sorted(all_listings().values_list("title", flat=True)) == names
 
 
-def test_a_large_run_works():
-    report = sample_data.seed(sample_data.MAX_LISTINGS, PASSWORD)
-    assert report.listings_created == sample_data.MAX_LISTINGS
+def test_the_default_run_covers_the_whole_table_and_a_later_lap():
+    report = sample_data.seed(sample_data.DEFAULT_LISTINGS + 2, PASSWORD)
+    assert report.listings_created == sample_data.DEFAULT_LISTINGS + 2
+    assert report.floor_plans_created == ListingFloorPlan.objects.count() > 0
+    assert all_listings().filter(video_tour_url__startswith="https://").exists()
+    assert all_listings().filter(terms__extra_attributes__has_key="payment_type").exists()
+
+
+def test_sale_prices_sit_near_the_locality_rates_of_the_price_model():
+    rates = localities.load().base_rates
+    kinds = {"house": 1.0, "apartment": 0.75, "residential_plot": 0.70}
+    for index in range(sample_data.MAX_LISTINGS):
+        row = sample_data.row_for(index)
+        purpose, _, subtype = row["kind"]
+        if purpose != "sale" or subtype not in kinds:
+            continue
+        value, unit, *basis = row["area"]
+        sqft = float(value) * {"sqft": 1, "sqyd": 9, "marla": float((basis or [0])[0])}[unit]
+        expected = rates[row["locality"]] * sqft * kinds[subtype]
+        assert 0.65 <= int(row["price"][0]) / expected <= 1.35, row["title"]
 
 
 # --- reset and reseed ----------------------------------------------------------------------
@@ -211,14 +249,15 @@ def test_reset_removes_only_the_sample_records():
     kept = (kept_assets.count(), ListingImage.objects.filter(listing_id__in=[m.id for m in mine]))
     audit_before = AuditRecord.objects.count()
     report = sample_data.reset()
-    assert (report.accounts_removed, report.listings_removed, report.events_removed) == (5, 6, 6)
+    removed = (report.accounts_removed, report.listings_removed, report.events_removed)
+    assert removed == (ACCOUNTS, 6, 6)
     assert identity.sample_account_ids() == {}
     assert {a.id for a in Account.objects.all()} == {real.id, lookalike.id, lookalike_two.id}
     assert {p.id for p in PropertyListing.objects.all()} == {m.id for m in mine}
     assert kept_assets.count() == kept[0] == 3 and kept[1].count() == 3
     assert list(PublicationEvent.objects.all()) == [real_event]
     assert AuditRecord.objects.count() > audit_before  # audit is kept, and grows
-    assert AuditRecord.objects.filter(action="account.created").count() >= 5
+    assert AuditRecord.objects.filter(action="account.created").count() >= ACCOUNTS
     assert MediaAsset.objects.count() == kept[0]  # every sample asset row is gone
     assert not StorageUsage.objects.filter(account_id__in=sample_ids).exists()  # no row left
     assert not MediaAsset.objects.filter(owner_account_id__in=sample_ids).exists()
@@ -251,7 +290,7 @@ def test_reseed_twice_in_a_row_ends_in_the_same_state():
     ends = []
     for _ in range(2):
         report = sample_data.reseed(6, PASSWORD)
-        assert (report.accounts_removed, report.accounts_created) == (5, 5)
+        assert (report.accounts_removed, report.accounts_created) == (ACCOUNTS, ACCOUNTS)
         assert (report.listings_removed, report.listings_created) == (6, 6)
         ends.append(
             (
@@ -277,7 +316,7 @@ def test_the_seeded_listings_are_public_and_hide_the_private_address():
     assert private_values - {None}
     for row in all_listings():
         shown = selectors.public_listing(visitor, row.id)
-        assert 1 <= len(shown.media) <= 3
+        assert 2 <= len(shown.media) <= 5
         text = repr(shown.fields)
         assert "street" not in shown.fields and "house_number" not in shown.fields
         assert not any(value in text for value in private_values if value)
@@ -655,16 +694,20 @@ def test_the_command_prints_counts_and_a_generated_password_once(caplog, monkeyp
     output = run("--listings", "5")
     lines = output.splitlines()
     assert counts(output) == {
-        "accounts created": 5,
+        "accounts created": ACCOUNTS,
         "listings created": 5,
-        "images created": ListingImage.objects.count(),
+        "images created": ListingImage.objects.exclude(listing__status="draft").count(),
+        "floor plans created": ListingFloorPlan.objects.count(),
+        **{label: value for label, value in counts(output).items() if label in ACTIVITY},
         "accounts removed": 0,
         "listings removed": 0,
         "publication events removed": 0,
     }
     passwords = [line for line in lines if line.startswith("seed accounts password: ")]
     assert len(passwords) == 1
-    assert lines.index(passwords[0]) < lines.index("accounts created: 5")  # printed at once
+    assert lines.index(passwords[0]) < lines.index(
+        f"accounts created: {ACCOUNTS}"
+    )  # printed at once
     secret = passwords[0].partition(": ")[2]
     assert secret and output.count(secret) == 1
     assert all(check_password(secret, a.password) for a in Account.objects.all())
@@ -730,8 +773,8 @@ def test_the_output_and_logs_never_carry_an_address_name_or_private_value(caplog
         "@",
         identity.SAMPLE_EMAIL_DOMAIN,
         "sample.individual",
-        "Sana Sample",
-        "Sample Realty",
+        "Sana Qureshi",
+        "Harbour Gate",
         "+92",
         "Sample Street",
         "Sample Lane",
@@ -740,7 +783,7 @@ def test_the_output_and_logs_never_carry_an_address_name_or_private_value(caplog
         assert forbidden not in text and forbidden not in caplog.text, forbidden
     for line in text.splitlines():
         assert (
-            line.startswith(("seed accounts password: ", "will remove: "))
+            line.startswith(("seed accounts password: ", "will remove: ", "will also remove: "))
             or line.rpartition(": ")[2].isdigit()
         )
 
@@ -748,18 +791,21 @@ def test_the_output_and_logs_never_carry_an_address_name_or_private_value(caplog
 def test_the_command_resets_and_reseeds(monkeypatch):
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
     run("--listings", "4")
-    assert all_listings().count() == 4
+    assert all_listings().exclude(status="draft").count() == 4
+    drafts = all_listings().filter(status="draft").count()
     out = counts(run("--reset", "--yes"))
     assert (
         out["accounts removed"],
         out["listings removed"],
         out["publication events removed"],
-    ) == (5, 4, 4)
+    ) == (ACCOUNTS, 4 + drafts, 4)
     assert Account.objects.count() == 0
     out = counts(run("--reseed", "--yes", "--listings", "3"))
-    assert (out["accounts removed"], out["accounts created"], out["listings created"]) == (0, 5, 3)
+    made = (out["accounts removed"], out["accounts created"], out["listings created"])
+    assert made == (0, ACCOUNTS, 3)
     out = counts(run("--reseed", "--yes", "--listings", "3"))
-    assert (out["accounts removed"], out["listings removed"], out["listings created"]) == (5, 3, 3)
+    made = (out["accounts removed"], out["listings removed"], out["listings created"])
+    assert made == (ACCOUNTS, 3 + drafts, 3)
 
 
 @pytest.mark.parametrize(
@@ -769,7 +815,7 @@ def test_the_command_resets_and_reseeds(monkeypatch):
         ("--reset", "--password-stdin", "--yes"),
         ("--yes",),
         ("--listings", "0"),
-        ("--listings", "61"),
+        ("--listings", str(sample_data.MAX_LISTINGS + 1)),
         ("--listings", "many"),
     ],
 )
@@ -962,9 +1008,11 @@ def test_reset_and_reseed_print_the_count_and_need_yes(args, monkeypatch):
     with pytest.raises(CommandError, match="--yes"):
         call_command("seed_sample_data", *args, stdout=out)
     assert out.getvalue().splitlines() == [
-        "will remove: 5 accounts, 3 listings, 3 publication events"
+        f"will remove: {ACCOUNTS} accounts, 3 listings, 3 publication events",
+        "will also remove: 0 conversations, 0 reports, 0 moderation actions, 0 flags, "
+        "0 verification requests, 0 support requests, 0 closure requests",
     ]
-    assert all_listings().count() == 3 and Account.objects.count() == 5  # nothing removed
+    assert all_listings().count() == 3 and Account.objects.count() == ACCOUNTS  # nothing removed
 
 
 def test_a_failure_after_the_accounts_exist_still_printed_the_password_once(caplog, monkeypatch):
