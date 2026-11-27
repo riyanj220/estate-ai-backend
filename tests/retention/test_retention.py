@@ -46,9 +46,16 @@ def test_kernel_jobs_are_registered_in_order():
         "listings.draft_notice",
         "listings.draft_expiry",
         "listings.view_buckets",
+        "listings.publication_events",
         "valuation.estimates",
         "assistant.history",
+        "assistant.published_history",
         "governance.report_snapshots",
+        "governance.reports",
+        "governance.verification",
+        "governance.moderation_records",
+        "governance.support_requests",
+        "governance.closure_requests",
     ]
 
 
@@ -95,9 +102,16 @@ def test_dry_run_reports_counts_and_deletes_nothing(db):
         "listings.draft_notice: would delete 0",
         "listings.draft_expiry: would delete 0",
         "listings.view_buckets: would delete 0",
+        "listings.publication_events: would delete 0",
         "valuation.estimates: would delete 0",
         "assistant.history: would delete 0",
+        "assistant.published_history: would delete 0",
         "governance.report_snapshots: would delete 0",
+        "governance.reports: would delete 0",
+        "governance.verification: would delete 0",
+        "governance.moderation_records: would delete 0",
+        "governance.support_requests: would delete 0",
+        "governance.closure_requests: would delete 0",
     ]
     assert IdempotencyRecord.objects.count() == 2
     assert AiRequestLog.objects.count() == 2
@@ -122,9 +136,16 @@ def test_real_run_deletes_expired_and_keeps_newer(db):
         "listings.draft_notice: deleted 0",
         "listings.draft_expiry: deleted 0",
         "listings.view_buckets: deleted 0",
+        "listings.publication_events: deleted 0",
         "valuation.estimates: deleted 0",
         "assistant.history: deleted 0",
+        "assistant.published_history: deleted 0",
         "governance.report_snapshots: deleted 0",
+        "governance.reports: deleted 0",
+        "governance.verification: deleted 0",
+        "governance.moderation_records: deleted 0",
+        "governance.support_requests: deleted 0",
+        "governance.closure_requests: deleted 0",
     ]
     assert list(IdempotencyRecord.objects.values_list("key", flat=True)) == ["new"]
     assert AiRequestLog.objects.count() == 1

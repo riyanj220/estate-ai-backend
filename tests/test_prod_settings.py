@@ -63,6 +63,13 @@ def test_prod_defines_migrator_when_password_present(monkeypatch):
     assert prod.DATABASES["migrator"]["PASSWORD"] == MIGRATOR_GOOD
 
 
+def test_prod_defines_the_purge_alias_only_with_its_password(monkeypatch):
+    monkeypatch.delenv("PURGE_PASSWORD", raising=False)
+    assert "purge" not in load_prod(monkeypatch).DATABASES
+    prod = load_prod(monkeypatch, PURGE_PASSWORD=MIGRATOR_GOOD)
+    assert prod.DATABASES["purge"]["USER"] == prod.PURGE_DB_USER
+
+
 @pytest.mark.parametrize("name", REQUIRED)
 def test_prod_missing_secret_names_variable(monkeypatch, name):
     with pytest.raises(ImproperlyConfigured, match=name):
