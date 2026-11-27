@@ -208,7 +208,13 @@ def test_account_inserts_from_registration_can_only_be_individual_or_agency():
 
 
 def test_nothing_in_the_presentation_layer_can_reach_the_provisioning_services():
-    forbidden = ("provision_admin", "disable_admin", "remove_admin", "reset_admin_password")
+    forbidden = (
+        "provision_admin",
+        "disable_admin",
+        "remove_admin",
+        "reset_admin_password",
+        "reset_second_factor",
+    )
     for path in (ROOT / "apps" / "presentation").rglob("*.py"):
         text = path.read_text()
         assert not any(name in text for name in forbidden), path

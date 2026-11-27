@@ -475,6 +475,7 @@ def test_summary_carries_profile_name_and_matrix_capabilities(db):
         "send_messages",
         "read_conversations",
         "report",
+        "request_support",
         "request_deactivation",
     )
     assert selectors.get_actor_summary("junk") is None
@@ -498,6 +499,7 @@ def test_suspended_individual_capabilities(db):
         "browse",
         "view_drafts",
         "read_conversations",
+        "request_support",
         "request_deactivation",
     )
 

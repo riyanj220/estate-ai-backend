@@ -35,6 +35,7 @@ EXPECTED = {
     "email_change_confirm": (20, H, "client"),
     "admin_sign_in": (5, 900, "client"),
     "admin_sign_in_account": (20, H, "account"),
+    "admin_second_factor": (5, 900, "account"),
     "storage_cap_bytes_individual": (209_715_200, None, "account"),
     "storage_cap_bytes_agency": (1_073_741_824, None, "account"),
     "image_upload": (30, H, "account"),

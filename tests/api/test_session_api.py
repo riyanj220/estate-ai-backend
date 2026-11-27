@@ -131,6 +131,7 @@ def test_sign_in_returns_the_summary_and_a_hardened_cookie(db):
             "send_messages",
             "read_conversations",
             "report",
+            "request_support",
             "request_deactivation",
         ],
         "suspension_reason": None,
@@ -345,7 +346,14 @@ def test_me_reflects_suspension_without_ending_the_session(db):
     body = client.get(ME).json()
     assert (body["state"], body["capabilities"]) == (
         "suspended",
-        ["sign_in", "browse", "view_drafts", "read_conversations", "request_deactivation"],
+        [
+            "sign_in",
+            "browse",
+            "view_drafts",
+            "read_conversations",
+            "request_support",
+            "request_deactivation",
+        ],
     )
 
 
