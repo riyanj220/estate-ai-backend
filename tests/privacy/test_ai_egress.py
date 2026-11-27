@@ -5,6 +5,7 @@ Every later AI entry point (assistant turn, extraction, description, NL and voic
 function `(actor, message)` to `ENTRY_POINTS` that drives it end to end.
 """
 
+import json
 import logging
 import re
 import uuid
@@ -99,12 +100,28 @@ def assistant_turn(actor, message):
     return result
 
 
+def assistant_extraction(actor, message):
+    """Extraction (Story 5.9): a model that puts the values into fields gets none of them saved."""
+    draft = services.create_draft(actor, "sale", "house", "house")
+    session, _ = assistant.open_session(actor, draft.id)
+    stub.reply = json.dumps(
+        {"reply": message, "clarify": message, "fields": {"title": message[:90], "phase": "6"}}
+    )
+    result = assistant.send_turn(actor, session.id, message, str(uuid.uuid4()))
+    stored = AssistantTurn.objects.get()
+    view = services.require_draft(actor, draft.id)
+    assert view.fields["phase"] == "6" and view.fields["title"] is None
+    assert leaks(stored.user_text + stored.reply_text + json.dumps(stored.result)) == []
+    return result
+
+
 ENTRY_POINTS = [
     pytest.param(llm_assistant_turn, id="assistant-turn-port"),
     pytest.param(llm_search_query, id="search-query-port"),
     pytest.param(embeddings, id="embeddings-port"),
     pytest.param(knowledge_retrieval, id="knowledge-retrieval"),
     pytest.param(assistant_turn, id="assistant-turn"),
+    pytest.param(assistant_extraction, id="assistant-extraction"),
 ]
 
 
