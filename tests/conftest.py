@@ -1,6 +1,16 @@
 import pytest
 
 
+def pytest_configure(config):
+    """Tests create and destroy databases: only ever against a server on this machine."""
+    from django.conf import settings
+
+    for database in settings.DATABASES.values():
+        host = str(database.get("HOST") or "")
+        if host not in ("", "localhost", "127.0.0.1", "::1") and not host.startswith("/"):
+            pytest.exit("Refused: tests run only against a database on this machine.", 2)
+
+
 @pytest.fixture(autouse=True)
 def media_root(tmp_path, settings):
     """Every test stores media in its own empty directory, never the shared test root."""
