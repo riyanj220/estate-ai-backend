@@ -3,7 +3,22 @@
 Everything needed to run, test and maintain the project locally. **BE** means run it in `estate-ai-backend`, **FE** in
 `estate-ai-frontend`. Add `--help` to any `manage.py` command to see its options.
 
-## 1. Every day
+## The short version
+
+Run these in `estate-ai-backend`. They use your hosted database, storage and mail (`.env.hosted`).
+
+| What | Command |
+| --- | --- |
+| Run the whole app | `./app start` |
+| After new code arrives | `./app update` |
+| Reload sample data (set `SEED_ALLOWED=true` first) | `./app seed fresh` |
+| Create an administrator | `./app admin you@example.com` |
+| Check database, storage and mail | `./app check` |
+| Everything else | `./app` lists the commands |
+
+You only need the rest of this page for tests, offline work and rare jobs.
+
+## 1. Every day (Docker database)
 
 | What | Where | Command |
 | --- | --- | --- |
