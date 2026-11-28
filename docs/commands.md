@@ -142,7 +142,19 @@ Real deletion of history needs the `purger` database role (one-time setup in `au
 The knowledge index must be built with the same `AI_PROVIDER` the server uses: rebuilding with `stub` replaces the
 Gemini index. Use a model version number that does not exist yet.
 
-## 9. Start over (destroys all local data)
+## 9. Real services (hosted mode)
+
+Your laptop, but Supabase database and storage and real email. Set it up first with `real-services.md`.
+
+| What | Command (BE) |
+| --- | --- |
+| Create or update the database roles on Supabase | `uv run python scripts/supabase_setup.py` |
+| Start the backend | `scripts/hosted.sh serve` |
+| Any management command | `scripts/hosted.sh <command>`, e.g. `scripts/hosted.sh migrate --database=migrator` |
+| Check database, storage and (optionally) email | `scripts/hosted.sh check_services [--email you@address]` |
+| Scheduled jobs once (flags, retention) | `scripts/hosted_jobs.sh` |
+
+## 10. Start over (destroys all local data)
 
 This deletes your whole local database, including your own accounts. Uploaded files in `media/` stay behind.
 
