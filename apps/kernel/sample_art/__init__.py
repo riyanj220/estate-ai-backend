@@ -1,5 +1,5 @@
 """Pictures for the development sample data (Story 11.1): property photographs (free Unsplash
-files in `sample_photos/`, see its CREDITS.md), and drawn floor plans, agency logos and profile
+files in `photos/`, see its CREDITS.md), and drawn floor plans, agency logos and profile
 pictures. No network.
 
 The same arguments always give the same picture. Drawing lives in `kernel` because only `kernel`
@@ -15,7 +15,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 WIDTH, HEIGHT = 800, 600
-PHOTOS = Path(__file__).parent / "sample_photos"
+PHOTOS = Path(__file__).parent / "photos"
 SCENES = (
     "house",
     "tower",

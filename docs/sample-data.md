@@ -53,8 +53,8 @@ Everything made at one run carries that run's time (dates are not spread into th
 moderation history name an administrator id that has no account, so no administrator can sign in with it. Create your
 own with `provision_admin` to see the admin screens.
 
-The photographs are free Unsplash files in `apps/kernel/sample_photos/` (sources in its `CREDITS.md`); floor plans,
-agency logos and profile pictures are drawn by `apps/kernel/sample_art.py` (only `kernel` may use Pillow).
+The photographs are free Unsplash files in `apps/kernel/sample_art/photos/` (sources in its `CREDITS.md`); floor plans,
+agency logos and profile pictures are drawn by `apps/kernel/sample_art/` (only `kernel` may use Pillow).
 
 ## How it is built
 

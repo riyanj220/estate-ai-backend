@@ -7,6 +7,9 @@ produces no URL: a file is read only through that endpoint.
 
 ## Storage port (`kernel.storage`)
 
+A package: `keys.py` (the folder layout, the only place that decides it), `filesystem.py` (local disk) and `s3.py`
+(Supabase Storage).
+
 Four operations on keys: `put(key, data)`, `get(key) -> bytes`, `delete(key)` (idempotent) and `exists(key)`.
 The filesystem adapter is rooted at `MEDIA_ROOT` (absolute path; default `<project>/media`, git-ignored; tests use a
 temporary directory per test). Keep it outside any web-served directory; only the media endpoint (below) reads it, after an access check.

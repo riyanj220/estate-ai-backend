@@ -6,7 +6,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 
-from apps.kernel import media, storage, storage_s3
+from apps.kernel import media, storage
+from apps.kernel.storage import s3 as storage_s3
 from tests.imaging import make_image
 
 DATA = b"image-bytes"

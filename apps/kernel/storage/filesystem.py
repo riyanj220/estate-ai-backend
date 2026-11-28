@@ -1,68 +1,15 @@
-"""Storage port for uploaded media (AD-15) and its filesystem adapter. `settings.MEDIA_BACKEND`
-chooses this adapter (the default) or the S3-compatible one (`kernel.storage_s3`).
+"""The filesystem adapter of the storage port (the default, used by tests and local work). Keys
+with folders are kept as they read; keys without are sharded into two directory levels. Writes are
+atomic (temp file in the same directory, fsync, rename); files are 0600 and directories 0700."""
 
-
-The port is four small operations on keys: `put`, `get`, `delete`, `exists`. A key is a random
-name, filed under its owner and what it belongs to:
-`users/<account id>/listings/<listing id>/<name>` or `users/<account id>/profile/<name>`. The
-folders hold ids only, never a name or an address of a person or a place, and the port never
-produces a URL: serving a file is the media endpoint's job (`ListingImageFileView`, after an access
-check), through `get`. Keys without folders (files stored earlier) stay valid; the filesystem
-adapter shards those into two directory levels. Any other form is refused (so a key can never
-traverse out of the root), and writes are atomic (temp file in the same directory, fsync, rename).
-
-The adapter also lists old files so retention can find files that have no row (`iter_old_keys`,
-`remove_old_temp_files`); that is a maintenance operation, not part of serving.
-"""
-
-import logging
 import os
-import re
-import secrets
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Protocol
 
-from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
+from apps.kernel.storage.keys import InvalidKey, is_valid_key
 
-logger = logging.getLogger("estate.media")
-
-KEY_BYTES = 32
-# `secrets.token_urlsafe(32)` is 43 characters of the URL-safe base64 alphabet.
-_NAME = r"[A-Za-z0-9_-]{43}"
-_ID = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
-_KEY = re.compile(rf"(?:users/{_ID}/(?:listings/{_ID}|profile)/)?{_NAME}")
 _TEMP_PREFIX = ".tmp-"
-
-
-class InvalidKey(ValueError):
-    """The key is not in a format `new_key` produces."""
-
-
-def new_key(owner: uuid.UUID | None = None, listing: uuid.UUID | None = None) -> str:
-    """A fresh random key. With an `owner` it is filed under that account: in the Listing's folder,
-    or in `profile` without one."""
-    name = secrets.token_urlsafe(KEY_BYTES)
-    if owner is None:
-        return name
-    folder = f"listings/{listing}" if listing is not None else "profile"
-    return f"users/{owner}/{folder}/{name}"
-
-
-def is_valid_key(key: object) -> bool:
-    return isinstance(key, str) and _KEY.fullmatch(key) is not None and key.isascii()
-
-
-class Storage(Protocol):
-    def put(self, key: str, data: bytes) -> None: ...
-
-    def get(self, key: str) -> bytes: ...
-
-    def delete(self, key: str) -> None: ...
-
-    def exists(self, key: str) -> bool: ...
 
 
 class FilesystemStorage:
@@ -165,35 +112,3 @@ class FilesystemStorage:
             except OSError:
                 continue
         return removed
-
-
-def get_storage() -> Storage:
-    """The configured store. Read per call so a test can point `MEDIA_ROOT` elsewhere."""
-    backend = settings.MEDIA_BACKEND
-    if backend == "filesystem":
-        return FilesystemStorage(settings.MEDIA_ROOT)
-    if backend == "s3":
-        from apps.kernel import storage_s3  # boto3 is loaded only where it is used
-
-        return storage_s3.S3Storage(
-            storage_s3.client(
-                settings.S3_ENDPOINT_URL,
-                settings.S3_REGION,
-                settings.S3_ACCESS_KEY_ID,
-                settings.S3_SECRET_ACCESS_KEY,
-            ),
-            settings.S3_BUCKET,
-            settings.S3_PREFIX,
-        )
-    raise ImproperlyConfigured("MEDIA_BACKEND must be 'filesystem' or 's3'.")
-
-
-def discard(key: str) -> None:
-    """Best-effort removal of a file; a failure is logged by class only (retention cleans up)."""
-    try:
-        get_storage().delete(key)
-    except Exception as exc:
-        logger.warning(
-            "media_file_delete_failed",
-            extra={"event": "media_file_delete_failed", "exception_class": type(exc).__name__},
-        )

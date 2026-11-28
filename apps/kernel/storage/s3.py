@@ -19,7 +19,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-from apps.kernel.storage import InvalidKey, is_valid_key
+from apps.kernel.storage.keys import InvalidKey, is_valid_key
 
 _MISSING = frozenset({"404", "NoSuchKey", "NotFound"})
 
