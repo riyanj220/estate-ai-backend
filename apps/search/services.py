@@ -13,6 +13,7 @@ never stored or logged, and goes to the provider with no account data.
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -99,6 +100,10 @@ def interpret_query(
     return SearchResult(True, read=read)
 
 
+# The provider marks sounds that are not words, as in "<noise>" or "[inaudible]".
+_SOUND_TAG = re.compile(r"<[A-Za-z _/-]{1,30}>|\[[A-Za-z _-]{1,30}\]")
+
+
 @dataclass(frozen=True)
 class Transcription:
     transcript: str = ""
@@ -135,7 +140,8 @@ def transcribe_query(
         raise ratelimit.RateLimited(result.retry_after)
     if not result.ok:
         return Transcription(message=_VOICE_FAILED.get(result.outcome, VOICE_UNAVAILABLE))
-    # one line, no control characters, and no longer than a search may be
-    heard = "".join(c if c.isprintable() else " " for c in str(result.value))
+    # one line, no sound tags or control characters, and no longer than a search may be
+    heard = _SOUND_TAG.sub(" ", str(result.value))
+    heard = "".join(c if c.isprintable() else " " for c in heard)
     heard = " ".join(heard.split())[:MAX_QUERY].strip()
     return Transcription(heard) if heard else Transcription(message=NOT_HEARD)

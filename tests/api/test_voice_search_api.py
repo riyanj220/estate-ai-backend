@@ -66,6 +66,14 @@ def test_a_recording_becomes_a_transcript_and_nothing_is_searched_or_kept(caplog
     assert not media_root.exists()
 
 
+def test_sound_tags_are_not_words():
+    stub.reply = "<noise> a plot [inaudible] under 2 crore <noise>"
+    assert upload().json()["transcript"] == "a plot under 2 crore"
+    stub.reply = "<noise>"
+    body = upload().json()
+    assert body["status"] == "fallback" and body["transcript"] == ""
+
+
 def test_a_long_transcript_is_cut_to_what_a_search_accepts():
     stub.reply = "house " * 200
     heard = upload().json()["transcript"]
