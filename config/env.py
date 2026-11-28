@@ -29,7 +29,7 @@ _PLACEHOLDER_MARKERS = (
 )
 
 
-def load_dotenv(path: Path | None = None) -> None:
+def load_dotenv(path: Path | None = None, *, override: bool = False) -> None:
     path = path or BASE_DIR / ".env"
     if not path.is_file():
         return
@@ -41,7 +41,8 @@ def load_dotenv(path: Path | None = None) -> None:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
-        os.environ.setdefault(key.strip(), value)
+        if override or key.strip() not in os.environ:
+            os.environ[key.strip()] = value
 
 
 def env(name: str, default: str | None = None) -> str:

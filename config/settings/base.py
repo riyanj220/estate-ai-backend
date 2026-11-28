@@ -49,6 +49,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 DB_NAME = env("POSTGRES_DB", "estate_ai")
 DB_HOST = env("POSTGRES_HOST", "127.0.0.1")
 DB_PORT = env_int("POSTGRES_PORT", 5432)
+# Set only by the hosted settings: the schema every connection must resolve to before `migrate`.
+DB_SCHEMA = ""
 MIGRATOR_DB_USER = env("MIGRATOR_USER", "migrator")
 RUNTIME_DB_USER = env("RUNTIME_USER", "runtime")
 # `purger` deletes expired history the runtime role may not (Stories 10.12, 10.13). Its connection
@@ -134,6 +136,8 @@ STATIC_URL = "static/"
 
 # Media (Story 2.9). Uploaded images are stored under MEDIA_ROOT through the `kernel.storage` port;
 # the directory is never served by this application. The default sits in the project, git-ignored.
+# "filesystem" here, in local, test and production settings; only the hosted settings choose "s3".
+MEDIA_BACKEND = "filesystem"
 MEDIA_ROOT = env("MEDIA_ROOT", str(BASE_DIR / "media"))
 if not os.path.isabs(MEDIA_ROOT):
     raise ImproperlyConfigured("MEDIA_ROOT must be an absolute path.")

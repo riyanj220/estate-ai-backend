@@ -1,4 +1,6 @@
-"""Storage port for uploaded media (AD-15) and its filesystem adapter.
+"""Storage port for uploaded media (AD-15) and its filesystem adapter. `settings.MEDIA_BACKEND`
+chooses this adapter (the default) or the S3-compatible one (`kernel.storage_s3`).
+
 
 The port is four small operations on opaque random keys: `put`, `get`, `delete`, `exists`. A key is
 never derived from a name, an owner or a Listing, and the port never produces a URL: serving a file
@@ -21,6 +23,7 @@ from pathlib import Path
 from typing import Protocol
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 logger = logging.getLogger("estate.media")
 
@@ -149,7 +152,23 @@ class FilesystemStorage:
 
 def get_storage() -> Storage:
     """The configured store. Read per call so a test can point `MEDIA_ROOT` elsewhere."""
-    return FilesystemStorage(settings.MEDIA_ROOT)
+    backend = settings.MEDIA_BACKEND
+    if backend == "filesystem":
+        return FilesystemStorage(settings.MEDIA_ROOT)
+    if backend == "s3":
+        from apps.kernel import storage_s3  # boto3 is loaded only where it is used
+
+        return storage_s3.S3Storage(
+            storage_s3.client(
+                settings.S3_ENDPOINT_URL,
+                settings.S3_REGION,
+                settings.S3_ACCESS_KEY_ID,
+                settings.S3_SECRET_ACCESS_KEY,
+            ),
+            settings.S3_BUCKET,
+            settings.S3_PREFIX,
+        )
+    raise ImproperlyConfigured("MEDIA_BACKEND must be 'filesystem' or 's3'.")
 
 
 def discard(key: str) -> None:

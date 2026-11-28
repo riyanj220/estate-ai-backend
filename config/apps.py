@@ -1,6 +1,7 @@
 from django.apps import AppConfig
 from django.conf import settings
-from django.db.models.signals import post_migrate
+from django.core.management.base import CommandError
+from django.db.models.signals import post_migrate, pre_migrate
 
 
 def _grant_after_migrate(sender, using, **kwargs):
@@ -24,9 +25,25 @@ def _grant_after_migrate(sender, using, **kwargs):
         grant_purge_privileges(connection, purger, settings.PURGE_ROLE_TABLES)
 
 
+def _require_schema(sender, using, **kwargs):
+    """Never migrate into another schema (on Supabase, `public` is what its web API exposes)."""
+    if not settings.DB_SCHEMA or sender.label != "contenttypes":
+        return
+    from django.db import connections
+
+    with connections[using].cursor() as cursor:
+        cursor.execute("SELECT current_schema()")
+        if cursor.fetchone()[0] != settings.DB_SCHEMA:
+            raise CommandError(
+                f"This connection does not resolve to the schema '{settings.DB_SCHEMA}'; "
+                "run scripts/supabase_setup.py first."
+            )
+
+
 class ConfigAppConfig(AppConfig):
     name = "config"
     label = "config"
 
     def ready(self):
+        pre_migrate.connect(_require_schema, dispatch_uid="config.require_schema")
         post_migrate.connect(_grant_after_migrate, dispatch_uid="config.grant_runtime")

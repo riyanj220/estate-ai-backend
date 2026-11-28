@@ -6,7 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "django>=5.2,<5.3",
     "daphne>=4.1",
-    "psycopg[binary]>=3.2",
+    "psycopg[binary,pool]>=3.2",
     "djangorestframework>=3.16,<4",
     "drf-spectacular>=0.28,<0.31",
     "pyyaml>=6.0.3",
@@ -17,6 +17,7 @@ dependencies = [
     "threadpoolctl>=3.8.0",
     "channels>=4.3,<5",
     "cryptography>=46",
+    "boto3>=1.35,<2",
 ]
 
 [dependency-groups]
@@ -175,7 +176,7 @@ allow_indirect_imports = true
 name = "Provider SDKs and HTTP clients are imported only inside kernel"
 type = "forbidden"
 source_modules = ["apps.catalog", "apps.identity", "apps.listings", "apps.valuation", "apps.search", "apps.assistant", "apps.messaging", "apps.governance", "apps.presentation"]
-forbidden_modules = ["aiohttp", "anthropic", "google", "groq", "httpx", "langchain", "langchain_core", "langchain_google_genai", "langchain_groq", "openai", "requests", "urllib3"]
+forbidden_modules = ["aiohttp", "anthropic", "boto3", "botocore", "google", "groq", "httpx", "langchain", "langchain_core", "langchain_google_genai", "langchain_groq", "openai", "requests", "urllib3"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
