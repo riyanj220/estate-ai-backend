@@ -64,7 +64,9 @@ def code_of(call, *args):
 
 
 def stored_files(media_root):
-    return sorted(p.name for p in media_root.rglob("*") if p.is_file())
+    # the keys as stored: the path below the root for filed keys, the file name otherwise
+    found = (p.relative_to(media_root).as_posix() for p in media_root.rglob("*") if p.is_file())
+    return sorted(k if k.startswith("users/") else k.rsplit("/", 1)[-1] for k in found)
 
 
 def full_draft(account=None, images=2):

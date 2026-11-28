@@ -40,7 +40,7 @@ All are `<name>@sample.estate-ai.invalid` with one shared password.
 
 - **Listings** (40 by default): sale and rent across House, Apartment, Residential and Commercial Plot, Plot File, Shop and
   Office, in many Karachi localities and societies, with amenities, seller-declared nearby facilities, private addresses
-  on some, installment and legal declarations, 2 to 5 drawn pictures each, a floor plan on some and a tour link
+  on some, installment and legal declarations, 2 to 5 photographs each, a floor plan on some and a tour link
   (`https://tours.example.com/...`, which opens nothing) on some. Sale prices follow the invented locality rates of the
   price model, so estimates sit near them. Past the fortieth the table repeats with "(no. n)" titles and other sizes.
 - **Statuses**: Published, Draft (complete, partial and untitled), Archived, Sold, Rented, Removed and restricted.
@@ -53,7 +53,8 @@ Everything made at one run carries that run's time (dates are not spread into th
 moderation history name an administrator id that has no account, so no administrator can sign in with it. Create your
 own with `provision_admin` to see the admin screens.
 
-The pictures are drawn by `apps/kernel/sample_art.py` (only `kernel` may use Pillow).
+The photographs are free Unsplash files in `apps/kernel/sample_photos/` (sources in its `CREDITS.md`); floor plans,
+agency logos and profile pictures are drawn by `apps/kernel/sample_art.py` (only `kernel` may use Pillow).
 
 ## How it is built
 

@@ -724,7 +724,9 @@ def upload_image(actor: Actor, listing_id, data: bytes) -> ImageView:
             )
             if len(existing) >= MAX_IMAGES:
                 raise DomainError("too_many_images")
-            asset = media.store_processed(actor, processed, account_type=account.type, attach=True)
+            asset = media.store_processed(
+                actor, processed, account_type=account.type, attach=True, listing_id=row.id
+            )
             image = ListingImage.objects.create(
                 listing=row,
                 asset_id=asset.id,
@@ -822,7 +824,9 @@ def set_floor_plan(actor: Actor, listing_id, data: bytes) -> FloorPlanView:
                 old_asset = old.asset_id
                 old.delete()
                 media.delete_asset(actor, old_asset, missing_ok=True)
-            asset = media.store_processed(actor, processed, account_type=account.type, attach=True)
+            asset = media.store_processed(
+                actor, processed, account_type=account.type, attach=True, listing_id=row.id
+            )
             plan = ListingFloorPlan.objects.create(
                 listing=row, asset_id=asset.id, created_at=timezone.now()
             )

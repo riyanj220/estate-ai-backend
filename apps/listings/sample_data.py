@@ -3,7 +3,7 @@ Never runs in production.
 
 `seed()` creates, as the system actor and through the real services, 8 Individual and 6 Agency
 accounts (Active, email-verified, on the reserved `sample.estate-ai.invalid` domain) and a number
-of published Karachi Listings with drawn pictures, some with a floor plan and a tour link. Every
+of published Karachi Listings with photographs, some with a floor plan and a tour link. Every
 Listing is created as a Draft with `apply_updates`, gets its pictures through `upload_image` as
 the owner, and is published with `publication.publish(kind="seed")`: no quota is used. `reset()`
 removes exactly those records; `reseed()` is both. The data comes from a fixed table, so two runs
@@ -951,7 +951,7 @@ def _ensure_accounts(report: Report, password: str | None, city, announce) -> di
 
 
 def _png(variant: int) -> bytes:
-    """A drawn picture (also used by tests that just need a real image)."""
+    """A real picture (also used by tests that just need one)."""
     return sample_art.scene(sample_art.SCENES[variant % len(sample_art.SCENES)], variant)
 
 

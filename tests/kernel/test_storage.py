@@ -2,6 +2,7 @@ import os
 import re
 import stat
 import time
+import uuid
 
 import pytest
 
@@ -48,6 +49,28 @@ def test_the_adapter_refuses_any_key_that_is_not_the_random_format(store, key):
     ):
         with pytest.raises(storage.InvalidKey):
             call()
+
+
+def test_a_key_is_filed_under_its_owner_and_listing(store, media_root):
+    owner, listing = uuid.uuid4(), uuid.uuid4()
+    photo, picture = storage.new_key(owner, listing), storage.new_key(owner)
+    assert photo.startswith(f"users/{owner}/listings/{listing}/")
+    assert picture.startswith(f"users/{owner}/profile/")
+    for key in (photo, picture):
+        assert storage.is_valid_key(key)
+        store.put(key, DATA)
+        assert (media_root / key).read_bytes() == DATA
+        assert stat.S_IMODE((media_root / key).parent.stat().st_mode) == 0o700
+    assert sorted(store.iter_old_keys(time.time() + 60)) == sorted((photo, picture))
+    for traversal in (
+        f"users/{owner}/../x",
+        f"users/{owner}/profile/..",
+        photo + "/..",
+        f"users/x/profile/{'a' * 43}",
+    ):
+        assert not storage.is_valid_key(traversal)
+    store.delete(photo)
+    assert not store.exists(photo) and store.exists(picture)
 
 
 def test_put_get_exists_delete_round_trip(store, media_root):

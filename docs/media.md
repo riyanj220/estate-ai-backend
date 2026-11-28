@@ -7,13 +7,17 @@ produces no URL: a file is read only through that endpoint.
 
 ## Storage port (`kernel.storage`)
 
-Four operations on opaque keys: `put(key, data)`, `get(key) -> bytes`, `delete(key)` (idempotent) and `exists(key)`.
+Four operations on keys: `put(key, data)`, `get(key) -> bytes`, `delete(key)` (idempotent) and `exists(key)`.
 The filesystem adapter is rooted at `MEDIA_ROOT` (absolute path; default `<project>/media`, git-ignored; tests use a
 temporary directory per test). Keep it outside any web-served directory; only the media endpoint (below) reads it, after an access check.
 
-- Keys are `secrets.token_urlsafe(32)` (43 URL-safe characters), never derived from a file name, owner or Listing.
-  Files sit under `MEDIA_ROOT/<key[:2]>/<key[2:4]>/<key>`. The adapter refuses (`InvalidKey`) any key that is not that
-  exact format, so a key can never traverse out of the root.
+- A key is a random name (`secrets.token_urlsafe(32)`, 43 URL-safe characters, never derived from a file name) under
+  folders made of ids only:
+  - `users/<account id>/listings/<listing id>/<name>` for Listing photos and floor plans;
+  - `users/<account id>/profile/<name>` for the profile picture or agency logo.
+  In Supabase the bucket shows these as folders (after the `S3_PREFIX`). Keys with no folders, from files stored
+  earlier, stay valid; the filesystem adapter keeps those under `MEDIA_ROOT/<key[:2]>/<key[2:4]>/<key>`. The adapter
+  refuses (`InvalidKey`) any other form, so a key can never traverse out of the root.
 - Writes are atomic: a temp file in the same directory, `fsync`, then `os.replace`; files are mode `0600`, directories
   `0700`. A failed write leaves no temp file.
 - A maintenance listing (`iter_old_keys`, `remove_old_temp_files`) lets retention find files that have no row. It is not

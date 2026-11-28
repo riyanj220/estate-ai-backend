@@ -50,7 +50,9 @@ def usage(account) -> int:
 
 
 def files(media_root):
-    return sorted(p.name for p in media_root.rglob("*") if p.is_file())
+    # the keys as stored: the path below the root for filed keys, the file name otherwise
+    found = (p.relative_to(media_root).as_posix() for p in media_root.rglob("*") if p.is_file())
+    return sorted(k if k.startswith("users/") else k.rsplit("/", 1)[-1] for k in found)
 
 
 # --- the seeded policy -------------------------------------------------------------------------
@@ -126,7 +128,9 @@ def test_keys_are_random_and_unrelated_to_anything_stored():
     account = owner()
     a, b = store(account), store(account)
     assert a.storage_key != b.storage_key
-    assert str(account.id) not in a.storage_key and str(a.id) not in a.storage_key
+    assert (
+        a.storage_key.startswith(f"users/{account.id}/profile/") and str(a.id) not in a.storage_key
+    )
 
 
 def test_an_invalid_image_stores_nothing(media_root):
@@ -353,7 +357,7 @@ def age(asset, hours, media_root, file=True):
         created_at=timezone.now() - timedelta(hours=hours)
     )
     if file:
-        path = media_root / asset.storage_key[:2] / asset.storage_key[2:4] / asset.storage_key
+        path = storage.FilesystemStorage(media_root)._path(asset.storage_key)
         past = time.time() - hours * 3600
         os.utime(path, (past, past))
 
@@ -408,7 +412,7 @@ def test_files_with_no_row_are_removed_only_when_old(media_root, purge):
     port.put(young_key, b"stray")
     past = time.time() - 30 * 3600
     for key in (old_key, kept.storage_key):
-        os.utime(media_root / key[:2] / key[2:4] / key, (past, past))
+        os.utime(storage.FilesystemStorage(media_root)._path(key), (past, past))
     assert purge(dry_run=True) == 1
     assert files(media_root) == sorted([old_key, young_key, kept.storage_key])
     assert purge() == 1
@@ -424,7 +428,7 @@ def test_an_old_file_of_a_removed_orphan_is_counted_once(media_root, purge):
 
 def test_leftover_temp_files_older_than_24_hours_are_swept(media_root, purge):
     stored = store(owner())
-    directory = media_root / stored.storage_key[:2] / stored.storage_key[2:4]
+    directory = storage.FilesystemStorage(media_root)._path(stored.storage_key).parent
     leftover = directory / ".tmp-crashed"
     leftover.write_bytes(b"half")
     past = time.time() - 30 * 3600

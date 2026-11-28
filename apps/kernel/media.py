@@ -134,13 +134,19 @@ def process_upload(actor: Actor, data: bytes) -> images.ProcessedImage:
 
 
 def store_processed(
-    actor: Actor, processed: images.ProcessedImage, *, account_type: str, attach: bool = False
+    actor: Actor,
+    processed: images.ProcessedImage,
+    *,
+    account_type: str,
+    attach: bool = False,
+    listing_id: uuid.UUID | None = None,
 ) -> StoredAsset:
     """Store an already processed image under the cap. If the caller's own transaction fails after
-    this returns, the caller must `discard_file(asset.storage_key)`."""
+    this returns, the caller must `discard_file(asset.storage_key)`. The file is filed under the
+    account, in the folder of `listing_id` or in its profile folder."""
     _require_account_actor(actor)
     size = len(processed.data)
-    key = storage.new_key()
+    key = storage.new_key(actor.account_id, listing_id)
     written = False
     try:
         with transaction.atomic():

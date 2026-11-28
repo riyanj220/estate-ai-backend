@@ -189,7 +189,8 @@ class Notification(models.Model):
 class MediaAsset(models.Model):
     """One stored, processed image (Story 2.9). Written only by `kernel.media`.
 
-    Holds no file name and no original bytes: `storage_key` is random and opaque, and `bytes` is the
+    Holds no file name and no original bytes: `storage_key` is a random name under id-only folders
+    (see `kernel.storage`), and `bytes` is the
     size of the re-encoded file, which is what counts against the account's storage cap.
     `attached_at` is null until a feature (a Listing, a profile) takes the asset; assets still
     unattached after 24 hours are removed by retention.
@@ -197,7 +198,7 @@ class MediaAsset(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner_account_id = models.UUIDField()  # plain UUID: kernel never points at another app's table
-    storage_key = models.CharField(max_length=64, unique=True)
+    storage_key = models.CharField(max_length=200, unique=True)
     content_type = models.CharField(max_length=32)
     bytes = models.PositiveIntegerField()
     width = models.PositiveIntegerField()

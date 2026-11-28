@@ -144,7 +144,8 @@ def test_a_first_run_creates_accounts_and_published_listings_with_images():
     assert report.images_created == ListingImage.objects.count()
     store = storage.get_storage()
     for asset in MediaAsset.objects.all():
-        assert store.get(asset.storage_key)[:4] == b"\x89PNG"  # the stored file is a real image
+        head = store.get(asset.storage_key)[:4]
+        assert head == b"\x89PNG" or head[:3] == b"\xff\xd8\xff"  # a real image, as re-encoded
     assert StorageUsage.objects.filter(bytes_used=0).count() == 0
     assert sum(u.bytes_used for u in StorageUsage.objects.all()) == sum(
         a.bytes for a in MediaAsset.objects.all()
