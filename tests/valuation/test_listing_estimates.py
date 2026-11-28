@@ -9,6 +9,7 @@ import pytest
 from django.test import Client
 
 from apps.kernel import runtime
+from apps.kernel.errors import DomainError
 from apps.listings import publication
 from apps.listings import selectors as listings_read
 from apps.listings import services as listings
@@ -222,3 +223,38 @@ def test_the_forecast_is_ordered_and_reproducible_for_every_locality():
         assert Decimal(found["low"]) <= Decimal(found["base"]) <= Decimal(found["high"])
     premium = next(n for n, tier in localities.load().tiers.items() if tier == "premium")
     assert forecasting.compute(Decimal("10000000"), premium)["base"] == "15386000.00"
+
+
+def test_an_estimate_says_what_moves_it(owner, commit):
+    view = draft(owner, bedrooms=3, bathrooms=3, condition="new", construction_year=2025)
+    publish(owner, view, commit)
+    data = visitor_read(view.id)
+    found = {item["factor"]: Decimal(item["percent"]) for item in data["drivers"]}
+    assert found["condition"] > 0 and "locality" in found
+    assert set(found) <= {"locality", "bedrooms", "bathrooms", "building_age", "condition"}
+    sizes = [abs(Decimal(item["percent"])) for item in data["drivers"]]
+    assert sizes == sorted(sizes, reverse=True) and min(sizes) >= 1
+
+
+def test_a_failed_explanation_keeps_the_estimate(owner, commit, monkeypatch):
+    def broken(*args):
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(services.drivers, "compute", broken)
+    publish(owner, draft(owner), commit)
+    row = PriceEstimate.objects.get()
+    assert row.value > 0 and row.drivers is None
+
+
+def test_stored_estimates_without_drivers_are_filled_once_and_keep_their_value(owner, commit):
+    view = draft(owner, condition="new")
+    publish(owner, view, commit)
+    row = PriceEstimate.objects.get()
+    PriceEstimate.objects.update(drivers=None)
+    assert visitor_read(view.id)["drivers"] == []
+    assert services.explain_stored_estimates(SYSTEM) == 1
+    assert services.explain_stored_estimates(SYSTEM) == 0
+    again = PriceEstimate.objects.get()
+    assert (again.value, again.drivers) == (row.value, row.drivers)
+    with pytest.raises(DomainError):
+        services.explain_stored_estimates(user(owner))

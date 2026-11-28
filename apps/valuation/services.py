@@ -26,7 +26,7 @@ from apps.kernel.errors import DomainError
 from apps.listings import lifecycle, validation
 from apps.listings import selectors as listings
 from apps.listings.services import FieldsInvalid
-from apps.valuation import features, forecasting, model_store, selectors
+from apps.valuation import drivers, features, forecasting, model_store, selectors
 from apps.valuation.models import PriceEstimate, ValuationModelVersion
 from apps.valuation.selectors import EstimateOutcome
 
@@ -148,6 +148,7 @@ def _estimate(
     value, reason = _run_model(model, inputs, infer or _infer_bounded)
     if reason:
         return EstimateOutcome(reason=reason)
+    explained = _explain(model, inputs)
     row = PriceEstimate.objects.create(
         account_id=account_id,
         listing_id=listing_id,
@@ -157,9 +158,47 @@ def _estimate(
         inputs_sha256=features.snapshot_hash(inputs),
         value=value,
         forecast=forecasting.compute(value, locality),
+        drivers=explained,
         created_at=timezone.now(),
     )
-    return EstimateOutcome(row.value, model.version, row.created_at, forecast=row.forecast)
+    return EstimateOutcome(
+        row.value, model.version, row.created_at, forecast=row.forecast, drivers=row.drivers
+    )
+
+
+def _explain(model: selectors.ModelVersionRef, inputs: dict) -> list[dict] | None:
+    """The price drivers of an estimate just computed. An explanation that fails is left out; it
+    never takes the estimate with it."""
+    try:
+        loaded = selectors.load_model(model)
+        built = features.build_features(inputs)
+        return drivers.compute(built, loaded.localities, loaded.estimate_many)
+    except Exception as exc:
+        logger.warning(
+            "estimate_not_explained",
+            extra={"event": "estimate_not_explained", "exception_class": type(exc).__name__},
+        )
+        return None
+
+
+def explain_stored_estimates(actor: Actor) -> int:
+    """Add the price drivers to estimates stored without them (computed before drivers existed),
+    from their own recorded inputs and model. The value is not touched. Idempotent: how many rows
+    were filled. The system actor only."""
+    if actor.kind is not ActorKind.SYSTEM:
+        raise DomainError("forbidden")
+    model = selectors.current_model()
+    if model is None:
+        return 0
+    filled = 0
+    rows = PriceEstimate.objects.filter(
+        drivers__isnull=True, listing_id__isnull=False, model_version_id=model.id
+    ).only("id", "inputs")
+    for row in rows.iterator():
+        explained = _explain(model, row.inputs)
+        if explained is not None:
+            filled += PriceEstimate.objects.filter(id=row.id).update(drivers=explained)
+    return filled
 
 
 def _infer(model: selectors.ModelVersionRef, inputs: dict) -> float | None:

@@ -66,6 +66,7 @@ class StoredEstimate:
     model_version: int
     estimated_at: datetime
     forecast: dict | None = None
+    drivers: list | None = None
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ class EstimateOutcome:
     estimated_at: datetime | None = None
     reason: str | None = None
     forecast: dict | None = None  # only with a value
+    drivers: list | None = None  # only with a value
 
 
 def unsupported_reason(fields: Mapping, locality: str | None) -> str | None:
@@ -125,7 +127,9 @@ def stored_estimate(listing_id, inputs: Mapping) -> StoredEstimate | None:
     )
     if row is None:
         return None
-    return StoredEstimate(row.value, row.model_version.version, row.created_at, row.forecast)
+    return StoredEstimate(
+        row.value, row.model_version.version, row.created_at, row.forecast, row.drivers
+    )
 
 
 def current_estimate(actor: Actor, listing_id) -> EstimateOutcome:
@@ -146,7 +150,11 @@ def current_estimate(actor: Actor, listing_id) -> EstimateOutcome:
     found = stored_estimate(view.id, features.snapshot_of(fields, locality))
     if found is not None:
         return EstimateOutcome(
-            found.value, found.model_version, found.estimated_at, forecast=found.forecast
+            found.value,
+            found.model_version,
+            found.estimated_at,
+            forecast=found.forecast,
+            drivers=found.drivers,
         )
     if actor.kind is not ActorKind.USER:
         return EstimateOutcome(reason="temporarily_unavailable")

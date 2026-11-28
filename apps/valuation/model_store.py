@@ -58,13 +58,20 @@ class LoadedModel:
 
     def estimate(self, built: dict) -> float:
         """The estimated total price in PKR for `features.build_features` output."""
+        return self.estimate_many([built])[0]
+
+    def estimate_many(self, built: list[dict]) -> list[float]:
+        """The same for several feature sets in one call of the model."""
         import numpy as np
         from threadpoolctl import threadpool_limits
 
-        row = np.array([features.encode(built, self.localities)])
+        rows = np.array([features.encode(item, self.localities) for item in built])
         with threadpool_limits(limits=1):
-            per_sqft = math.exp(float(self._estimator.predict(row)[0]))
-        return per_sqft * math.exp(built["log_area_sqft"])
+            per_sqft = self._estimator.predict(rows)
+        return [
+            math.exp(float(value)) * math.exp(item["log_area_sqft"])
+            for value, item in zip(per_sqft, built, strict=True)
+        ]
 
 
 @lru_cache(maxsize=2)

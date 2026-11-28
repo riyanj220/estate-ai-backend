@@ -47,6 +47,7 @@ case "$command" in
     uv sync --frozen
     (cd "$frontend" && npm install --no-audit --no-fund)
     scripts/hosted.sh migrate --database=migrator
+    scripts/hosted.sh explain_price_estimates
     ;;
   seed)
     if [ "${1:-}" = "fresh" ]; then

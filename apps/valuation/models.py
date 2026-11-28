@@ -46,6 +46,8 @@ class PriceEstimate(models.Model):
     value = models.DecimalField(max_digits=14, decimal_places=2)  # PKR
     # the 5-Year Price Forecast of `value` (`forecasting.compute`); null on rows older than it
     forecast = models.JSONField(null=True)
+    # what moves `value` (`drivers.compute`); null when not computed
+    drivers = models.JSONField(null=True)
     created_at = models.DateTimeField()
 
     class Meta:

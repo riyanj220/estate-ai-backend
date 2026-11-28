@@ -186,3 +186,15 @@ answers the estimate shape above plus:
 
 No user-facing string may say "demo" or "demonstration" (SM-4c, `tests/architecture/test_no_demo_wording.py`; the
 frontend has its own scan).
+
+## Price drivers
+
+`valuation/drivers.py` says what moves one estimate. For each detail the Listing states, the model prices the same
+property with only that detail swapped for a typical one (condition "good", 20 years old, 4 amenities, a 30 ft road,
+not a corner, developed, the usual rooms and covered area for its size); the locality is compared with the middle
+locality the model covers. The percent is `own / swapped - 1`. Differences under 1% are left out, at most six are kept,
+and they do not add up to a total. Size is held as it is. This explains the model's answer, trained on synthetic data;
+it is not a statement about the market.
+
+They are stored with the estimate (`PriceEstimate.drivers`) and returned by the public listing estimate. Estimates
+stored earlier are filled by `manage.py explain_price_estimates` (`./app update` runs it); the value does not change.

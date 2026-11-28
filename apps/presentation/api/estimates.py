@@ -78,6 +78,18 @@ class PriceForecastSerializer(serializers.Serializer):
     high = serializers.CharField(help_text="PKR, a decimal string.")
 
 
+class PriceDriverSerializer(serializers.Serializer):
+    """One detail of the Listing and what it does to the model's estimate, against a typical one."""
+
+    factor = serializers.CharField(
+        help_text="`locality`, `bedrooms`, `bathrooms`, `covered_area`, `building_age`, "
+        "`condition`, `corner_plot`, `road_width`, `development` or `amenities`."
+    )
+    percent = serializers.CharField(
+        help_text="One decimal; positive raises the estimate. Effects do not add up to a total."
+    )
+
+
 class ListingEstimateSerializer(EstimateSerializer):
     """A published Listing's estimate beside its total Asking price."""
 
@@ -87,6 +99,9 @@ class ListingEstimateSerializer(EstimateSerializer):
     )
     comparison = PriceComparisonSerializer(allow_null=True, help_text="Null when unavailable.")
     forecast = PriceForecastSerializer(allow_null=True, help_text="Null when unavailable.")
+    drivers = PriceDriverSerializer(
+        many=True, help_text="What moves the estimate, largest first; empty when unavailable."
+    )
     can_recompute = serializers.BooleanField(
         help_text="True for the signed-in owner: `POST /api/v1/listings/{id}/estimate`."
     )
@@ -209,6 +224,7 @@ class PublicListingEstimateView(NoStoreMixin, APIView):
                     "comparison": verdict
                     and {"verdict": verdict.verdict, "percent": f"{verdict.percent:.1f}"},
                     "forecast": outcome.forecast if available else None,
+                    "drivers": (outcome.drivers or []) if available else [],
                     "can_recompute": selectors.can_recompute(actor, view.id),
                 }
             ).data
